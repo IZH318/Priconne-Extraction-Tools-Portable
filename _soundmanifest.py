@@ -34,9 +34,6 @@ class ConvertSound:
                 if skip_existing_files:
                     print()
                     continue  # 이미 변환된 파일이 있다면 해당 파일을 생략
-                else:
-                    # 이미 변환된 파일이 있다면 해당 파일을 삭제하고 작업 진행
-                    self.delete_existing_files(item_converted_folder)
 
             tracks = self.get_tracks(item_path)  # 파일의 트랙 정보 가져오기
             if tracks is not None:
@@ -50,18 +47,13 @@ class ConvertSound:
     def ask_user_skip_existing_files(self):
         """사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부를 반환합니다."""
         while True:
-            user_input = input("[안내] 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까? (Y = 기존 파일 삭제 / N = 기존 파일 보존): ").strip().lower()
+            user_input = input("[안내] 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까? (Y = 기존 파일 덮어쓰기 / N = 기존 파일 보존): ").strip().lower()
             if user_input == 'y':
                 return False  # 처음부터 작업
             elif user_input == 'n':
                 return True  # 이미 존재하는 파일을 생략
             else:
                 print("잘못된 입력입니다. Y 또는 N을 입력해주세요.")
-
-    def delete_existing_files(self, folder_path):
-        """주어진 폴더 내의 모든 파일을 삭제합니다."""
-        for file in folder_path.iterdir():
-            file.unlink()
 
     def get_tracks(self, file_path):
         try:
