@@ -25,12 +25,12 @@ class ConvertSound:
             if not converted_folder.exists():  # Converted 폴더가 없으면 생성
                 converted_folder.mkdir(parents=True)
 
-            item_converted_folder = converted_folder / item_path.stem  # 원본 파일명으로 폴더 경로 생성
+            item_converted_folder = converted_folder / self.sanitize_filename(item_path.stem)  # 원본 파일명으로 폴더 경로 생성
             if not item_converted_folder.exists():  # 원본 파일명으로 폴더가 없으면 생성
                 item_converted_folder.mkdir(parents=True)
 
             # 이미 변환된 파일이 있는 경우 작업 방식에 따라 처리
-            if any((item_converted_folder / f"{track['Name']}.wav").exists() for track in self.get_tracks(item_path)):
+            if any((item_converted_folder / f"{self.sanitize_filename(track['Name'])}.wav").exists() for track in self.get_tracks(item_path)):
                 if skip_existing_files:
                     print("\n\n")
                     continue  # 이미 변환된 파일이 있다면 해당 파일을 생략
@@ -38,18 +38,35 @@ class ConvertSound:
             tracks = self.get_tracks(item_path)  # 파일의 트랙 정보 가져오기
             if tracks is not None:
                 for track in tracks:
-                    output_file = item_converted_folder / f"{track['Name']}.wav"  # WAV 파일의 경로 생성
+                    output_file = item_converted_folder / f"{self.sanitize_filename(track['Name'])}.wav"  # WAV 파일의 경로 생성
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
                         file_count += 1  # 처리된 파일 수 증가
 
         input(f"총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
 
     def ask_user_skip_existing_files(self):
+        print("")
+        print("""
+         ___      _                        _____                       __  __      ___      _ ___  _         
+        / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
+       / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
+      /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
+      """)
+        print("""
+                   ___          ___        ____ __                                __         
+                  / _ |__ _____/ (_)__    / _(_) /__   _______  ___ _  _____ ____/ /____ ____
+                 / __ / // / _  / / _ \  / _/ / / -_) / __/ _ \/ _ \ |/ / -_) __/ __/ -_) __/
+                /_/ |_\_,_/\_,_/_/\___/ /_//_/_/\__/  \__/\___/_//_/___/\__/_/  \__/\__/_/
+        """)
+        
         """사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부를 반환합니다."""
         while True:
-            print("\n [안내] 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까?")
-            print("        ( Y = 기존 파일 덮어쓰기 / N = 기존 파일 보존 )\n")
-            user_input = input(">>> ").strip().lower()
+            print("\n\n\n [ 안내 ] 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까?")
+            print("          ( Y = 기존 파일 덮어쓰기 / N = 기존 파일 보존 )")
+            print()
+            print(" [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
+            print("          ( 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
+            user_input = input(" >>> ").strip().lower()
             if user_input == 'y':
                 print("\n\n")
                 return False  # 처음부터 작업
@@ -57,7 +74,7 @@ class ConvertSound:
                 print("\n\n")
                 return True  # 이미 존재하는 파일을 생략
             else:
-                print("잘못된 입력입니다. Y 또는 N을 입력하십시오.")
+                print("\n\n\n [ 오류 ] 잘못된 입력입니다. Y 또는 N을 입력하십시오.")
 
     def get_tracks(self, file_path):
         try:
@@ -114,12 +131,14 @@ class ConvertSound:
 
     def convert(self, input_file, output_file, track_num=None, file_count=0):
         try:
+            print(f"[ Source Info ]")
             vgmstream_path = self.get_vgmstream()  # vgmstream 실행 경로 가져오기
             command = [vgmstream_path, "-o", str(output_file)]  # WAV 파일로 변환하는 명령 생성
             if track_num is not None:
                 command.extend(["-s", str(track_num)])  # 특정 트랙만 변환하는 경우
             command.append(str(input_file))
             subprocess.run(command, check=True)  # 외부 프로세스 실행
+            print(f"\n[ Processing status ]")
             print(f"파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
             print(f"원본 파일명: {input_file}")  # 변환된 파일 정보 출력
             print(f"변경된 파일명: {output_file}")
@@ -131,6 +150,12 @@ class ConvertSound:
     def get_vgmstream(self):
         vgmstream_path = r".\usmtoolkit\vgmstream\test.exe"  # vgmstream 실행 경로 반환
         return vgmstream_path
+
+    def sanitize_filename(self, filename):
+        """
+        파일 이름에서 세미콜론을 쉼표로 대체하는 함수
+        """
+        return filename.replace(';', ',')
 
 def main():
     desc = "Conversion Progress"  # 진행 상황 설명
