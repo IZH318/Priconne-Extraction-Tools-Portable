@@ -17,6 +17,7 @@ class ConvertSound:
                 files.extend([os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith((".awb", ".acb"))])
 
         file_count = 0  # 처리된 파일의 수 초기화
+        skip_existing_files = self.ask_user_skip_existing_files()  # 사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부 결정
         for item in files:
             item_path = Path(item)  # 파일 경로를 Path 객체로 변환
             item_folder = item_path.parent  # 파일이 위치한 폴더 경로
@@ -28,11 +29,15 @@ class ConvertSound:
             if not item_converted_folder.exists():  # 원본 파일명으로 폴더가 없으면 생성
                 item_converted_folder.mkdir(parents=True)
 
-            # 이미 변환된 파일이 있는지 확인
+            # 이미 변환된 파일이 있는 경우 작업 방식에 따라 처리
             if any((item_converted_folder / f"{track['Name']}.wav").exists() for track in self.get_tracks(item_path)):
-                print()
-                continue  # 이미 변환된 파일이 있다면 해당 파일을 생략
-            
+                if skip_existing_files:
+                    print()
+                    continue  # 이미 변환된 파일이 있다면 해당 파일을 생략
+                else:
+                    # 이미 변환된 파일이 있다면 해당 파일을 삭제하고 작업 진행
+                    self.delete_existing_files(item_converted_folder)
+
             tracks = self.get_tracks(item_path)  # 파일의 트랙 정보 가져오기
             if tracks is not None:
                 for track in tracks:
@@ -40,7 +45,23 @@ class ConvertSound:
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
                         file_count += 1  # 처리된 파일 수 증가
 
-        input(f"\n\n총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하세요.")
+        input(f"\n\n\n총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하세요.")
+
+    def ask_user_skip_existing_files(self):
+        """사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부를 반환합니다."""
+        while True:
+            user_input = input("[안내] 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까? (Y = 기존 파일 삭제 / N = 기존 파일 보존): ").strip().lower()
+            if user_input == 'y':
+                return False  # 처음부터 작업
+            elif user_input == 'n':
+                return True  # 이미 존재하는 파일을 생략
+            else:
+                print("잘못된 입력입니다. Y 또는 N을 입력해주세요.")
+
+    def delete_existing_files(self, folder_path):
+        """주어진 폴더 내의 모든 파일을 삭제합니다."""
+        for file in folder_path.iterdir():
+            file.unlink()
 
     def get_tracks(self, file_path):
         try:
@@ -106,7 +127,7 @@ class ConvertSound:
             print(f"파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
             print(f"원본 파일명: {input_file}")  # 변환된 파일 정보 출력
             print(f"변경된 파일명: {output_file}")
-            print("\n\n")
+            print()
             return True  # 파일이 변환되었음을 나타내는 True 반환
         except subprocess.CalledProcessError as e:
             return False  # 변환 실패를 나타내는 False 반환
