@@ -35,6 +35,8 @@ class ConvertSound:
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
                         file_count += 1  # 처리된 파일 수 증가
 
+        input(f"총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하세요.")
+
     def get_tracks(self, file_path):
         try:
             vgmstream_path = self.get_vgmstream()  # vgmstream 실행 경로 가져오기
@@ -99,13 +101,13 @@ class ConvertSound:
             print(f"파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
             print(f"원본 파일명: {input_file}")  # 변환된 파일 정보 출력
             print(f"변경된 파일명: {output_file}")
-            print()
+            print("\n\n")
             return True  # 파일이 변환되었음을 나타내는 True 반환
         except subprocess.CalledProcessError as e:
             return False  # 변환 실패를 나타내는 False 반환
 
     def get_vgmstream(self):
-        vgmstream_path = os.path.join("usmtoolkit", "vgmstream", "test.exe")  # vgmstream 실행 경로 반환
+        vgmstream_path = r".\usmtoolkit\vgmstream\test.exe"  # vgmstream 실행 경로 반환
         return vgmstream_path
 
 def main():
