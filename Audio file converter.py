@@ -47,8 +47,8 @@ class ConvertSound:
     def ask_user_skip_existing_files(self):
         """사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부를 반환합니다."""
         while True:
-            print("[안내] 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까?")
-            print("       ( Y = 기존 파일 덮어쓰기 / N = 기존 파일 보존 )\n")
+            print("\n [안내] 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까?")
+            print("        ( Y = 기존 파일 덮어쓰기 / N = 기존 파일 보존 )\n")
             user_input = input(">>> ").strip().lower()
             if user_input == 'y':
                 print("\n\n")
