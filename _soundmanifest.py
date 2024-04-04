@@ -28,6 +28,11 @@ class ConvertSound:
             if not item_converted_folder.exists():  # 원본 파일명으로 폴더가 없으면 생성
                 item_converted_folder.mkdir(parents=True)
 
+            # 이미 변환된 파일이 있는지 확인
+            if any((item_converted_folder / f"{track['Name']}.wav").exists() for track in self.get_tracks(item_path)):
+                print()
+                continue  # 이미 변환된 파일이 있다면 해당 파일을 생략
+            
             tracks = self.get_tracks(item_path)  # 파일의 트랙 정보 가져오기
             if tracks is not None:
                 for track in tracks:
@@ -35,7 +40,7 @@ class ConvertSound:
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
                         file_count += 1  # 처리된 파일 수 증가
 
-        input(f"총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하세요.")
+        input(f"\n\n총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하세요.")
 
     def get_tracks(self, file_path):
         try:
