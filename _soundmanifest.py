@@ -9,19 +9,22 @@ class ConvertSound:
     def process(self, desc):
         current_directory = "."  # 현재 디렉터리로 설정, 필요에 따라 변경 가능
         
-        # b, s, v 폴더에 있는 파일들을 포함하여 검색
+        # 현재 디렉터리와 b, s, v 폴더에 있는 모든 파일 검색
         files = []
-        for folder_name in ["b", "s", "v"]:
+        for folder_name in ["", "b", "s", "v"]:
             folder_path = os.path.join(current_directory, folder_name)
             if os.path.isdir(folder_path):
                 files.extend([os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith((".awb", ".acb"))])
 
-        copy_folder = os.path.join(current_directory, "Converted")
-
         file_count = 0
         for item in files:
             item_path = Path(item)
-            item_converted_folder = Path(copy_folder) / item_path.stem
+            item_folder = item_path.parent
+            converted_folder = item_folder / "Converted"  # Converted 폴더 생성
+            if not converted_folder.exists():
+                converted_folder.mkdir(parents=True)
+
+            item_converted_folder = converted_folder / item_path.stem  # 원본 파일명으로 폴더 생성
             if not item_converted_folder.exists():
                 item_converted_folder.mkdir(parents=True)
 
