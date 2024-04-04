@@ -10,9 +10,9 @@ class ConvertSound:
         current_directory = "."  # 현재 디렉터리로 설정, 필요에 따라 변경 가능
         files = [f for f in os.listdir(current_directory) if f.endswith((".awb", ".acb"))]
 
-        copy_folder = os.path.join(current_directory, "converted")
+        copy_folder = os.path.join(current_directory, "Converted")
 
-        cnt = 0
+        file_count = 0
         for item in files:
             item_path = Path(item)
             item_converted_folder = Path(copy_folder) / item_path.stem
@@ -22,11 +22,9 @@ class ConvertSound:
             tracks = self.get_tracks(item_path)
             if tracks is not None:
                 for track in tracks:
-                    output_file = item_converted_folder / f"{track['Name']}_{track['TrackNum']}.wav"
-                    self.convert(item_path, output_file, track['TrackNum'])
-
-            cnt += 1
-            print(f"{desc}: {cnt}/{len(files)}")
+                    output_file = item_converted_folder / f"{track['Name']}.wav"
+                    if self.convert(item_path, output_file, track['TrackNum'], file_count):
+                        file_count += 1
 
     def get_tracks(self, file_path):
         try:
@@ -65,7 +63,7 @@ class ConvertSound:
             command = [vgmstream_path, "-m"]
             if track_num is not None:
                 command.extend(["-s", str(track_num)])
-            command.append(file_path)
+            command.append(str(file_path))
             result = subprocess.run(command, capture_output=True, text=True)
             output = result.stdout
             if "failed opening" in output:
@@ -81,20 +79,24 @@ class ConvertSound:
             print(f"Error occurred while getting track name: {e}")
             return None
 
-    def convert(self, input_file, output_file, track_num=None):
+    def convert(self, input_file, output_file, track_num=None, file_count=0):
         try:
             vgmstream_path = self.get_vgmstream()
             command = [vgmstream_path, "-o", str(output_file)]
             if track_num is not None:
                 command.extend(["-s", str(track_num)])
-            command.append(input_file)
+            command.append(str(input_file))
             subprocess.run(command, check=True)
-            print(f"File converted: {input_file} -> {output_file}")
+            print(f"파일 처리 순번: {file_count+1}")
+            print(f"원본 파일명: {input_file}")
+            print(f"변경된 파일명: {output_file}")
+            print()
+            return True  # 파일이 변환되었음을 나타내는 True 반환
         except subprocess.CalledProcessError as e:
-            print(f"Error occurred while converting file: {e}")
+            return False  # 변환 실패를 나타내는 False 반환
 
     def get_vgmstream(self):
-        vgmstream_path = os.path.join("vgmstream", "test.exe")
+        vgmstream_path = r".\usmtoolkit\vgmstream\test.exe"
         return vgmstream_path
 
 def main():
