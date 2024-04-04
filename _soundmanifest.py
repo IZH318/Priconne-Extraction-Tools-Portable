@@ -8,7 +8,13 @@ class ConvertSound:
 
     def process(self, desc):
         current_directory = "."  # 현재 디렉터리로 설정, 필요에 따라 변경 가능
-        files = [f for f in os.listdir(current_directory) if f.endswith((".awb", ".acb"))]
+        
+        # b, s, v 폴더에 있는 파일들을 포함하여 검색
+        files = []
+        for folder_name in ["b", "s", "v"]:
+            folder_path = os.path.join(current_directory, folder_name)
+            if os.path.isdir(folder_path):
+                files.extend([os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith((".awb", ".acb"))])
 
         copy_folder = os.path.join(current_directory, "Converted")
 
@@ -96,7 +102,7 @@ class ConvertSound:
             return False  # 변환 실패를 나타내는 False 반환
 
     def get_vgmstream(self):
-        vgmstream_path = r".\usmtoolkit\vgmstream\test.exe"
+        vgmstream_path = os.path.join("usmtoolkit", "vgmstream", "test.exe")
         return vgmstream_path
 
 def main():
