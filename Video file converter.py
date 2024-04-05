@@ -1,13 +1,13 @@
 import os
 from pathlib import Path
 
-# UsmToolkit.exe의 경로를 직접 지정합니다.
+# UsmToolkit.exe의 경로를 지정합니다.
 usmtoolkit_path = Path("usmtoolkit/UsmToolkit.exe")
 
-# 실제로 *.usm 파일이 *.mp4 파일로 변환 된 파일 수 계산
+# 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
 
-print("")
+# 프로그램 시작 시 화면에 출력되는 ASCII 아트
 print("""
          ___      _                        _____                       __  __      ___      _ ___  _         
         / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
@@ -21,6 +21,7 @@ print("""
                   |___/_/\_,_/\__/\___/ /_//_/_/\__/  \__/\___/_//_/___/\__/_/  \__/\__/_/
                   """)
 
+# 디렉터리에서 *.usm 파일을 찾아 리스트로 반환하는 함수
 def find_usm_files(directory):
     usm_files = []
     for file in os.listdir(directory):
@@ -29,6 +30,7 @@ def find_usm_files(directory):
             usm_files.append(Path(file_path))
     return usm_files
 
+# 디렉터리 내 하위 폴더까지 검색하여 *.usm 파일을 찾아 리스트로 반환하는 함수
 def search_usm_files_in_folder(folder):
     usm_files = []
     for root, dirs, files in os.walk(folder):
@@ -38,46 +40,47 @@ def search_usm_files_in_folder(folder):
     return usm_files
 
 while True:
-    # 작업 진행 확인
-    print("\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 생략 후 진행합니다.")
+    # 작업 진행여부 확인
+    print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 생략 후 진행합니다.")
     print()
     print(" [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
     print("          ( 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
 
-    print(" 작업을 진행하시겠습니까? (Y/N, 대소문자 상관 없음.)")
+    print(" 작업을 진행하시겠습니까? (Y/N, 대소문자 구분 없음.)")
     
+    # 사용자 입력
     rewrite_response = input(" >>> ").lower()
 
-    # y 또는 n을 입력할 때까지 반복합니다.
+    # y 또는 n을 입력할 때까지 반복
     if rewrite_response in ['y', 'n']:
         print("\n\n")
         break
     else:
         print(" [ 오류 ] 잘못된 입력입니다. Y 또는 N을 입력하십시오.\n\n\n")
 
-# 사용자의 입력에 따라 작업을 진행하거나 종료합니다.
+# 사용자의 입력에 따라 작업을 진행하거나 종료
 if rewrite_response == 'y':
     
-    # 현재 디렉터리에서 usm 파일을 찾습니다.
+    # 현재 디렉터리에서 usm 파일 찾기
     current_directory_files = find_usm_files(os.getcwd())
 
     # 사용자가 지정한 폴더명
     target_folders = ["m"]
 
-    # 각 폴더에 대해 하위 폴더까지 모두 검색하여 usm 파일을 찾습니다.
+    # 각 폴더에 대해 하위 폴더까지 모두 검색하여 usm 파일을 찾기
     for target_folder in target_folders:
         target_folder_path = os.path.join(os.getcwd(), target_folder)
         if os.path.isdir(target_folder_path):
             target_folder_files = search_usm_files_in_folder(target_folder_path)
 
-    # 변환 작업을 수행합니다.
+    # 변환
     for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):
         print(f"[ Source Info ]")
         
-        # 변환할 mp4 파일의 경로를 생성합니다.
+        # 변환할 mp4 파일 경로 생성
         extract_path = usm_file.parent / (usm_file.stem + ".mp4")
 
-        # 이미 존재하는지 확인하고, 없으면 변환 작업을 수행합니다.
+        # 이미 존재하는지 확인 후 없으면 변환
         if not extract_path.exists():
             command = (
                 f'cd "{usmtoolkit_path.parent.absolute()}" '
@@ -98,7 +101,7 @@ if rewrite_response == 'y':
             print(f"원본 파일 경로: {os.path.relpath(usm_file.absolute(), os.getcwd())}")
             print(f"이미 존재하는 파일: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
 
-    # 작업이 모두 끝나면 메시지 출력
+    # 작업 모두 끝나면 메시지 출력
     input(f"총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
 else:
     # 프로그램 종료
