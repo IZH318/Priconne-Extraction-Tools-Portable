@@ -15,6 +15,7 @@ class RenameHashedFile:
         self.hash_list = {}
         manifest_db_path = os.path.join(os.getcwd(), "manifest.db")
         if not os.path.exists(manifest_db_path):
+            input("\n [경고] manifest.db 파일이 존재하지 않습니다. Enter 키를 입력하여 창을 종료하십시오.")
             return
 
         # manifest.db에 연결하여 해시-파일명 쌍을 읽어옴
