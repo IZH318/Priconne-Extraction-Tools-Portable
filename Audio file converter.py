@@ -138,7 +138,7 @@ class ConvertSound:
                 command.extend(["-s", str(track_num)])  # 특정 트랙만 변환하는 경우
             command.append(str(input_file))
             subprocess.run(command, check=True)  # 외부 프로세스 실행
-            print(f"\n[ Processing status ]")
+            print(f"\n[ Processing Results ]")
             print(f"파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
             print(f"원본 파일명: {input_file}")  # 변환된 파일 정보 출력
             print(f"변경된 파일명: {output_file}")
