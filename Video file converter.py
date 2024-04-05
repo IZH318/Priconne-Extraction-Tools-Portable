@@ -7,7 +7,7 @@ usmtoolkit_path = Path("usmtoolkit/UsmToolkit.exe")
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
 
-# 프로그램 시작 시 화면에 출력되는 ASCII 아트
+# 프로그램 시작 시 화면에 출력되는 ASCII Art
 print("""
          ___      _                        _____                       __  __      ___      _ ___  _         
         / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
@@ -20,6 +20,14 @@ print("""
                   | |/ / / _  / -_) _ \  / _/ / / -_) / __/ _ \/ _ \ |/ / -_) __/ __/ -_) __/
                   |___/_/\_,_/\__/\___/ /_//_/_/\__/  \__/\___/_//_/___/\__/_/  \__/\__/_/
                   """)
+
+# 작업 진행여부 확인 안내 문구
+print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 생략 후 진행합니다.")
+print()
+print(" [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
+print("          ( 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
+
+print(" 작업을 진행하시겠습니까? (Y/N, 대소문자 구분 없음.)")
 
 # 디렉터리에서 *.usm 파일을 찾아 리스트로 반환하는 함수
 def find_usm_files(directory):
@@ -39,15 +47,7 @@ def search_usm_files_in_folder(folder):
                 usm_files.append(Path(os.path.join(root, file)))
     return usm_files
 
-while True:
-    # 작업 진행여부 확인
-    print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 생략 후 진행합니다.")
-    print()
-    print(" [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
-    print("          ( 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
-
-    print(" 작업을 진행하시겠습니까? (Y/N, 대소문자 구분 없음.)")
-    
+while True:    
     # 사용자 입력
     rewrite_response = input(" >>> ").lower()
 
@@ -56,7 +56,7 @@ while True:
         print("\n\n")
         break
     else:
-        print(" [ 오류 ] 잘못된 입력입니다. Y 또는 N을 입력하십시오.\n\n\n")
+        print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
 
 # 사용자의 입력에 따라 작업을 진행하거나 종료
 if rewrite_response == 'y':
@@ -102,7 +102,7 @@ if rewrite_response == 'y':
             print(f"이미 존재하는 파일: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
 
     # 작업 모두 끝나면 메시지 출력
-    input(f"총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
+    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
 else:
     # 프로그램 종료
-    input(f"Enter 키를 입력하여 종료하십시오.")
+    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
