@@ -1,6 +1,15 @@
 import os
 from pathlib import Path
 
+# 이미 처리된 파일이 있는지 여부를 확인합니다.
+rewrite_response = input("이미 처리된 파일을 새로 작업하시겠습니까? (y/n): ")
+
+while rewrite_response.lower() not in ['y', 'n']:
+    rewrite_response = input("올바른 입력이 아닙니다. 다시 입력하십시오. (y/n): ")
+
+# 사용자 입력에 따라 ReWriteFiles 변수에 1 또는 0을 할당합니다.
+ReWriteFiles = 1 if rewrite_response.lower() == 'y' else 0
+
 # UsmToolkit.exe의 경로를 직접 지정합니다.
 usmtoolkit_path = Path("usmtoolkit/UsmToolkit.exe")
 
