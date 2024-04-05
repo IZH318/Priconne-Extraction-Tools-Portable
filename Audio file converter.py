@@ -9,12 +9,18 @@ class ConvertSound:
     def process(self, desc):
         current_directory = "."  # 현재 디렉터리로 설정, 필요에 따라 변경 가능
         
-        # 현재 디렉터리와 b, s, v 폴더에 있는 모든 파일 검색
-        files = []
-        for folder_name in ["", "b", "s", "v"]:
+        # 현재 디렉터리에 있는 awb 파일과 acb 파일 검색
+        current_files = [f for f in os.listdir(current_directory) if f.endswith((".awb", ".acb"))]
+
+        # b, s, v 폴더에 있는 모든 하위 폴더의 awb 파일과 acb 파일 검색
+        subfolder_files = []
+        for folder_name in ["b", "s", "v"]:
             folder_path = os.path.join(current_directory, folder_name)
             if os.path.isdir(folder_path):
-                files.extend([os.path.join(folder_path, f) for f in os.listdir(folder_path) if f.endswith((".awb", ".acb"))])
+                for root, dirs, files in os.walk(folder_path):
+                    subfolder_files.extend([os.path.join(root, f) for f in files if f.endswith((".awb", ".acb"))])
+
+        files = current_files + subfolder_files
 
         file_count = 0  # 처리된 파일의 수 초기화
         skip_existing_files = self.ask_user_skip_existing_files()  # 사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부 결정
@@ -45,27 +51,29 @@ class ConvertSound:
         input(f"총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
 
     def ask_user_skip_existing_files(self):
+        # 파일 처리 질문
         print("")
         print("""
          ___      _                        _____                       __  __      ___      _ ___  _         
         / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
        / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
       /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
-      """)
+        """)
         print("""
                    ___          ___        ____ __                                __         
                   / _ |__ _____/ (_)__    / _(_) /__   _______  ___ _  _____ ____/ /____ ____
                  / __ / // / _  / / _ \  / _/ / / -_) / __/ _ \/ _ \ |/ / -_) __/ __/ -_) __/
                 /_/ |_\_,_/\_,_/_/\___/ /_//_/_/\__/  \__/\___/_//_/___/\__/_/  \__/\__/_/
         """)
+
+        print("\n\n [ 안내 ] 이미 변환된 파일이 있을 경우 처음부터 작업하시겠습니까?")
+        print("          ( Y = 기존 파일 덮어쓰기 / N = 기존 파일 작업 생략 )")
+        print("          ( * 대소문자 구분 없음.)")
+        print()
+        print(" [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
+        print("          ( 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
         
-        """사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부를 반환합니다."""
         while True:
-            print("\n\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 처음부터 작업하시겠습니까?")
-            print("          ( Y = 기존 파일 덮어쓰기 / N = 기존 파일 작업 생략 )")
-            print()
-            print(" [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
-            print("          ( 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
             user_input = input(" >>> ").strip().lower()
             if user_input == 'y':
                 print("\n\n")
@@ -74,7 +82,7 @@ class ConvertSound:
                 print("\n\n")
                 return True  # 이미 존재하는 파일을 생략
             else:
-                print("\n\n\n [ 오류 ] 잘못된 입력입니다. Y 또는 N을 입력하십시오.")
+                print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
 
     def get_tracks(self, file_path):
         try:
@@ -140,8 +148,8 @@ class ConvertSound:
             subprocess.run(command, check=True)  # 외부 프로세스 실행
             print(f"\n[ Processing Results ]")
             print(f"파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
-            print(f"원본 파일명: {input_file}")  # 변환된 파일 정보 출력
-            print(f"변경된 파일명: {output_file}")
+            print(f"원본 파일명: \{input_file}")  # 변환된 파일 정보 출력
+            print(f"변경된 파일명: \{output_file}")
             print("\n\n")
             return True  # 파일이 변환되었음을 나타내는 True 반환
         except subprocess.CalledProcessError as e:
