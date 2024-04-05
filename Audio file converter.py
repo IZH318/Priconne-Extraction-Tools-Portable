@@ -48,7 +48,7 @@ class ConvertSound:
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
                         file_count += 1  # 처리된 파일 수 증가
 
-        input(f"총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
+        input(f" 총 {file_count}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
 
     def ask_user_skip_existing_files(self):
         # 파일 처리 질문
