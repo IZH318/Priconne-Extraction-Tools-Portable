@@ -96,19 +96,19 @@ class RenameHashedFile:
             if 'a/bdl' in first_line:
                 new_filename = os.path.join("manifest", "bdl_assetmanifest")
                 self.processed_count_check += 1
-                print(f" 특정 문자열 'a/bdl'이(가) \\{file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+                print(f" 특정 문자열 'a/bdl'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
             elif 'manifest/' in first_line:
                 new_filename = os.path.join("manifest", "manifest_assetmanifest")
                 self.processed_count_check += 1
-                print(f" 특정 문자열 'manifest/'이(가) \\{file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+                print(f" 특정 문자열 'manifest/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
             elif 'm/' in first_line:
                 new_filename = os.path.join("manifest", "movie2manifest")
                 self.processed_count_check += 1
-                print(f" 특정 문자열 'm/'이(가) \\{file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+                print(f" 특정 문자열 'm/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
             elif 'b/' in first_line:
                 new_filename = os.path.join("manifest", "soundmanifest")
                 self.processed_count_check += 1
-                print(f" 특정 문자열 'b/'이(가) \\{file_path[len(os.getcwd()):]}파일 내용에 포함되어 있습니다.")
+                print(f" 특정 문자열 'b/'이(가) {file_path[len(os.getcwd()):]}파일 내용에 포함되어 있습니다.")
 
             try:
                 os.rename(file_path, new_filename)
