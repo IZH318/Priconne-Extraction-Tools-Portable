@@ -6,6 +6,7 @@ import concurrent.futures
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
 
+# 시작 화면 출력
 print("""
          ___      _                        _____                       __  __      ___      _ ___  _         
         / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
@@ -26,19 +27,20 @@ print(" 작업을 진행하시겠습니까? (Y/N, 대소문자 구분 없음.)")
 
 class RenameHashedFile:
     def __init__(self):
-        self.target_folders = ['a', 'b', 'm', 'manifest', 's', 'v']
-        self.hash_list = {}
-        self.processed_count_rename = 0
-        self.processed_count_check = 0
-        self.unprocessed_files = []
-        self.results = []
+        self.target_folders = ['a', 'b', 'm', 'manifest', 's', 'v']  # 대상 폴더들을 지정
+        self.hash_list = {}  # 해시 값과 파일 이름을 매핑할 딕셔너리
+        self.processed_count_rename = 0  # 파일 이름 변경된 개수
+        self.processed_count_check = 0  # 파일 내용 확인된 개수
+        self.unprocessed_files = []  # 처리되지 않은 파일 목록
+        self.results = []  # 처리된 결과
 
     def start_processing(self):
+        # 사용자 입력 받기
         while True:
             user_input = input(" >>> ").strip().lower()
             if user_input == 'y':
                 print("\n\n")
-                self.process_files()
+                self.process_files()  # 파일 처리 시작
                 break
             elif user_input == 'n':
                 input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
@@ -47,16 +49,17 @@ class RenameHashedFile:
                 print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
 
     def process_files(self):
-        files = self.get_all_files_in_folders(self.target_folders)
+        files = self.get_all_files_in_folders(self.target_folders)  # 대상 폴더 내 모든 파일 가져오기
         if not files:
             print(" 대상 폴더에서 파일을 찾을 수 없습니다.")
             return
 
-        manifest_db_path = os.path.join(os.getcwd(), "manifest.db")
+        manifest_db_path = os.path.join(os.getcwd(), "manifest.db")  # manifest.db 파일 경로
         if not os.path.exists(manifest_db_path):
             input("\n\n\n [ 경고 ] manifest.db 파일이 존재하지 않습니다. Enter 키를 입력하여 창을 종료하십시오.")
             return
 
+        # manifest.db에서 해시 값과 파일 이름 가져오기
         with sqlite3.connect(manifest_db_path) as connection:
             cursor = connection.cursor()
             cursor.execute("SELECT * FROM t")
@@ -65,6 +68,7 @@ class RenameHashedFile:
                 filename, hash_value = row
                 self.hash_list[hash_value] = filename
 
+        # 스레드 풀을 사용하여 파일 처리
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.process, file, index): (file, index) for index, file in enumerate(files, 1)}
             for future in concurrent.futures.as_completed(futures):
@@ -80,11 +84,12 @@ class RenameHashedFile:
                         else:
                             self.results.append((file_index, result[1], result[2]))
 
+        # 결과 출력
         for file_index, original_file, new_file_info in sorted(self.results, key=lambda x: x[0]):
             print(new_file_info)
             self.processed_count_rename += 1
 
-
+        # 처리되지 않은 파일 및 manifest.db에서 인식하지 못한 파일 확인
         print("\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 아래 내용을 참고하십시오.")
         print("          (* 아래 파일들은 예외 처리되었습니다.)")
         for file_path in self.unprocessed_files:
@@ -93,6 +98,7 @@ class RenameHashedFile:
 
             print()
             
+            # 파일 내용에 따라 새 파일 이름 결정
             if 'a/bdl' in first_line:
                 new_filename = os.path.join("manifest", "bdl_assetmanifest")
                 self.processed_count_check += 1
@@ -123,6 +129,7 @@ class RenameHashedFile:
         hash_md5 = self.calculate_md5(file_path)
         hash_value = hash_md5.hexdigest()
 
+        # manifest.db에 있는 해시 값과 일치하는 파일이 있는지 확인하여 이름 변경
         if hash_value in self.hash_list:
             new_filename = self.hash_list[hash_value]
             try:
@@ -135,6 +142,7 @@ class RenameHashedFile:
         return False, file_path, None
 
     def calculate_md5(self, file_path):
+        # 파일의 MD5 해시 값 계산
         md5_hash = hashlib.md5()
         with open(file_path, "rb") as file:
             for chunk in iter(lambda: file.read(4096), b""):
@@ -142,6 +150,7 @@ class RenameHashedFile:
         return md5_hash
 
     def get_all_files_in_folders(self, target_folders):
+        # 대상 폴더 내의 모든 파일 가져오기
         all_files = []
         for folder in target_folders:
             folder_path = os.path.join(os.getcwd(), folder)
