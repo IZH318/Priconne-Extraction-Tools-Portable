@@ -9,6 +9,7 @@ from PIL import Image
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
 
+# UnityPy의 기본 Unity 버전 설정
 UnityPy.config.FALLBACK_UNITY_VERSION = "2021.3.20f1"
 
 # 시작 화면 출력
@@ -17,7 +18,7 @@ print("""
           / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
          / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
         /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
-        """)
+      """)
 print("""
                              _ __       ____    __  _____ __      _____                      __         
                   __ _____  (_) /___ __|_  /___/ / / __(_) /__   / ___/__  ___ _  _____ ____/ /____ ____
@@ -25,8 +26,8 @@ print("""
                  \_,_/_//_/_/\__/\_, /____/\_,_/ /_/ /_/_/\__/  \___/\___/_//_/___/\__/_/  \__/\__/_/
       """)
 
+# 명령 ID를 나타내는 열거형 정의
 class CommandId(Enum):
-    # Enum definitions...
     NONE = -1
     TITLE = 0
     OUTLINE = 1
@@ -141,65 +142,67 @@ class CommandId(Enum):
     MAX = 110
     UNKNOWN = 112  # todo: find the actual name
     
+# 현재 디렉토리의 모든 파일을 해체하여 추출하는 함수
 def unpack_all_assets_in_current_directory(destination_folder: str):
-    # Get the current directory
+    # 현재 디렉토리 가져오기
     current_directory = os.getcwd()
 
-    # Iterate over all files in the current directory
+    # 현재 디렉토리의 모든 파일에 대해 반복
     for file_name in os.listdir(current_directory):
-        # Check if the file is a .unity3d file
+        # 파일이 .unity3d 파일인지 확인
         if file_name.endswith(".unity3d"):
-            # Generate file path
+            # 파일 경로 생성
             file_path = os.path.join(current_directory, file_name)
 
             print(f"\n\n\n [ Source Info ]")
             print(f" 원본 파일 경로: \{file_name} \n")
             print(f" [ Processing Results ]")
 
-            # Load the file via UnityPy.load
+            # UnityPy.load를 사용하여 파일 로드
             env = UnityPy.load(file_path)
 
-            # Create a directory using the unity3d file name
+            # unity3d 파일 이름을 사용하여 디렉토리 생성
             folder_name = os.path.splitext(file_name)[0]
             folder_path = os.path.join(destination_folder, folder_name)
             os.makedirs(folder_path, exist_ok=True)
 
-            # Iterate over objects in the container
+            # 컨테이너 내 객체 반복
             for path, obj in env.container.items():
                 if obj.type.name in ["Texture2D", "Sprite"]:
                     data = obj.read()
-                    # Create destination path
+                    # 대상 경로 생성
                     dest = os.path.join(folder_path, path)
-                    # Make sure that the directory of that path exists
+                    # 해당 경로의 디렉토리가 존재하는지 확인
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    # Correct extension
+                    # 올바른 확장자
                     dest, _ = os.path.splitext(dest)
                     dest = dest + ".png"
-                    # Save the image
+                    # 이미지 저장
                     data.image.save(dest)
                     global total_processed
                     total_processed += 1
                     print(f" 추출된 파일 경로: \{dest}")
 
+            # TextAsset 유형 처리
             for obj in env.objects:
                 if obj.type.name == "TextAsset":
-                    # Export asset
+                    # 자산 내보내기
                     data = obj.read()
-                    # Create destination path
+                    # 대상 경로 생성
                     dest = os.path.join(folder_path, data.name)
-                    # Check if the TextAsset is a storydata file
+                    # TextAsset이 storydata 파일인지 확인
                     if "storydata" in data.name:
-                        # Pass the destination path for the JSON file
+                        # JSON 파일에 대한 대상 경로 전달
                         dest_json = os.path.join(folder_path, data.name + ".json")
                         deserialize_story(data.script, dest_json)
                     else:
-                        # Write binary data to file
+                        # 바이너리 데이터를 파일에 쓰기
                         with open(dest, "wb") as f:
                             f.write(bytes(data.script))
                             total_processed += 1
                             print(f" 추출된 파일 경로: \{dest}")
 
-            # Add other resource types handling here...
+            # 다른 리소스 유형 처리...
             for obj in env.objects:
                 if obj.type.name == "AudioClip":
                     clip = obj.read()
@@ -229,13 +232,13 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                     mesh = obj.read()
                     dest = os.path.join(folder_path, f"{mesh.name}.obj")
                     with open(dest, "wt", newline="") as f:
-                        f.write(mesh.export())
+                        f.write(str(mesh.export()))
                         total_processed += 1
                         print(f" 추출된 파일 경로: \{dest}")
 
             for obj in env.objects:
                 if obj.type.name == "Texture2DArray":
-                    # Export texture
+                    # 텍스처 내보내기
                     data = obj.read()
                     for i, image in enumerate(data.images):
                         dest = os.path.join(folder_path, f"{data.name}_{i}.png")
@@ -243,6 +246,7 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                         total_processed += 1
                         print(f" 추출된 파일 경로: \{dest}")
 
+# 사용자에게 작업을 프롬프트하는 함수
 def prompt_user():
     print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 덮어쓰기 처리하여 새로 작업 합니다.")
     print()
@@ -259,6 +263,7 @@ def prompt_user():
         else:
             print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
 
+# 스크립트 데이터 역직렬화
 def deserialize_command(data) -> tuple[CommandId, list[str]]:
     # Function implementation...
     index = data[0]
@@ -277,8 +282,8 @@ def deserialize_command(data) -> tuple[CommandId, list[str]]:
         array.append(str_.decode())
     return (CommandId(index), array)
 
+# 스토리 데이터 원시 바이트열 역직렬화
 def deserialize_story_raw(bytes_: bytes) -> list[tuple[CommandId, list[str]]]:
-    # Function implementation...
     commands = []
     fs = 0
     raw_commands = []
@@ -306,8 +311,8 @@ def deserialize_story_raw(bytes_: bytes) -> list[tuple[CommandId, list[str]]]:
             commands.append(deserialize_command(raw_command))
     return commands
 
+# 스토리 데이터 역직렬화 후 *.json 파일로 저장
 def deserialize_story(bytes_: bytes, dest: str) -> None:
-    # Function implementation...
     global total_processed
     commands = deserialize_story_raw(bytes_)
     story: dict[int, dict] = {}
@@ -339,14 +344,14 @@ def deserialize_story(bytes_: bytes, dest: str) -> None:
                     args = args[0]
                 block[command_id.name.lower()] = args
     
-    # Write the story data to a JSON file
+    # JSON 파일로 스토리 데이터 작성
     with open(dest, "w", encoding="utf-8") as f:
         json.dump(story, f, indent=4, ensure_ascii=False)
         total_processed += 1
         print(f" 추출된 파일 경로: \{dest}")
 
+# 텍스트 정리
 def clean_text(text: str) -> str:
-    # Function implementation...
     replace_pairs = (
         ("\\n", "\n"),
         ("{0}", "{player_name}"),
@@ -356,7 +361,9 @@ def clean_text(text: str) -> str:
         text = text.replace(*pair)
     return text
 
+# 메인 함수
 def main():
+    total_processed = 0
     if prompt_user():
         destination_folder = "_Converted"
         unpack_all_assets_in_current_directory(destination_folder)
