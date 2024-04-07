@@ -153,18 +153,23 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
             file_path = os.path.join(current_directory, file_name)
 
             print(f"\n\n\n [ Source Info ]")
-            print(f" 원본 파일 경로: {file_name} \n")
+            print(f" 원본 파일 경로: \{file_name} \n")
             print(f" [ Processing Results ]")
 
             # Load the file via UnityPy.load
             env = UnityPy.load(file_path)
+
+            # Create a directory using the unity3d file name
+            folder_name = os.path.splitext(file_name)[0]
+            folder_path = os.path.join(destination_folder, folder_name)
+            os.makedirs(folder_path, exist_ok=True)
 
             # Iterate over objects in the container
             for path, obj in env.container.items():
                 if obj.type.name in ["Texture2D", "Sprite"]:
                     data = obj.read()
                     # Create destination path
-                    dest = os.path.join(destination_folder, path)
+                    dest = os.path.join(folder_path, path)
                     # Make sure that the directory of that path exists
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
                     # Correct extension
@@ -174,35 +179,36 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                     data.image.save(dest)
                     global total_processed
                     total_processed += 1
-                    print(f" \추출된 파일 경로: {dest}")
+                    print(f" 추출된 파일 경로: \{dest}")
 
             for obj in env.objects:
                 if obj.type.name == "TextAsset":
                     # Export asset
                     data = obj.read()
                     # Create destination path
-                    dest = os.path.join(destination_folder, data.name)
+                    dest = os.path.join(folder_path, data.name)
                     # Check if the TextAsset is a storydata file
                     if "storydata" in data.name:
                         # Pass the destination path for the JSON file
-                        dest_json = os.path.join(destination_folder, data.name + ".json")
+                        dest_json = os.path.join(folder_path, data.name + ".json")
                         deserialize_story(data.script, dest_json)
                     else:
                         # Write binary data to file
                         with open(dest, "wb") as f:
                             f.write(bytes(data.script))
                             total_processed += 1
-                            print(f" \추출된 파일 경로: {dest}")
+                            print(f" 추출된 파일 경로: \{dest}")
 
+            # Add other resource types handling here...
             for obj in env.objects:
                 if obj.type.name == "AudioClip":
                     clip = obj.read()
                     for name, data in clip.samples.items():
-                        dest = os.path.join(destination_folder, name + ".wav")
+                        dest = os.path.join(folder_path, name + ".wav")
                         with open(dest, "wb") as f:
                             f.write(data)
                             total_processed += 1
-                            print(f" \추출된 파일 경로: {dest}")
+                            print(f" 추출된 파일 경로: \{dest}")
 
             for obj in env.objects:
                 if obj.type.name == "Font":
@@ -212,30 +218,30 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                         if font.m_FontData[:4] == b"OTTO":
                             extension = ".otf"
                         
-                        dest = os.path.join(destination_folder, font.name + extension)
+                        dest = os.path.join(folder_path, font.name + extension)
                         with open(dest, "wb") as f:
                             f.write(font.m_FontData)
                             total_processed += 1
-                            print(f" \추출된 파일 경로: {dest}")
+                            print(f" 추출된 파일 경로: \{dest}")
 
             for obj in env.objects:
                 if obj.type.name == "Mesh":
                     mesh = obj.read()
-                    dest = os.path.join(destination_folder, f"{mesh.name}.obj")
+                    dest = os.path.join(folder_path, f"{mesh.name}.obj")
                     with open(dest, "wt", newline="") as f:
                         f.write(mesh.export())
                         total_processed += 1
-                        print(f" \추출된 파일 경로: {dest}")
+                        print(f" 추출된 파일 경로: \{dest}")
 
             for obj in env.objects:
                 if obj.type.name == "Texture2DArray":
                     # Export texture
                     data = obj.read()
                     for i, image in enumerate(data.images):
-                        dest = os.path.join(destination_folder, f"{data.name}_{i}.png")
+                        dest = os.path.join(folder_path, f"{data.name}_{i}.png")
                         image.save(dest)
                         total_processed += 1
-                        print(f" \추출된 파일 경로: {dest}")
+                        print(f" 추출된 파일 경로: \{dest}")
 
 def prompt_user():
     print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 덮어쓰기 처리하여 새로 작업 합니다.")
@@ -337,7 +343,7 @@ def deserialize_story(bytes_: bytes, dest: str) -> None:
     with open(dest, "w", encoding="utf-8") as f:
         json.dump(story, f, indent=4, ensure_ascii=False)
         total_processed += 1
-        print(f" \추출된 파일 경로: {dest}")
+        print(f" 추출된 파일 경로: \{dest}")
 
 def clean_text(text: str) -> str:
     # Function implementation...
