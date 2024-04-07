@@ -153,7 +153,7 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
             file_path = os.path.join(current_directory, file_name)
 
             print(f"\n\n\n [ Source Info ]")
-            print(f" 원본 파일 경로: \{file_name} \n")
+            print(f" 원본 파일 경로: {file_name} \n")
             print(f" [ Processing Results ]")
 
             # Load the file via UnityPy.load
@@ -174,7 +174,7 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                     data.image.save(dest)
                     global total_processed
                     total_processed += 1
-                    print(f" 추출된 파일 경로: {dest}")
+                    print(f" \추출된 파일 경로: {dest}")
 
             for obj in env.objects:
                 if obj.type.name == "TextAsset":
@@ -191,9 +191,51 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                         # Write binary data to file
                         with open(dest, "wb") as f:
                             f.write(bytes(data.script))
-                            total_processed
                             total_processed += 1
-                            print(f" 추출된 파일 경로: {dest}")
+                            print(f" \추출된 파일 경로: {dest}")
+
+            for obj in env.objects:
+                if obj.type.name == "AudioClip":
+                    clip = obj.read()
+                    for name, data in clip.samples.items():
+                        dest = os.path.join(destination_folder, name + ".wav")
+                        with open(dest, "wb") as f:
+                            f.write(data)
+                            total_processed += 1
+                            print(f" \추출된 파일 경로: {dest}")
+
+            for obj in env.objects:
+                if obj.type.name == "Font":
+                    font = obj.read()
+                    if font.m_FontData:
+                        extension = ".ttf"
+                        if font.m_FontData[:4] == b"OTTO":
+                            extension = ".otf"
+                        
+                        dest = os.path.join(destination_folder, font.name + extension)
+                        with open(dest, "wb") as f:
+                            f.write(font.m_FontData)
+                            total_processed += 1
+                            print(f" \추출된 파일 경로: {dest}")
+
+            for obj in env.objects:
+                if obj.type.name == "Mesh":
+                    mesh = obj.read()
+                    dest = os.path.join(destination_folder, f"{mesh.name}.obj")
+                    with open(dest, "wt", newline="") as f:
+                        f.write(mesh.export())
+                        total_processed += 1
+                        print(f" \추출된 파일 경로: {dest}")
+
+            for obj in env.objects:
+                if obj.type.name == "Texture2DArray":
+                    # Export texture
+                    data = obj.read()
+                    for i, image in enumerate(data.images):
+                        dest = os.path.join(destination_folder, f"{data.name}_{i}.png")
+                        image.save(dest)
+                        total_processed += 1
+                        print(f" \추출된 파일 경로: {dest}")
 
 def prompt_user():
     print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 덮어쓰기 처리하여 새로 작업 합니다.")
@@ -295,7 +337,7 @@ def deserialize_story(bytes_: bytes, dest: str) -> None:
     with open(dest, "w", encoding="utf-8") as f:
         json.dump(story, f, indent=4, ensure_ascii=False)
         total_processed += 1
-        print(f" 추출된 파일 경로: {dest}")
+        print(f" \추출된 파일 경로: {dest}")
 
 def clean_text(text: str) -> str:
     # Function implementation...
