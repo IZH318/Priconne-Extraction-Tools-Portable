@@ -146,73 +146,33 @@ import os
 
 # 현재 디렉토리의 모든 파일을 해체하여 추출하는 함수
 def unpack_all_assets_in_current_directory(destination_folder: str):
-    # 현재 디렉토리 가져오기
     current_directory = os.getcwd()
 
-    # 현재 디렉토리의 모든 파일에 대해 반복
     for file_name in os.listdir(current_directory):
-        # 파일이 .unity3d 파일인지 확인
         if file_name.endswith(".unity3d"):
-            # 파일 경로 생성
             file_path = os.path.join(current_directory, file_name)
 
+            # Source Info 출력
             print(f"\n\n\n [ Source Info ]")
-            print(f" 원본 파일 경로: \{file_name} \n")
+            print(f" 원본 파일 경로: {file_name} \n")
             print(f" [ Processing Results ]")
 
+            # 처리된 파일 개수를 전역 변수로 설정
+            global total_processed
+
             try:
-                # UnityPy.load를 사용하여 파일 로드
+                # UnityPy를 사용하여 *.unity3d 파일 로드
                 env = UnityPy.load(file_path)
 
-                # unity3d 파일 이름을 사용하여 디렉토리 생성
+                # 파일명에서 확장자 제거하여 폴더명으로 사용
                 folder_name = os.path.splitext(file_name)[0]
                 folder_path = os.path.join(destination_folder, folder_name)
                 os.makedirs(folder_path, exist_ok=True)
 
-                # 컨테이너 내 객체 반복
-                for path, obj in env.container.items():
-                    if obj.type.name in ["Texture2D", "Sprite"]:
-                        data = obj.read()
-                        # 대상 경로 생성
-                        dest = os.path.join(folder_path, path)
-                        # 해당 경로의 디렉토리가 존재하는지 확인
-                        os.makedirs(os.path.dirname(dest), exist_ok=True)
-                        # 올바른 확장자
-                        dest, _ = os.path.splitext(dest)
-                        dest = dest + ".png"
-                        # 이미지 저장
-                        data.image.save(dest)
-                        global total_processed
-                        total_processed += 1
-                        print(f" 추출된 파일 경로: \{dest}")
-
-                    elif obj.type.name == "TextAsset":
-                        # 자산 내보내기
-                        data = obj.read()
-                        # 대상 경로 생성
-                        dest = os.path.join(folder_path, data.name)
-                        # TextAsset이 storydata 파일인지 확인
-                        if "storydata" in data.name:
-                            # JSON 파일에 대한 대상 경로 전달
-                            dest_json = os.path.join(folder_path, data.name + ".json")
-                            deserialize_story(data.script, dest_json)
-                        else:
-                            # 바이너리 데이터를 파일에 쓰기
-                            with open(dest, "wb") as f:
-                                f.write(bytes(data.script))
-                                total_processed += 1
-                                print(f" 추출된 파일 경로: \{dest}")
-
-                    elif obj.type.name == "AudioClip":
-                        clip = obj.read()
-                        for name, data in clip.samples.items():
-                            dest = os.path.join(folder_path, name + ".wav")
-                            with open(dest, "wb") as f:
-                                f.write(data)
-                                total_processed += 1
-                                print(f" 추출된 파일 경로: \{dest}")
-
-                    elif obj.type.name == "Font":
+                # *.unity3d 파일 내 객체들을 반복하여 처리
+                for obj in env.objects:
+                    # Font 객체인 경우 폰트 데이터를 추출하여 저장
+                    if obj.type.name == "Font":
                         font = obj.read()
                         if font.m_FontData:
                             extension = ".ttf"
@@ -223,8 +183,56 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                             with open(dest, "wb") as f:
                                 f.write(font.m_FontData)
                                 total_processed += 1
+                                print(f" 추출된 파일 경로: {dest}")
+
+            except Exception as e:
+                print(f" 오류 발생: {e}. 이 오류를 무시하고 다음 작업을 진행합니다.")
+                continue
+
+            try:
+                # UnityPy를 사용하여 *.unity3d 파일 다시 로드
+                env = UnityPy.load(file_path)
+
+                # 폴더 생성 (이미 존재할 경우 무시)
+                os.makedirs(folder_path, exist_ok=True)
+
+                # *.unity3d 파일 내 객체들을 반복하여 처리
+                for path, obj in env.container.items():
+                    # Texture2D 또는 Sprite 객체인 경우 이미지를 추출하여 저장
+                    if obj.type.name in ["Texture2D", "Sprite"]:
+                        data = obj.read()
+                        dest = os.path.join(folder_path, path)
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        dest, _ = os.path.splitext(dest)
+                        dest = dest + ".png"
+                        data.image.save(dest)
+                        total_processed += 1
+                        print(f" 추출된 파일 경로: \{dest}")
+
+                    # TextAsset 객체인 경우 텍스트 데이터를 추출하여 저장
+                    elif obj.type.name == "TextAsset":
+                        data = obj.read()
+                        dest = os.path.join(folder_path, data.name)
+                        if "storydata" in data.name:
+                            dest_json = os.path.join(folder_path, data.name + ".json")
+                            deserialize_story(data.script, dest_json)
+                        else:
+                            with open(dest, "wb") as f:
+                                f.write(bytes(data.script))
+                                total_processed += 1
                                 print(f" 추출된 파일 경로: \{dest}")
 
+                    # AudioClip 객체인 경우 오디오 클립을 추출하여 저장
+                    elif obj.type.name == "AudioClip":
+                        clip = obj.read()
+                        for name, data in clip.samples.items():
+                            dest = os.path.join(folder_path, name + ".wav")
+                            with open(dest, "wb") as f:
+                                f.write(data)
+                                total_processed += 1
+                                print(f" 추출된 파일 경로: \{dest}")
+
+                    # Mesh 객체인 경우 메시 데이터를 추출하여 저장
                     elif obj.type.name == "Mesh":
                         mesh = obj.read()
                         dest = os.path.join(folder_path, f"{mesh.name}.obj")
@@ -233,8 +241,8 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                             total_processed += 1
                             print(f" 추출된 파일 경로: \{dest}")
 
+                    # Texture2DArray 객체인 경우 텍스처 배열 이미지를 추출하여 저장
                     elif obj.type.name == "Texture2DArray":
-                        # 텍스처 내보내기
                         data = obj.read()
                         for i, image in enumerate(data.images):
                             dest = os.path.join(folder_path, f"{data.name}_{i}.png")
