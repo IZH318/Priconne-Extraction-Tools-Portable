@@ -154,7 +154,7 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
 
             # Source Info 출력
             print(f"\n\n\n [ Source Info ]")
-            print(f" 원본 파일 경로: {file_name} \n")
+            print(f" 원본 파일 경로: \{file_name} \n")
             print(f" [ Processing Results ]")
 
             # 처리된 파일 개수를 전역 변수로 설정
@@ -186,7 +186,6 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                                 print(f" 추출된 파일 경로: {dest}")
 
             except Exception as e:
-                print(f" 오류 발생: {e}. 이 오류를 무시하고 다음 작업을 진행합니다.")
                 continue
 
             try:
@@ -251,7 +250,8 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
                             print(f" 추출된 파일 경로: \{dest}")
 
             except Exception as e:
-                print(f" 오류 발생: {e}. 이 오류를 무시하고 다음 작업을 진행합니다.")
+                print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다")
+                print(f" 오류 정보: {e}.")
                 continue
 
 
