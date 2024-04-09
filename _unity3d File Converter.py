@@ -142,6 +142,8 @@ class CommandId(Enum):
     MAX = 110
     UNKNOWN = 112  # todo: find the actual name
     
+import os
+
 # 현재 디렉토리의 모든 파일을 해체하여 추출하는 함수
 def unpack_all_assets_in_current_directory(destination_folder: str):
     # 현재 디렉토리 가져오기
@@ -158,93 +160,92 @@ def unpack_all_assets_in_current_directory(destination_folder: str):
             print(f" 원본 파일 경로: \{file_name} \n")
             print(f" [ Processing Results ]")
 
-            # UnityPy.load를 사용하여 파일 로드
-            env = UnityPy.load(file_path)
+            try:
+                # UnityPy.load를 사용하여 파일 로드
+                env = UnityPy.load(file_path)
 
-            # unity3d 파일 이름을 사용하여 디렉토리 생성
-            folder_name = os.path.splitext(file_name)[0]
-            folder_path = os.path.join(destination_folder, folder_name)
-            os.makedirs(folder_path, exist_ok=True)
+                # unity3d 파일 이름을 사용하여 디렉토리 생성
+                folder_name = os.path.splitext(file_name)[0]
+                folder_path = os.path.join(destination_folder, folder_name)
+                os.makedirs(folder_path, exist_ok=True)
 
-            # 컨테이너 내 객체 반복
-            for path, obj in env.container.items():
-                if obj.type.name in ["Texture2D", "Sprite"]:
-                    data = obj.read()
-                    # 대상 경로 생성
-                    dest = os.path.join(folder_path, path)
-                    # 해당 경로의 디렉토리가 존재하는지 확인
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    # 올바른 확장자
-                    dest, _ = os.path.splitext(dest)
-                    dest = dest + ".png"
-                    # 이미지 저장
-                    data.image.save(dest)
-                    global total_processed
-                    total_processed += 1
-                    print(f" 추출된 파일 경로: \{dest}")
-
-            # TextAsset 유형 처리
-            for obj in env.objects:
-                if obj.type.name == "TextAsset":
-                    # 자산 내보내기
-                    data = obj.read()
-                    # 대상 경로 생성
-                    dest = os.path.join(folder_path, data.name)
-                    # TextAsset이 storydata 파일인지 확인
-                    if "storydata" in data.name:
-                        # JSON 파일에 대한 대상 경로 전달
-                        dest_json = os.path.join(folder_path, data.name + ".json")
-                        deserialize_story(data.script, dest_json)
-                    else:
-                        # 바이너리 데이터를 파일에 쓰기
-                        with open(dest, "wb") as f:
-                            f.write(bytes(data.script))
-                            total_processed += 1
-                            print(f" 추출된 파일 경로: \{dest}")
-
-            # 다른 리소스 유형 처리...
-            for obj in env.objects:
-                if obj.type.name == "AudioClip":
-                    clip = obj.read()
-                    for name, data in clip.samples.items():
-                        dest = os.path.join(folder_path, name + ".wav")
-                        with open(dest, "wb") as f:
-                            f.write(data)
-                            total_processed += 1
-                            print(f" 추출된 파일 경로: \{dest}")
-
-            for obj in env.objects:
-                if obj.type.name == "Font":
-                    font = obj.read()
-                    if font.m_FontData:
-                        extension = ".ttf"
-                        if font.m_FontData[:4] == b"OTTO":
-                            extension = ".otf"
-                        
-                        dest = os.path.join(folder_path, font.name + extension)
-                        with open(dest, "wb") as f:
-                            f.write(font.m_FontData)
-                            total_processed += 1
-                            print(f" 추출된 파일 경로: \{dest}")
-
-            for obj in env.objects:
-                if obj.type.name == "Mesh":
-                    mesh = obj.read()
-                    dest = os.path.join(folder_path, f"{mesh.name}.obj")
-                    with open(dest, "wt", newline="") as f:
-                        f.write(str(mesh.export()))
+                # 컨테이너 내 객체 반복
+                for path, obj in env.container.items():
+                    if obj.type.name in ["Texture2D", "Sprite"]:
+                        data = obj.read()
+                        # 대상 경로 생성
+                        dest = os.path.join(folder_path, path)
+                        # 해당 경로의 디렉토리가 존재하는지 확인
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        # 올바른 확장자
+                        dest, _ = os.path.splitext(dest)
+                        dest = dest + ".png"
+                        # 이미지 저장
+                        data.image.save(dest)
+                        global total_processed
                         total_processed += 1
                         print(f" 추출된 파일 경로: \{dest}")
 
-            for obj in env.objects:
-                if obj.type.name == "Texture2DArray":
-                    # 텍스처 내보내기
-                    data = obj.read()
-                    for i, image in enumerate(data.images):
-                        dest = os.path.join(folder_path, f"{data.name}_{i}.png")
-                        image.save(dest)
-                        total_processed += 1
-                        print(f" 추출된 파일 경로: \{dest}")
+                    elif obj.type.name == "TextAsset":
+                        # 자산 내보내기
+                        data = obj.read()
+                        # 대상 경로 생성
+                        dest = os.path.join(folder_path, data.name)
+                        # TextAsset이 storydata 파일인지 확인
+                        if "storydata" in data.name:
+                            # JSON 파일에 대한 대상 경로 전달
+                            dest_json = os.path.join(folder_path, data.name + ".json")
+                            deserialize_story(data.script, dest_json)
+                        else:
+                            # 바이너리 데이터를 파일에 쓰기
+                            with open(dest, "wb") as f:
+                                f.write(bytes(data.script))
+                                total_processed += 1
+                                print(f" 추출된 파일 경로: \{dest}")
+
+                    elif obj.type.name == "AudioClip":
+                        clip = obj.read()
+                        for name, data in clip.samples.items():
+                            dest = os.path.join(folder_path, name + ".wav")
+                            with open(dest, "wb") as f:
+                                f.write(data)
+                                total_processed += 1
+                                print(f" 추출된 파일 경로: \{dest}")
+
+                    elif obj.type.name == "Font":
+                        font = obj.read()
+                        if font.m_FontData:
+                            extension = ".ttf"
+                            if font.m_FontData[:4] == b"OTTO":
+                                extension = ".otf"
+                            
+                            dest = os.path.join(folder_path, font.name + extension)
+                            with open(dest, "wb") as f:
+                                f.write(font.m_FontData)
+                                total_processed += 1
+                                print(f" 추출된 파일 경로: \{dest}")
+
+                    elif obj.type.name == "Mesh":
+                        mesh = obj.read()
+                        dest = os.path.join(folder_path, f"{mesh.name}.obj")
+                        with open(dest, "wt", newline="") as f:
+                            f.write(str(mesh.export()))
+                            total_processed += 1
+                            print(f" 추출된 파일 경로: \{dest}")
+
+                    elif obj.type.name == "Texture2DArray":
+                        # 텍스처 내보내기
+                        data = obj.read()
+                        for i, image in enumerate(data.images):
+                            dest = os.path.join(folder_path, f"{data.name}_{i}.png")
+                            image.save(dest)
+                            total_processed += 1
+                            print(f" 추출된 파일 경로: \{dest}")
+
+            except Exception as e:
+                print(f" 오류 발생: {e}. 이 오류를 무시하고 다음 작업을 진행합니다.")
+                continue
+
 
 # 사용자에게 작업을 프롬프트하는 함수
 def prompt_user():
@@ -363,7 +364,6 @@ def clean_text(text: str) -> str:
 
 # 메인 함수
 def main():
-    total_processed = 0
     if prompt_user():
         destination_folder = "_Converted"
         unpack_all_assets_in_current_directory(destination_folder)
