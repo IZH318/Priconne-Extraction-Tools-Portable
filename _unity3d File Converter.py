@@ -12,6 +12,21 @@ total_processed = 0
 # UnityPy의 기본 Unity 버전 설정
 UnityPy.config.FALLBACK_UNITY_VERSION = "2021.3.20f1"
 
+# 시작 화면 출력
+print("""
+           ___      _                        _____                       __  __      ___      _ ___  _         
+          / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
+         / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
+        /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
+      """)
+print("""
+                             _ __       ____    __  _____ __      _____                      __         
+                  __ _____  (_) /___ __|_  /___/ / / __(_) /__   / ___/__  ___ _  _____ ____/ /____ ____
+                 / // / _ \/ / __/ // //_ </ _  / / _// / / -_) / /__/ _ \/ _ \ |/ / -_) __/ __/ -_) __/
+                 \_,_/_//_/_/\__/\_, /____/\_,_/ /_/ /_/_/\__/  \___/\___/_//_/___/\__/_/  \__/\__/_/
+      """)
+
+
 # 명령 ID를 나타내는 열거형 정의
 class CommandId(Enum):
     NONE = -1
@@ -129,31 +144,33 @@ class CommandId(Enum):
     UNKNOWN = 112  # todo: find the actual name
 
 # 현재 디렉토리와 a, ab, bb 폴더에서 Unity3D 파일을 찾는 함수
+import os
+
 def find_unity3d_files(root_directories: list[str]):
     unity3d_files = []
     for directory in root_directories:
         if os.path.exists(directory):
-            if os.path.isfile(directory) and directory.endswith(".unity3d"):
+            if os.path.isdir(directory):
+                if os.path.basename(directory) in ["a", "b"]:
+                    for root, _, filenames in os.walk(directory):
+                        for filename in filenames:
+                            if filename.endswith(".unity3d"):
+                                unity3d_files.append(os.path.join(root, filename))
+                elif directory == os.getcwd():
+                    for filename in os.listdir(directory):
+                        if filename.endswith(".unity3d"):
+                            unity3d_files.append(os.path.join(directory, filename))
+            elif os.path.isfile(directory) and directory.endswith(".unity3d"):
                 unity3d_files.append(directory)
-            elif os.path.isdir(directory):
-                for dirpath, _, filenames in os.walk(directory):
-                    if dirpath == directory:  # 현재 디렉터리에서만 검색
-                        for filename in filenames:
-                            if filename.endswith(".unity3d"):
-                                unity3d_files.append(os.path.join(dirpath, filename))
-                    elif os.path.basename(directory) in ["a", "ab", "bb"]:  # a, ab, bb 폴더에서는 모든 하위 디렉터리 검색
-                        for filename in filenames:
-                            if filename.endswith(".unity3d"):
-                                unity3d_files.append(os.path.join(dirpath, filename))
-                        break  # a, ab, bb 폴더는 하위 디렉터리 검색 후 탐색 중지
     return unity3d_files
+
 
 # Unity3D 파일을 처리하는 함수
 def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
     for file_path in unity3d_files:
         # Source Info 출력
             print(f"\n\n\n [ Source Info ]")
-            print(f" 원본 파일 경로: \{file_path} \n")  # 변수명 수정: file_name -> file_path
+            print(f" 원본 파일 경로: \{file_path} \n")
             print(f" [ Processing Results ]")
 
             # 처리된 파일 개수를 전역 변수로 설정
@@ -164,7 +181,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                 env = UnityPy.load(file_path)
 
                 # 파일명에서 확장자 제거하여 폴더명으로 사용
-                folder_name = os.path.splitext(os.path.basename(file_path))[0]  # 수정된 부분
+                folder_name = os.path.splitext(os.path.basename(file_path))[0]
                 folder_path = os.path.join(destination_folder, folder_name)
                 os.makedirs(folder_path, exist_ok=True)
 
@@ -249,7 +266,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                             print(f" 추출된 파일 경로: \{dest}")
 
             except Exception as e:
-                print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다")
+                print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다.")
                 print(f" 오류 정보: {e}.")
                 continue
 
@@ -375,7 +392,7 @@ def clean_text(text: str) -> str:
 # 메인 함수
 def main():
     if prompt_user():
-        root_directories = ["a", "b", os.getcwd()]  # 현재 디렉터리와 a, ab, bb 폴더에서 Unity3D 파일 검색
+        root_directories = ["a", "b", os.getcwd()]  # 현재 디렉터리와 a, b 폴더에서 Unity3D 파일 검색
         unity3d_files = find_unity3d_files(root_directories)
         destination_folder = "_Converted"
         process_unity3d_files(unity3d_files, destination_folder)
