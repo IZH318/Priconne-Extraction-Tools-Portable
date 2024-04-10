@@ -1,10 +1,11 @@
-import os
-import UnityPy
-import json
-import base64
-from enum import Enum
-from struct import unpack
-from PIL import Image
+# 필요한 라이브러리 임포트
+import os  # 파일 및 디렉토리 관리
+import UnityPy  # Unity3D 파일 처리
+import json  # JSON 파일 작성
+import base64  # 데이터 디코딩
+from enum import Enum  # 열거형 사용
+from struct import unpack  # 데이터 언패킹
+from PIL import Image  # 이미지 처리
 
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
@@ -161,25 +162,26 @@ def find_unity3d_files(root_directories: list[str]):
         if os.path.exists(directory):
             # 디렉토리인지 확인
             if os.path.isdir(directory):
-                # 디렉토리 명이 "a" 또는 "b"인 경우
-                if os.path.basename(directory) in ["a", "b"]:
+                # 디렉토리 명이 "a"인 경우
+                if os.path.basename(directory) in ["a"]:
                     # 재귀적으로 해당 디렉토리 내의 Unity3D 파일을 찾아 추가
                     for root, _, filenames in os.walk(directory):
                         for filename in filenames:
                             if filename.endswith(".unity3d"):
-                                unity3d_files.append(os.path.join(root, filename))
+                                unity3d_files.append(os.path.relpath(os.path.join(root, filename), start=os.getcwd()))
                 # 현재 작업 디렉토리인 경우
                 elif directory == os.getcwd():
                     # 현재 디렉토리 내의 Unity3D 파일을 찾아 추가
                     for filename in os.listdir(directory):
                         if filename.endswith(".unity3d"):
-                            unity3d_files.append(os.path.join(directory, filename))
+                            unity3d_files.append(os.path.relpath(os.path.join(directory, filename), start=os.getcwd()))
             # 파일인 경우
             elif os.path.isfile(directory) and directory.endswith(".unity3d"):
                 # Unity3D 파일을 리스트에 추가
-                unity3d_files.append(directory)
+                unity3d_files.append(os.path.relpath(directory, start=os.getcwd()))
     
     return unity3d_files
+
 
 
 
@@ -197,7 +199,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
     for file_path in unity3d_files:
         # Source Info 출력
         print(f"\n\n\n [ Source Info ]")
-        print(f" 원본 파일 경로: {file_path} \n")
+        print(f" 원본 파일 경로: \{file_path} \n")
         print(f" [ Processing Results ]")
 
         # 처리된 파일 개수를 전역 변수로 설정
@@ -249,7 +251,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                     dest = dest + ".png"
                     data.image.save(dest)
                     total_processed += 1
-                    print(f" 추출된 파일 경로: {dest}")
+                    print(f" 추출된 파일 경로: \{dest}")
 
                 # TextAsset 객체인 경우 텍스트 데이터를 추출하여 저장
                 elif obj.type.name == "TextAsset":
@@ -262,7 +264,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         with open(dest, "wb") as f:
                             f.write(bytes(data.script))
                             total_processed += 1
-                            print(f" 추출된 파일 경로: {dest}")
+                            print(f" 추출된 파일 경로: \{dest}")
 
                 # AudioClip 객체인 경우 오디오 클립을 추출하여 저장
                 elif obj.type.name == "AudioClip":
@@ -272,7 +274,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         with open(dest, "wb") as f:
                             f.write(data)
                             total_processed += 1
-                            print(f" 추출된 파일 경로: {dest}")
+                            print(f" 추출된 파일 경로: \{dest}")
 
                 # Mesh 객체인 경우 메시 데이터를 추출하여 저장
                 elif obj.type.name == "Mesh":
@@ -281,7 +283,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                     with open(dest, "wt", newline="") as f:
                         f.write(str(mesh.export()))
                         total_processed += 1
-                        print(f" 추출된 파일 경로: {dest}")
+                        print(f" 추출된 파일 경로: \{dest}")
 
                 # Texture2DArray 객체인 경우 텍스처 배열 이미지를 추출하여 저장
                 elif obj.type.name == "Texture2DArray":
@@ -290,7 +292,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         dest = os.path.join(folder_path, f"{data.name}_{i}.png")
                         image.save(dest)
                         total_processed += 1
-                        print(f" 추출된 파일 경로: {dest}")
+                        print(f" 추출된 파일 경로: \{dest}")
 
         except Exception as e:
             print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다.")
