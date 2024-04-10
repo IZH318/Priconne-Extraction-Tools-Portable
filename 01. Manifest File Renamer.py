@@ -1,29 +1,40 @@
-import os
+# 필요한 라이브러리 임포트
+import os # 파일 및 디렉토리 관리
 import sqlite3
 import hashlib
 import concurrent.futures
 
+
+
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
 
-# 시작 화면 출력
+
+
+# 프로그램 시작 시 화면에 출력되는 ASCII Art
 print("""
            ___      _                        _____                       __  __      ___      _ ___  _         
           / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
          / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
         /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
-        """)
+    """)
 print("""
                    __  ___          _ ___        __    _____ __      ___                             
                   /  |/  /__ ____  (_) _/__ ___ / /_  / __(_) /__   / _ \___ ___  ___ ___ _  ___ ____
                  / /|_/ / _ `/ _ \/ / _/ -_|_-</ __/ / _// / / -_) / , _/ -_) _ \/ _ `/  ' \/ -_) __/
                 /_/  /_/\_,_/_//_/_/_/ \__/___/\__/ /_/ /_/_/\__/ /_/|_|\__/_//_/\_,_/_/_/_/\__/_/
-                """)
+    """)
 
-print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
-print("          ( * 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
 
-print(" 작업을 진행하시겠습니까? ([Y]/[N], 대소문자 구분 없음.)")
+
+# 작업 진행여부 확인 안내 문구
+print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화)하면 진행이 멈출 수 있습니다.\n")
+print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
+print("                           02. 콘솔 내부 클릭 후 Enter키 누르기\n")
+
+print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
+
+
 
 class RenameHashedFile:
     def __init__(self):
@@ -34,6 +45,8 @@ class RenameHashedFile:
         self.unprocessed_files = []  # 처리되지 않은 파일 목록
         self.results = []  # 처리된 결과
 
+
+
     def start_processing(self):
         # 사용자 입력 받기
         while True:
@@ -43,10 +56,12 @@ class RenameHashedFile:
                 self.process_files()  # 파일 처리 시작
                 break
             elif user_input == 'n':
-                input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
+                input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
                 sys.exit()
             else:
                 print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
+
+
 
     def process_files(self):
         files = self.get_all_files_in_folders(self.target_folders)  # 대상 폴더 내 모든 파일 가져오기
@@ -56,8 +71,10 @@ class RenameHashedFile:
 
         manifest_db_path = os.path.join(os.getcwd(), "manifest.db")  # manifest.db 파일 경로
         if not os.path.exists(manifest_db_path):
-            input("\n\n\n [ 경고 ] manifest.db 파일이 존재하지 않습니다. Enter 키를 입력하여 창을 종료하십시오.")
+            input("\n\n\n [ 경고 ] manifest.db 파일이 존재하지 않습니다. Enter 키를 눌러 창을 종료하십시오.")
             return
+
+
 
         # manifest.db에서 해시 값과 파일 이름 가져오기
         with sqlite3.connect(manifest_db_path) as connection:
@@ -67,6 +84,8 @@ class RenameHashedFile:
             for row in rows:
                 filename, hash_value = row
                 self.hash_list[hash_value] = filename
+
+
 
         # 스레드 풀을 사용하여 파일 처리
         with concurrent.futures.ThreadPoolExecutor() as executor:
@@ -84,10 +103,14 @@ class RenameHashedFile:
                         else:
                             self.results.append((file_index, result[1], result[2]))
 
+
+
         # 결과 출력
         for file_index, original_file, new_file_info in sorted(self.results, key=lambda x: x[0]):
             print(new_file_info)
             self.processed_count_rename += 1
+
+
 
         # 처리되지 않은 파일 및 manifest.db에서 인식하지 못한 파일 확인
         print("\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 아래 내용을 참고하십시오.")
@@ -123,7 +146,9 @@ class RenameHashedFile:
                 print(f"{file_path}을(를) 찾을 수 없습니다.")
 
         total_processed = self.processed_count_rename + self.processed_count_check
-        input(f"\n\n\n 총 {self.processed_count_rename + self.processed_count_check}개의 파일이 처리되었습니다. Enter 키를 입력하여 창을 종료하십시오.")
+        input(f"\n\n\n 총 {self.processed_count_rename + self.processed_count_check}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+
+
 
     def process(self, file_path, file_index):
         hash_md5 = self.calculate_md5(file_path)
@@ -141,6 +166,8 @@ class RenameHashedFile:
                 return False, file_path, None
         return False, file_path, None
 
+
+
     def calculate_md5(self, file_path):
         # 파일의 MD5 해시 값 계산
         md5_hash = hashlib.md5()
@@ -148,6 +175,8 @@ class RenameHashedFile:
             for chunk in iter(lambda: file.read(4096), b""):
                 md5_hash.update(chunk)
         return md5_hash
+
+
 
     def get_all_files_in_folders(self, target_folders):
         # 대상 폴더 내의 모든 파일 가져오기
@@ -159,6 +188,7 @@ class RenameHashedFile:
                     for file_name in files:
                         all_files.append(os.path.join(root, file_name))
         return all_files
+
 
 
 rename_hashed_file = RenameHashedFile()

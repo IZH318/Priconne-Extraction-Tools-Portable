@@ -1,11 +1,18 @@
+# 필요한 라이브러리 임포트
 import os
 from pathlib import Path
+
+
 
 # UsmToolkit.exe 경로 지정
 usmtoolkit_path = Path("usmtoolkit/UsmToolkit.exe")
 
+
+
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
+
+
 
 # 프로그램 시작 시 화면에 출력되는 ASCII Art
 print("""
@@ -13,21 +20,26 @@ print("""
           / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
          / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
         /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
-        """)
+    """)
 print("""
                       _   ___    __           _____ __      _____                      __         
                      | | / (_)__/ /__ ___    / __(_) /__   / ___/__  ___ _  _____ ____/ /____ ____
                      | |/ / / _  / -_) _ \  / _// / / -_) / /__/ _ \/ _ \ |/ / -_) __/ __/ -_) __/
                      |___/_/\_,_/\__/\___/ /_/ /_/_/\__/  \___/\___/_//_/___/\__/_/  \__/\__/_/
-                  """)
+    """)
+
+
 
 # 작업 진행여부 확인 안내 문구
 print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 생략 후 진행합니다.")
 print()
-print(" [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
-print("          ( 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
+print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화)하면 진행이 멈출 수 있습니다.\n")
+print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
+print("                           02. 콘솔 내부 클릭 후 Enter키 누르기\n")
 
-print(" 작업을 진행하시겠습니까? ([Y]/[N], 대소문자 구분 없음.)")
+print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
+
+
 
 # 디렉터리에서 *.usm 파일을 찾아 리스트로 반환하는 함수
 def find_usm_files(directory):
@@ -37,6 +49,8 @@ def find_usm_files(directory):
         if os.path.isfile(file_path) and file.endswith(".usm"):
             usm_files.append(Path(file_path))
     return usm_files
+
+
 
 # 디렉터리 내 하위 폴더까지 검색하여 *.usm 파일을 찾아 리스트로 반환하는 함수
 def search_usm_files_in_folder(folder):
@@ -102,7 +116,7 @@ if rewrite_response == 'y':
             print(f"이미 변환 된 파일: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
 
     # 작업 모두 끝나면 메시지 출력
-    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
+    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
 else:
     # 프로그램 종료
-    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 입력하여 종료하십시오.")
+    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
