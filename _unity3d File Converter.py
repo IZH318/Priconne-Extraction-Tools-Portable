@@ -7,11 +7,17 @@ from enum import Enum  # 열거형 사용
 from struct import unpack  # 데이터 언패킹
 from PIL import Image  # 이미지 처리
 
+
+
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
 
+
+
 # UnityPy의 기본 Unity 버전 설정
 UnityPy.config.FALLBACK_UNITY_VERSION = "2021.3.20f1"
+
+
 
 # 시작 화면 출력
 print("""
@@ -27,6 +33,7 @@ print("""
                 \_,_/_//_/_/\__/\_, /____/\_,_/ /_/ /_/_/\__/  \___/\___/_//_/___/\__/_/  \__/\__/_/   
                                /___/                                                                   
       """)
+
 
 
 # 명령 ID를 나타내는 열거형 정의
@@ -145,6 +152,8 @@ class CommandId(Enum):
     MAX = 110
     UNKNOWN = 112  # todo: find the actual name
 
+
+
 # 현재 디렉토리와 주어진 폴더 목록에서 Unity3D 파일을 찾는 함수
 def find_unity3d_files(root_directories: list[str]):
     """
@@ -185,17 +194,8 @@ def find_unity3d_files(root_directories: list[str]):
 
 
 
-
 # Unity3D 파일을 처리하는 함수
 def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
-    """
-    Args:
-        unity3d_files (list[str]): 처리할 Unity3D 파일의 경로 목록
-        destination_folder (str): 추출된 리소스를 저장할 폴더 경로
-
-    Returns:
-        None
-    """
     # 각 Unity3D 파일에 대해 반복
     for file_path in unity3d_files:
         # Source Info 출력
@@ -213,6 +213,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
             # 파일명에서 확장자 제거하여 폴더명으로 사용
             folder_name = os.path.splitext(os.path.basename(file_path))[0]
             folder_path = os.path.join(destination_folder, folder_name)
+            # 폴더 생성 (이미 존재할 경우 무시)
             os.makedirs(folder_path, exist_ok=True)
 
             # *.unity3d 파일 내 객체들을 반복하여 처리
@@ -229,13 +230,13 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         with open(dest, "wb") as f:
                             f.write(font.m_FontData)
                             total_processed += 1
-                            print(f" 추출된 파일 경로: {dest}")
+                            print(f" 추출된 파일 경로: \{dest}")
 
         except Exception as e:
             continue
 
         try:
-            # UnityPy를 사용하여 *.unity3d 파일 다시 로드
+            # UnityPy를 사용하여 *.unity3d 파일 로드
             env = UnityPy.load(file_path)
 
             # 폴더 생성 (이미 존재할 경우 무시)
@@ -267,6 +268,43 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                             total_processed += 1
                             print(f" 추출된 파일 경로: \{dest}")
 
+                # MonoScript, MonoBehaviour, GameObject, Transform, AssetBundle 객체인 경우 처리
+                elif obj.type.name in ["MonoBehaviour", "MonoScript", "GameObject", "Transform", "AssetBundle"]:
+                    # export 단계
+                    if obj.serialized_type.nodes:
+                        # 디코딩된 데이터 저장
+                        tree = obj.read_typetree()
+                        folder_name = os.path.splitext(os.path.basename(file_path))[0]
+                        folder_path = os.path.join(destination_folder, folder_name)
+                        os.makedirs(folder_path, exist_ok=True)
+                        fp = os.path.join(folder_path, f"{tree['m_Name']}.json")
+                        with open(fp, "wt", encoding="utf8") as f:
+                            json.dump(tree, f, ensure_ascii=False, indent=4)
+                        total_processed += 1
+                        print(f" 추출된 파일 경로: \{fp}")
+                    else:
+                        # Unity MonoBehaviour 헤더 없이 관련된 데이터를 저장
+                        data = obj.read()
+                        folder_name = os.path.splitext(os.path.basename(file_path))[0]
+                        folder_path = os.path.join(destination_folder, folder_name)
+                        os.makedirs(folder_path, exist_ok=True)
+                        fp = os.path.join(folder_path, f"{data.name}.bin")
+                        with open(fp, "wb") as f:
+                            f.write(data.raw_data)
+                        total_processed += 1
+                        print(f" 추출된 파일 경로: \{fp}")
+
+                    # edit 단계
+                    if obj.serialized_type.nodes:
+                        # 트리 내의 데이터에 수정 내역 적용
+                        tree = obj.read_typetree()
+                        obj.save_typetree(tree)
+                    else:
+                        # 데이터 읽어온 후 수정된 내용 저장
+                        data = obj.read()
+                        with open(os.path.join(replace_dir, data.name)) as f:
+                            data.save(raw_data=f.read())
+
                 # AudioClip 객체인 경우 오디오 클립을 추출하여 저장
                 elif obj.type.name == "AudioClip":
                     clip = obj.read()
@@ -296,12 +334,10 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         print(f" 추출된 파일 경로: \{dest}")
 
         except Exception as e:
+            # 오류 발생 시 해당 리소스를 무시하고 다음 작업을 진행합니다.
             print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다.")
             print(f" 오류 정보: {e}.")
             continue
-
-
-
 
 
 
@@ -321,6 +357,8 @@ def prompt_user():
             return False
         else:
             print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
+
+
 
 # 스크립트 데이터 역직렬화
 def deserialize_command(data) -> tuple[CommandId, list[str]]:
@@ -352,6 +390,7 @@ def deserialize_command(data) -> tuple[CommandId, list[str]]:
         array.append(str_.decode())
     # 명령 ID와 역직렬화된 인수 리스트를 튜플로 반환
     return (CommandId(index), array)
+
 
 
 # 스토리 데이터 원시 바이트열 역직렬화
@@ -397,6 +436,7 @@ def deserialize_story_raw(bytes_: bytes) -> list[tuple[CommandId, list[str]]]:
         if len(raw_command) > 1:
             commands.append(deserialize_command(raw_command))
     return commands
+
 
 
 # 스토리 데이터 역직렬화 후 *.json 파일로 저장하는 함수
@@ -457,6 +497,7 @@ def deserialize_story(bytes_: bytes, dest: str) -> None:
         print(f" 추출된 파일 경로: \{dest}")
 
 
+
 # 텍스트를 정리하여 특수 문자 및 문자열 치환을 수행하는 함수
 def clean_text(text: str) -> str:
     """
@@ -477,6 +518,7 @@ def clean_text(text: str) -> str:
         text = text.replace(*pair)
     
     return text  # 정리된 텍스트 반환
+
 
 
 # 메인 함수
