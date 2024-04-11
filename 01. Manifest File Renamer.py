@@ -29,10 +29,11 @@ print("""
 
 
 # 작업 진행여부 확인 안내 문구
-print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭하면 진행이 멈출 수 있습니다.")
-print("          ( * 임시 해결 방법: 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭 )\n")
+print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화)하면 진행이 멈출 수 있습니다.\n")
+print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
+print("                           02. 콘솔 내부 클릭 후 Enter키 누르기\n")
 
-print(" 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
+print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
 
 
 
@@ -65,8 +66,9 @@ class RenameHashedFile:
 
 
     def process_files(self):
-        print("\n [ 안내 ] 작업 할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴경우 시간이 오래 걸릴 수 있습니다.")
-        print("\n [ 안내 ] 모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n")
+        print(" [ 안내 ] 작업 할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴경우 시간이 오래 걸릴 수 있습니다.")
+        print("          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n")
+        
         files = self.get_all_files_in_folders(self.target_folders)  # 대상 폴더 내 모든 파일 가져오기
         if not files:
             print(" 대상 폴더에서 파일을 찾을 수 없습니다.")
@@ -134,7 +136,7 @@ class RenameHashedFile:
             elif 'b/' in first_line:
                 new_filename = os.path.join("manifest", "soundmanifest")
                 self.processed_count_check += 1
-                print(f" 특정 문자열 'b/'이(가) {file_path[len(os.getcwd()):]}파일 내용에 포함되어 있습니다.")
+                print(f" 특정 문자열 'b/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
 
             try:
                 os.rename(file_path, new_filename)
@@ -143,7 +145,7 @@ class RenameHashedFile:
                 print(f"{file_path}을(를) 찾을 수 없습니다.")
 
         total_processed = self.processed_count_rename + self.processed_count_check
-        input(f"\n\n\n 총 {self.processed_count_rename + self.processed_count_check}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+        input(f"\n\n\n 총 {total_processed }개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
 
 
 
