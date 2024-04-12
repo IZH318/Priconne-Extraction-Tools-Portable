@@ -29,11 +29,12 @@ print("""
 
 
 # 작업 진행여부 확인 안내 문구
-print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화)하면 진행이 멈출 수 있습니다.\n")
+print("\n\n [ 주의 ] 현재 디렉터리에 'manifest.db'파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n")
+print("          작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화) 하면 진행이 멈출 수 있습니다.\n")
 print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
-print("                           02. 콘솔 내부 클릭 후 Enter키 누르기\n")
+print("                           02. 콘솔 내부 클릭 후 Enter 키 누르기\n")
 
-print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
+print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter 키를 누르십시오.)")
 
 
 
@@ -58,7 +59,7 @@ class RenameHashedFile:
                 self.process_files()  # 파일 처리 시작
                 break
             elif user_input == 'n':
-                input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+                input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
                 sys.exit()
             else:
                 print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
@@ -66,7 +67,7 @@ class RenameHashedFile:
 
 
     def process_files(self):
-        print(" [ 안내 ] 작업 할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴경우 시간이 오래 걸릴 수 있습니다.")
+        print(" [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
         print("          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n")
         
         files = self.get_all_files_in_folders(self.target_folders)  # 대상 폴더 내 모든 파일 가져오기
@@ -76,7 +77,7 @@ class RenameHashedFile:
 
         manifest_db_path = os.path.join(os.getcwd(), "manifest.db")  # manifest.db 파일 경로
         if not os.path.exists(manifest_db_path):
-            input("\n\n\n [ 경고 ] manifest.db 파일이 존재하지 않습니다. Enter 키를 눌러 창을 종료하십시오.")
+            input("\n\n [ 경고 ] 'manifest.db'파일이 존재하지 않습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
             return
 
         # manifest.db에서 해시 값과 파일 이름 가져오기
@@ -145,7 +146,7 @@ class RenameHashedFile:
                 print(f"{file_path}을(를) 찾을 수 없습니다.")
 
         total_processed = self.processed_count_rename + self.processed_count_check
-        input(f"\n\n\n 총 {total_processed }개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+        input(f"\n\n\n 총 {total_processed }개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
 
 
 

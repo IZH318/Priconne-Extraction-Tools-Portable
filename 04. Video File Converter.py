@@ -33,11 +33,12 @@ print("""
 # 작업 진행여부 확인 안내 문구
 print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 생략 후 진행합니다.")
 print()
-print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화)하면 진행이 멈출 수 있습니다.\n")
+print("\n\n [ 주의 ] 본 도구는 '02. unity3d File Converter.py'를 통해 모든 Resource를 추출 후 작업해야 합니다.\n")
+print("          작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화) 하면 진행이 멈출 수 있습니다.\n")
 print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
-print("                           02. 콘솔 내부 클릭 후 Enter키 누르기\n")
+print("                           02. 콘솔 내부 클릭 후 Enter 키 누르기\n")
 
-print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
+print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter 키를 누르십시오.)")
 
 
 
@@ -89,7 +90,7 @@ if rewrite_response == 'y':
 
     # 변환
     for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):
-        print(f"[ Source Info ]")
+        print(f" [ Source Info ]")
         
         # 변환할 *.mp4 파일 경로 생성
         extract_path = usm_file.parent / (usm_file.stem + ".mp4")
@@ -104,19 +105,19 @@ if rewrite_response == 'y':
             )
             os.system(command)
 
-            print(f"\n[ Processing Results ]")
-            print(f"파일 처리 순번: {idx}")
-            print(f"원본 파일 경로: {os.path.relpath(usm_file.absolute(), os.getcwd())}")
-            print(f"변환된 파일 경로: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
+            print(f"\n [ Processing Results ]")
+            print(f" 파일 처리 순번: {idx}")
+            print(f" 원본 파일 경로: {os.path.relpath(usm_file.absolute(), os.getcwd())}")
+            print(f" 변환된 파일 경로: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
             total_processed += 1
         else:
-            print(f"[ Processing Results ]")
-            print(f"파일 처리 순번: {idx}")
-            print(f"원본 파일 경로: {os.path.relpath(usm_file.absolute(), os.getcwd())}")
-            print(f"이미 변환 된 파일: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
+            print(f" [ Processing Results ]")
+            print(f" 파일 처리 순번: {idx}")
+            print(f" 원본 파일 경로: {os.path.relpath(usm_file.absolute(), os.getcwd())}")
+            print(f" 이미 변환 된 파일: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
 
     # 작업 모두 끝나면 메시지 출력
-    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
 else:
     # 프로그램 종료
-    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")

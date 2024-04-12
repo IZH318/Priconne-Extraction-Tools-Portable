@@ -37,11 +37,12 @@ print("""
 
 
 # 작업 진행여부 확인 안내 문구
-print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 덮어쓰기 처리하여 새로 작업 합니다.")
+print("\n\n [ 안내 ] 이미 변환 된 파일이 있을 경우 해당 파일을 덮어쓰기 처리하여 새로 작업합니다.")
 print()
-print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화)하면 진행이 멈출 수 있습니다.\n")
+print("\n\n [ 주의 ] 본 도구는 '01. Manifest File Renamer.py'를 통해 모든 파일의 이름을 변경한 후 작업해야 합니다.\n")
+print("          작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화) 하면 진행이 멈출 수 있습니다.\n")
 print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
-print("                           02. 콘솔 내부 클릭 후 Enter키 누르기\n")
+print("                           02. 콘솔 내부 클릭 후 Enter 키 누르기\n")
 
 print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
 
@@ -529,13 +530,13 @@ def clean_text(text: str) -> str:
 # 메인 함수
 def main():
     if prompt_user():
-        root_directories = ["a", "b", os.getcwd()]  # 현재 디렉터리와 a, b 폴더에서 Unity3D 파일 검색
+        root_directories = ["a", os.getcwd()]  # 현재 디렉터리와 a 폴더에서 Unity3D 파일 검색
         unity3d_files = find_unity3d_files(root_directories)
         destination_folder = "_Converted"
         process_unity3d_files(unity3d_files, destination_folder)
-        input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+        input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
     else:
-        input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+        input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
 
 if __name__ == "__main__":
     main()

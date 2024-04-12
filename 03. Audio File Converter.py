@@ -26,11 +26,12 @@ print("""
 print("\n\n [ 안내 ] 이미 변환된 파일이 있을 경우 처음부터 작업하시겠습니까?")
 print("          ( [Y] = 기존 파일 덮어쓰기 / [N] = 기존 파일 작업 생략 )")
 print()
-print("\n\n [ 주의 ] 작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화)하면 진행이 멈출 수 있습니다.\n")
+print("\n\n [ 주의 ] 본 도구는 '02. unity3d File Converter.py'를 통해 모든 Resource를 추출 후 작업해야 합니다.\n")
+print("          작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화) 하면 진행이 멈출 수 있습니다.\n")
 print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
-print("                           02. 콘솔 내부 클릭 후 Enter키 누르기\n")
+print("                           02. 콘솔 내부 클릭 후 Enter 키 누르기\n")
 
-print("\n\n [Y]/[N] 중 대소문자 구분 없이 입력 후 Enter키를 누르십시오.")
+print("\n\n 대소문자 구분 없이 입력 후 Enter키를 누르십시오.)")
 
 
 
@@ -83,7 +84,7 @@ class ConvertSound:
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
                         file_count += 1  # 처리된 파일 수 증가
 
-        input(f" 총 {file_count}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.")
+        input(f" 총 {file_count}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
 
 
 
@@ -131,7 +132,7 @@ class ConvertSound:
                 track_info = [{'Name': self.get_track_name(file_path), 'TrackNum': 1}]  # 기본 트랙 정보 생성
                 return track_info
         except Exception as e:
-            print(f"Error occurred while getting tracks: {e}")
+            print(f" Error occurred while getting tracks: {e}")
             return None
 
 
@@ -162,17 +163,17 @@ class ConvertSound:
 
     def convert(self, input_file, output_file, track_num=None, file_count=0):
         try:
-            print(f"[ Source Info ]")
+            print(f" [ Source Info ]")
             vgmstream_path = self.get_vgmstream()  # vgmstream 실행 경로 가져오기
             command = [vgmstream_path, "-o", str(output_file)]  # *.WAV 파일로 변환하는 명령 생성
             if track_num is not None:
                 command.extend(["-s", str(track_num)])  # 특정 트랙만 변환하는 경우
             command.append(str(input_file))
             subprocess.run(command, check=True)  # 외부 프로세스 실행
-            print(f"\n[ Processing Results ]")
-            print(f"파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
-            print(f"원본 파일 경로: \{input_file}")  # 변환된 파일 정보 출력
-            print(f"변환된 파일 경로: \{output_file}")
+            print(f"\n [ Processing Results ]")
+            print(f" 파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
+            print(f" 원본 파일 경로: \{input_file}")  # 변환된 파일 정보 출력
+            print(f" 변환된 파일 경로: \{output_file}")
             print("\n\n")
             return True  # 파일이 변환되었음을 나타내는 True 반환
         except subprocess.CalledProcessError as e:
