@@ -78,7 +78,7 @@ def save_results_to_txt(found_files):
     """
     root = tk.Tk()  # tkinter의 기본 루트 윈도우 생성
     root.withdraw()  # 윈도우를 숨김
-    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])  # 저장 대화상자 표시
+    file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("텍스트 문서", "*.txt")])  # 저장 대화상자 표시
     if file_path:  # 파일 경로가 선택된 경우에만 처리
         with open(file_path, "w", encoding="utf-8") as f:
             for file_info in found_files:

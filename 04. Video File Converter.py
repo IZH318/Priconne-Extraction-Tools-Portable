@@ -92,8 +92,14 @@ if rewrite_response == 'y':
     for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):
         print(f" [ Source Info ]")
         
+        # _Converted 폴더 생성
+        output_folder_name = "_Converted"
+        output_folder_path = usm_file.parent / output_folder_name
+        if not output_folder_path.exists():
+            output_folder_path.mkdir()
+
         # 변환할 *.mp4 파일 경로 생성
-        extract_path = usm_file.parent / (usm_file.stem + ".mp4")
+        extract_path = output_folder_path / (usm_file.stem + ".mp4")
 
         # 이미 존재하는지 확인 후 없으면 변환
         if not extract_path.exists():
@@ -101,20 +107,20 @@ if rewrite_response == 'y':
                 f'cd "{usmtoolkit_path.parent.absolute()}" '
                 f'&& "{usmtoolkit_path.name}" convert '
                 f'-c "{usm_file.absolute()}" '
-                f'-o "{usm_file.parent.absolute()}"'
+                f'-o "{output_folder_path}"'
             )
             os.system(command)
 
             print(f"\n [ Processing Results ]")
             print(f" 파일 처리 순번: {idx}")
-            print(f" 원본 파일 경로: {os.path.relpath(usm_file.absolute(), os.getcwd())}")
-            print(f" 변환된 파일 경로: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
+            print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
+            print(f" 변환된 파일 경로: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
             total_processed += 1
         else:
             print(f" [ Processing Results ]")
             print(f" 파일 처리 순번: {idx}")
-            print(f" 원본 파일 경로: {os.path.relpath(usm_file.absolute(), os.getcwd())}")
-            print(f" 이미 변환 된 파일: {os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
+            print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
+            print(f" 이미 변환 된 파일: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
 
     # 작업 모두 끝나면 메시지 출력
     input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")

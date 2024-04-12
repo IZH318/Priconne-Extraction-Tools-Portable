@@ -224,7 +224,14 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
 
             # 파일명에서 확장자 제거하여 폴더명으로 사용
             folder_name = os.path.splitext(os.path.basename(file_path))[0]
-            folder_path = os.path.join(destination_folder, folder_name)
+            # _Converted 폴더 경로 생성
+            converted_folder_path = os.path.join(os.path.dirname(file_path), "_Converted")
+            # 폴더 생성 (이미 존재할 경우 무시)
+            os.makedirs(converted_folder_path, exist_ok=True)
+
+            # 폴더 생성 후 파일 경로 설정
+            folder_path = os.path.join(converted_folder_path, folder_name)
+
             # 폴더 생성 (이미 존재할 경우 무시)
             os.makedirs(folder_path, exist_ok=True)
 
@@ -286,8 +293,6 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                     if obj.serialized_type.nodes:
                         # 디코딩된 데이터 저장
                         tree = obj.read_typetree()
-                        folder_name = os.path.splitext(os.path.basename(file_path))[0]
-                        folder_path = os.path.join(destination_folder, folder_name)
                         os.makedirs(folder_path, exist_ok=True)
                         fp = os.path.join(folder_path, f"{tree['m_Name']}.json")
                         with open(fp, "wt", encoding="utf8") as f:
@@ -297,8 +302,6 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                     else:
                         # Unity MonoBehaviour 헤더 없이 관련된 데이터를 저장
                         data = obj.read()
-                        folder_name = os.path.splitext(os.path.basename(file_path))[0]
-                        folder_path = os.path.join(destination_folder, folder_name)
                         os.makedirs(folder_path, exist_ok=True)
                         fp = os.path.join(folder_path, f"{data.name}.bin")
                         with open(fp, "wb") as f:
@@ -348,8 +351,9 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
         except Exception as e:
             # 오류 발생 시 해당 리소스를 무시하고 다음 작업을 진행합니다.
             print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다.")
-            print(f" 오류 정보: {e}.")
+            print(f" 오류 메시지: {e}")
             continue
+
 
 
 
