@@ -4,6 +4,7 @@ import sqlite3  # SQLite 데이터베이스를 사용하기 위한 라이브러�
 import hashlib  # 해시 함수를 사용하기 위한 라이브러리
 import concurrent.futures  # 병렬 처리를 위한 라이브러리
 from tqdm import tqdm  # 진행 상황을 시각적으로 표시하기 위한 라이브러리
+import xxhash  # xxhash64 해시 함수를 사용하기 위한 라이브러리
 
 # 변환된 파일의 총 수를 계산하기 위한 변수
 total_processed = 0
@@ -11,15 +12,15 @@ total_processed = 0
 # 프로그램 시작 시 화면에 출력되는 ASCII Art
 print("""
            ___      _                        _____                       __  __      ___      _ ___  _         
-          / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
-         / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
-        /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
+          / _ \\____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \\___ (_) _ \\(_)  _____ 
+         / ___/ __/ / _ \\/ __/ -_|_-<(_-<  / /__/ _ \\/ _ \\/ _ \\/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
+        /_/  /_/ /_/_//_/\\__/\__/___/___/  \\___/\\___/_//_/_//_/\\__/\\__/\__(_)     /_/|_|\\__(_)____/_/|___/\\__/
     """)
 print("""
                    __  ___          _ ___        __    _____ __      ___                             
-                  /  |/  /__ ____  (_) _/__ ___ / /_  / __(_) /__   / _ \___ ___  ___ ___ _  ___ ____
-                 / /|_/ / _ `/ _ \/ / _/ -_|_-</ __/ / _// / / -_) / , _/ -_) _ \/ _ `/  ' \/ -_) __/
-                /_/  /_/\_,_/_//_/_/_/ \__/___/\__/ /_/ /_/_/\__/ /_/|_|\__/_//_/\_,_/_/_/_/\__/_/
+                  /  |/  /__ ____  (_) _/__ ___ / /_  / __(_) /__   / _ \\___ ___  ___ ___ _  ___ ____
+                 / /|_/ / _ `/ _ \\/ / _/ -_|_-</ __/ / _// / / -_) / , _/ -_) _ \\/ _ `/  ' \\/ -_) __/
+                /_/  /_/\\_,_/_//_/_/_/ \\__/___/\\__/ /_/ /_/_/\\__/ /_/|_|\\__/_//_/\\_,_/_/_/_/\\__/_/
     """)
 
 # 작업 진행여부 확인 안내 문구
@@ -101,8 +102,7 @@ class RenameHashedFile:
             self.processed_count_rename += 1
 
         # 처리되지 않은 파일 및 manifest.db에서 인식하지 못한 파일 확인
-        print("\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 아래 내용을 참고하십시오.")
-        print("          (* 아래 파일들은 예외 처리되었습니다.)")
+        print("\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 예외 처리되었습니다.")
         for file_path in self.unprocessed_files:
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:  # errors='ignore'를 추가하여 오류 발생 시 무시
@@ -140,15 +140,16 @@ class RenameHashedFile:
                     print(f"{file_path}을(를) 찾을 수 없습니다.")
 
         total_processed = self.processed_count_rename + self.processed_count_check
+        
         input(f"\n\n\n 총 {total_processed }개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
 
     def process(self, file_path, file_index):
         hash_md5 = self.calculate_md5(file_path)
-        hash_value = hash_md5.hexdigest()
-
-        # manifest.db에 있는 해시 값과 일치하는 파일이 있는지 확인하여 이름 변경
-        if hash_value in self.hash_list:
-            new_filename = self.hash_list[hash_value]
+        hash_md5_value = hash_md5.hexdigest()
+        
+        # MD5 해시로 파일 이름 변경 시도
+        if hash_md5_value in self.hash_list:
+            new_filename = self.hash_list[hash_md5_value]
             try:
                 os.rename(file_path, os.path.join(os.getcwd(), new_filename))
                 relative_file_path = os.path.relpath(file_path, os.getcwd())
@@ -156,6 +157,21 @@ class RenameHashedFile:
             except FileNotFoundError:
                 print(f" {file_path}을(를) 찾을 수 없습니다.")
                 return False, file_path, None
+
+        # xxhash64로 해시 계산 후 파일 이름 변경 시도
+        hash_xxhash64 = self.calculate_xxhash64(file_path)
+        hash_xxhash64_value = hash_xxhash64.hexdigest()
+        if hash_xxhash64_value in self.hash_list:
+            new_filename = self.hash_list[hash_xxhash64_value]
+            try:
+                os.rename(file_path, os.path.join(os.getcwd(), new_filename))
+                relative_file_path = os.path.relpath(file_path, os.getcwd())
+                return True, None, f"\n 파일 처리 순번 : {file_index}\n 원본 파일 명 : \\{relative_file_path}\n 변경된 파일 명 : \\{new_filename.replace(os.sep, '/')}"
+            except FileNotFoundError:
+                print(f" {file_path}을(를) 찾을 수 없습니다.")
+                return False, file_path, None
+
+        # 어느 해시 값으로도 일치하지 않을 경우
         return False, file_path, None
 
     def calculate_md5(self, file_path):
@@ -165,6 +181,14 @@ class RenameHashedFile:
             for chunk in iter(lambda: file.read(4096), b""):
                 md5_hash.update(chunk)
         return md5_hash
+
+    def calculate_xxhash64(self, file_path):
+        # 파일의 xxhash64 해시 값 계산
+        xxhash64_hash = xxhash.xxh64()
+        with open(file_path, "rb") as file:
+            for chunk in iter(lambda: file.read(4096), b""):
+                xxhash64_hash.update(chunk)
+        return xxhash64_hash
 
     def get_all_files_in_folders(self, target_folders):
         # 대상 폴더 내의 모든 파일 가져오기
