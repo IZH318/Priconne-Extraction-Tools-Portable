@@ -15,7 +15,7 @@
 <BR><BR><BR>
 
 ## 💾 다운로드
-[![icon_item_91001](https://github.com/IZH318/priconne-asset-extractor/assets/99892351/89c074f2-f869-4377-8e10-fc6a1d7e5de4)](https://github.com/IZH318/priconne-asset-extractor/releases)
+[![icon_item_91001](https://github.com/IZH318/priconne-asset-extractor/assets/99892351/89c074f2-f869-4377-8e10-fc6a1d7e5de4)](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/releases)
 ### ※ 추출 도구는 상단 쥬얼 아이콘을 클릭 또는 본 Repositories의 Releases로 이동하여 다운로드 하십시오. <br><br>
 ### ※ 본 도구를 사용할 때 필요한 모든 파일들은 zip 파일 내 `📁\01_Install` 폴더에 포함되어 있습니다. <BR>
 ***.zip 파일 내 제공 된 파일들을 사용하려는 경우 개별 다운로드 과정을 생략해도 되며, 제공 된 설치 파일들을 신뢰하지 않을 경우 아래 링크를 통해 개별 다운로드 하시기 바랍니다.** <BR>
