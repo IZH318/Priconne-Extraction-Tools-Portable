@@ -182,7 +182,7 @@ class ConvertSound:
 
 
     def get_vgmstream(self):
-        vgmstream_path = r".\usmtoolkit\vgmstream\test.exe"  # vgmstream 실행 경로 반환
+        vgmstream_path = r".\usmtoolkit\vgmstream\vgmstream-cli.exe"  # vgmstream 실행 경로 반환
         return vgmstream_path
 
 
