@@ -278,9 +278,15 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                 elif obj.type.name == "TextAsset":
                     data = obj.read()
                     dest = os.path.join(folder_path, data.name)
-                    if "storydata" in data.name:
+                    # print(f" [TEST] {file_path}")    # Test Only
+                    if "storydata_" in data.name and len(file_path) == 25:
                         dest_json = os.path.join(folder_path, data.name + ".json")
                         deserialize_story(data.script, dest_json)
+                    elif "storydata_storydata_" in data.name and len(file_path) == 35:
+                        with open(dest, "wb") as f:
+                            f.write(bytes(data.script))
+                            total_processed += 1
+                            print(f" 추출된 파일 경로: \{dest}")
                     else:
                         with open(dest, "wb") as f:
                             f.write(bytes(data.script))
