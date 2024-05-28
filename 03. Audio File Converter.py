@@ -41,24 +41,26 @@ class ConvertSound:
 
 
 
-
     def process(self, desc):
         current_directory = "."  # 현재 디렉터리로 설정, 필요에 따라 변경 가능
         
-        # 현재 디렉터리에 있는 *.awb 파일과 *.acb 파일 검색
-        current_files = [f for f in os.listdir(current_directory) if f.endswith((".awb", ".acb"))]
+        # 현재 디렉터리에 있는 *.awb 파일 검색
+        current_files = [f for f in os.listdir(current_directory) if f.endswith((".awb"))]
 
-        # b, s, v 폴더에 있는 모든 하위 폴더의 *.awb 파일과 *.acb 파일 검색
+        # b, s, v 폴더에 있는 모든 하위 폴더의 *.awb 파일 검색
         subfolder_files = []
         for folder_name in ["b", "s", "v"]:
             folder_path = os.path.join(current_directory, folder_name)
             if os.path.isdir(folder_path):
                 for root, dirs, files in os.walk(folder_path):
-                    subfolder_files.extend([os.path.join(root, f) for f in files if f.endswith((".awb", ".acb"))])
+                    subfolder_files.extend([os.path.join(root, f) for f in files if f.endswith((".awb"))])
 
         files = current_files + subfolder_files
+        self.total_files = len(files)  # 전체 파일 수 업데이트
 
         file_count = 0  # 처리된 파일의 수 초기화
+        file_converted_count = 0  # 변환 된 총 파일의 수 초기화
+        
         skip_existing_files = self.ask_user_skip_existing_files()  # 사용자에게 작업 방식을 묻고, 이미 존재하는 파일을 생략할지 여부 결정
         for item in files:
             item_path = Path(item)  # 파일 경로를 Path 객체로 변환
@@ -74,18 +76,17 @@ class ConvertSound:
             # 이미 변환된 파일이 있는 경우 작업 방식에 따라 처리
             if any((item_converted_folder / f"{self.sanitize_filename(track['Name'])}.wav").exists() for track in self.get_tracks(item_path)):
                 if skip_existing_files:
-                    print("\n\n")
                     continue  # 이미 변환된 파일이 있다면 해당 파일 생략
 
             tracks = self.get_tracks(item_path)  # 파일의 트랙 정보 가져오기
             if tracks is not None:
+                file_count += 1  # 처리된 파일 수 증가
                 for track in tracks:
                     output_file = item_converted_folder / f"{self.sanitize_filename(track['Name'])}.wav"  # *.WAV 파일 경로 생성
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
-                        file_count += 1  # 처리된 파일 수 증가
+                        file_converted_count += 1  # 변환 된 총 파일의 수 증가
 
-        input(f" 총 {file_count}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-
+        input(f"\n\n\n 총 {file_converted_count}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
 
 
 
@@ -94,10 +95,8 @@ class ConvertSound:
         while True:
             user_input = input(" >>> ").strip().lower()
             if user_input == 'y':
-                print("\n\n")
                 return False  # 처음부터 작업
             elif user_input == 'n':
-                print("\n\n")
                 return True  # 이미 존재하는 파일을 생략
             else:
                 print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
@@ -163,6 +162,15 @@ class ConvertSound:
 
     def convert(self, input_file, output_file, track_num=None, file_count=0):
         try:
+            # 백분율 계산
+            percent_complete = (file_count / self.total_files) * 100
+            
+            print("\n\n")
+            print(f" [ Processing ]")
+            print(f" 작업 진행 상태: {file_count}/{self.total_files} ({percent_complete:.4f}%)")  # 처리된 파일 순서 출력
+            print(f" 원본 파일 경로: \{input_file}")  # 변환된 파일 정보 출력
+            print(f" 변환된 파일 경로: \{output_file}")
+            print()
             print(f" [ Source Info ]")
             vgmstream_path = self.get_vgmstream()  # vgmstream 실행 경로 가져오기
             command = [vgmstream_path, "-o", str(output_file)]  # *.WAV 파일로 변환하는 명령 생성
@@ -170,11 +178,6 @@ class ConvertSound:
                 command.extend(["-s", str(track_num)])  # 특정 트랙만 변환하는 경우
             command.append(str(input_file))
             subprocess.run(command, check=True)  # 외부 프로세스 실행
-            print(f"\n [ Processing Results ]")
-            print(f" 파일 처리 순번: {file_count+1}")  # 처리된 파일 순서 출력
-            print(f" 원본 파일 경로: \{input_file}")  # 변환된 파일 정보 출력
-            print(f" 변환된 파일 경로: \{output_file}")
-            print("\n\n")
             return True  # 파일이 변환되었음을 나타내는 True 반환
         except subprocess.CalledProcessError as e:
             return False  # 변환 실패를 나타내는 False 반환

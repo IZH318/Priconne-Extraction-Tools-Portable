@@ -209,10 +209,13 @@ def find_unity3d_files(root_directories: list[str]):
 # Unity3D 파일을 처리하는 함수
 def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
     # 각 Unity3D 파일에 대해 반복
-    for file_path in unity3d_files:
-        # Source Info 출력
+    for index, file_path in enumerate(unity3d_files, start=1):
+        # 백분율 계산
+        percent_complete = (index / len(unity3d_files)) * 100
+        
         print(f"\n\n\n [ Source Info ]")
-        print(f" 원본 파일 경로: \{file_path} \n")
+        print(f" 작업 진행 상태: {index}/{len(unity3d_files)} ({percent_complete:.4f}%)")
+        print(f" 원본 파일 경로: {file_path} \n")
         print(f" [ Processing Results ]")
 
         # 처리된 파일 개수를 전역 변수로 설정
@@ -359,7 +362,6 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
             print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다.")
             print(f" 오류 메시지: {e}")
             continue
-
 
 
 

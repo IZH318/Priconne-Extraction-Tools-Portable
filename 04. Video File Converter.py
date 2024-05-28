@@ -88,6 +88,10 @@ if rewrite_response == 'y':
         if os.path.isdir(target_folder_path):
             target_folder_files = search_usm_files_in_folder(target_folder_path)
 
+    # 모든 *.usm 파일 리스트 구하기
+    all_usm_files = current_directory_files + target_folder_files
+    total_files = len(all_usm_files)
+
     # 변환
     for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):
         print(f" [ Source Info ]")
@@ -111,14 +115,20 @@ if rewrite_response == 'y':
             )
             os.system(command)
 
+            total_processed += 1 # 처리된 파일 수 증가
+
+            # 백분율 계산
+            percent_complete = (total_processed / total_files) * 100
+            
             print(f"\n [ Processing Results ]")
-            print(f" 파일 처리 순번: {idx}")
+            print(f" 작업 진행 상태: {total_processed}/{total_files} ({percent_complete:.4f}%)")
             print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
             print(f" 변환된 파일 경로: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
-            total_processed += 1
         else:
+            percent_complete = (total_processed / total_files) * 100
+            
             print(f" [ Processing Results ]")
-            print(f" 파일 처리 순번: {idx}")
+            print(f" 작업 진행 상태: {total_processed}/{total_files} ({percent_complete:.4f}%)")
             print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
             print(f" 이미 변환 된 파일: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
 
