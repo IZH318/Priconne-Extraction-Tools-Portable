@@ -87,6 +87,8 @@ if rewrite_response == 'y':
         target_folder_path = os.path.join(os.getcwd(), target_folder)
         if os.path.isdir(target_folder_path):
             target_folder_files = search_usm_files_in_folder(target_folder_path)
+        else
+            continue
 
     # 모든 *.usm 파일 리스트 구하기
     all_usm_files = current_directory_files + target_folder_files
