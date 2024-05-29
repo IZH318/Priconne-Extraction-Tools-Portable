@@ -93,7 +93,7 @@ def save_results_to_txt(found_files):
             for file_info in found_files:
                 f.write(f"{file_info[1]}\n")
         input("\n\n\n 텍스트 파일이 성공적으로 저장되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-        quit()
+        sys.exit()
         
 
 

@@ -1,6 +1,7 @@
 # 필요한 라이브러리 임포트
 import os  # 파일 및 디렉터리 관리를 위한 os 모듈
 import subprocess  # 외부 프로세스 실행을 위한 subprocess 모듈
+import sys
 from pathlib import Path  # 경로 관리를 위한 Path 클래스
 
 
@@ -87,6 +88,7 @@ class ConvertSound:
                         file_converted_count += 1  # 변환 된 총 파일의 수 증가
 
         input(f"\n\n\n 총 {file_converted_count}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+        sys.exit()
 
 
 
@@ -186,6 +188,10 @@ class ConvertSound:
 
     def get_vgmstream(self):
         vgmstream_path = r".\usmtoolkit\vgmstream\test.exe"  # vgmstream 실행 경로 반환
+        if not os.path.exists(vgmstream_path):  # vgmstream_path에 지정 한 경로에 파일이 존재하지 않는 경우
+            print(f"\n\n\n [ 경고 ] vgmstream 실행 파일을 찾을 수 없습니다. usmtoolkit 폴더 내에 test.exe 파일이 있는지 확인하십시오.")
+            input(f"\n          Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+            sys.exit()  # 프로그램 종료
         return vgmstream_path
 
 

@@ -72,70 +72,76 @@ while True:
         break
     else:
         print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
+        sys.exit()
 
 # 사용자의 입력에 따라 작업 진행 또는 종료
 if rewrite_response == 'y':
-    
-    # 현재 디렉터리에서 *.usm 파일 찾기
-    current_directory_files = find_usm_files(os.getcwd())
+    # usmtoolkit 경로가 존재하지 않으면 파일을 찾을 수 없음 메시지 표시
+    if not usmtoolkit_path.exists():
+        input(f" [ 경고 ] UsmToolkit.exe 파일이 존재하지 않습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+        sys.exit()
+    else:
+        # 현재 디렉터리에서 *.usm 파일 찾기
+        current_directory_files = find_usm_files(os.getcwd())
 
-    # 사용자가 지정한 폴더명
-    target_folders = ["m"]
+        # 사용자가 지정한 폴더명
+        target_folders = ["m"]
 
-    # 각 폴더에 대해 하위 폴더까지 모두 검색하여 usm 파일 찾기
-    for target_folder in target_folders:
-        target_folder_path = os.path.join(os.getcwd(), target_folder)
-        if os.path.isdir(target_folder_path):
-            target_folder_files = search_usm_files_in_folder(target_folder_path)
-        else
-            continue
+        # 각 폴더에 대해 하위 폴더까지 모두 검색하여 usm 파일 찾기
+        target_folder_files = []  # target_folder_files 초기화
+        for target_folder in target_folders:
+            target_folder_path = os.path.join(os.getcwd(), target_folder)
+            if os.path.isdir(target_folder_path):
+                target_folder_files = search_usm_files_in_folder(target_folder_path)
+            else:
+                continue
 
-    # 모든 *.usm 파일 리스트 구하기
-    all_usm_files = current_directory_files + target_folder_files
-    total_files = len(all_usm_files)
+        # 모든 *.usm 파일 리스트 구하기
+        all_usm_files = current_directory_files + target_folder_files
+        total_files = len(all_usm_files)
 
-    # 변환
-    for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):
-        print(f" [ Source Info ]")
-        
-        # _Converted 폴더 생성
-        output_folder_name = "_Converted"
-        output_folder_path = usm_file.parent / output_folder_name
-        if not output_folder_path.exists():
-            output_folder_path.mkdir()
-
-        # 변환할 *.mp4 파일 경로 생성
-        extract_path = output_folder_path / (usm_file.stem + ".mp4")
-
-        # 이미 존재하는지 확인 후 없으면 변환
-        if not extract_path.exists():
-            command = (
-                f'cd "{usmtoolkit_path.parent.absolute()}" '
-                f'&& "{usmtoolkit_path.name}" convert '
-                f'-c "{usm_file.absolute()}" '
-                f'-o "{output_folder_path}"'
-            )
-            os.system(command)
-
-            total_processed += 1 # 처리된 파일 수 증가
-
-            # 백분율 계산
-            percent_complete = (total_processed / total_files) * 100
+        # 변환
+        for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):
+            print(f" [ Source Info ]")
             
-            print(f"\n [ Processing Results ]")
-            print(f" 작업 진행 상태: {total_processed}/{total_files} ({percent_complete:.4f}%)")
-            print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
-            print(f" 변환된 파일 경로: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
-        else:
-            percent_complete = (total_processed / total_files) * 100
-            
-            print(f" [ Processing Results ]")
-            print(f" 작업 진행 상태: {total_processed}/{total_files} ({percent_complete:.4f}%)")
-            print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
-            print(f" 이미 변환 된 파일: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
+            # _Converted 폴더 생성
+            output_folder_name = "_Converted"
+            output_folder_path = usm_file.parent / output_folder_name
+            if not output_folder_path.exists():
+                output_folder_path.mkdir()
 
-    # 작업 모두 끝나면 메시지 출력
-    input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+            # 변환할 *.mp4 파일 경로 생성
+            extract_path = output_folder_path / (usm_file.stem + ".mp4")
+
+            # 이미 존재하는지 확인 후 없으면 변환
+            if not extract_path.exists():
+                command = (
+                    f'cd "{usmtoolkit_path.parent.absolute()}" '
+                    f'&& "{usmtoolkit_path.name}" convert '
+                    f'-c "{usm_file.absolute()}" '
+                    f'-o "{output_folder_path}"'
+                )
+                os.system(command)
+
+                total_processed += 1 # 처리된 파일 수 증가
+
+                # 백분율 계산
+                percent_complete = (total_processed / total_files) * 100
+                
+                print(f"\n [ Processing Results ]")
+                print(f" 작업 진행 상태: {total_processed}/{total_files} ({percent_complete:.4f}%)")
+                print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
+                print(f" 변환된 파일 경로: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
+            else:
+                percent_complete = (total_processed / total_files) * 100
+                
+                print(f" [ Processing Results ]")
+                print(f" 작업 진행 상태: {total_processed}/{total_files} ({percent_complete:.4f}%)")
+                print(f" 원본 파일 경로: \{os.path.relpath(usm_file.absolute(), os.getcwd())}")
+                print(f" 이미 변환 된 파일: \{os.path.relpath(extract_path.absolute(), os.getcwd())}\n\n\n")
+
+        # 작업 모두 끝나면 메시지 출력
+        input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
 else:
     # 프로그램 종료
     input(f" 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")

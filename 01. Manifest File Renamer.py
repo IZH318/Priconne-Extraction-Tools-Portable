@@ -68,6 +68,12 @@ class RenameHashedFile:
 
 
     def process_files(self):
+        manifest_db_path = os.path.join(os.getcwd(), "manifest.db")  # manifest.db 파일 경로
+        
+        if not os.path.exists(manifest_db_path):
+            input(f" [ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+            sys.exit()
+            
         print(" [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
         print("          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n")
         
@@ -75,13 +81,8 @@ class RenameHashedFile:
         total_files = len(files)  # 전체 파일 수 계산
         
         if not files:
-            input("\n\n 대상 폴더에서 파일을 찾을 수 없습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-            return
-
-        manifest_db_path = os.path.join(os.getcwd(), "manifest.db")  # manifest.db 파일 경로
-        if not os.path.exists(manifest_db_path):
-            input("\n\n [ 경고 ] 'manifest.db'파일이 존재하지 않습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-            return
+            input(f"\n\n 대상 폴더에서 처리 할 파일을 찾을 수 없습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+            sys.exit()
 
         # manifest.db에서 해시 값과 파일 이름 가져오기
         with sqlite3.connect(manifest_db_path) as connection:
@@ -118,7 +119,7 @@ class RenameHashedFile:
             self.processed_count_rename += 1
 
         # 처리되지 않은 파일 및 manifest.db에서 인식하지 못한 파일 확인
-        print("\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략 되었습니다.")
+        print("\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.")
         for file_path in self.unprocessed_files:
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:  # errors='ignore'를 추가하여 오류 발생 시 무시
@@ -159,6 +160,7 @@ class RenameHashedFile:
 
         # 작업 완료 후 종료 여부 확인
         input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+        sys.exit()
 
 
 

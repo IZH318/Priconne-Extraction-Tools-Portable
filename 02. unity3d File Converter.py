@@ -3,6 +3,7 @@ import os  # 파일 및 디렉토리 관리
 import UnityPy  # Unity3D 파일 처리
 import json  # JSON 파일 작성
 import base64  # 데이터 디코딩
+import re
 from enum import Enum  # 열거형 사용
 from struct import unpack  # 데이터 언패킹
 from PIL import Image  # 이미지 처리
@@ -282,14 +283,9 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                     data = obj.read()
                     dest = os.path.join(folder_path, data.name)
                     # print(f" [TEST] {file_path}")    # Test Only
-                    if "storydata_" in data.name and len(file_path) == 25:
+                    if re.match(r'^.*\\storydata_\d{7}\.unity3d$', file_path):
                         dest_json = os.path.join(folder_path, data.name + ".json")
                         deserialize_story(data.script, dest_json)
-                    elif "storydata_storydata_" in data.name and len(file_path) == 35:
-                        with open(dest, "wb") as f:
-                            f.write(bytes(data.script))
-                            total_processed += 1
-                            print(f" 추출된 파일 경로: \{dest}")
                     else:
                         with open(dest, "wb") as f:
                             f.write(bytes(data.script))
@@ -547,8 +543,10 @@ def main():
         destination_folder = "_Converted"
         process_unity3d_files(unity3d_files, destination_folder)
         input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+        sys.exit()
     else:
         input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
+        sys.exit()
 
 if __name__ == "__main__":
     main()
