@@ -174,12 +174,18 @@ class RenameHashedFile:
         # MD5 해시로 파일 이름 변경 시도
         if hash_md5_value in self.hash_list:
             new_filename = self.hash_list[hash_md5_value]
+            new_filepath = os.path.join(os.getcwd(), new_filename)
+            if os.path.exists(new_filepath):
+                new_filepath = self.get_unique_filename(new_filepath)
             try:
-                os.rename(file_path, os.path.join(os.getcwd(), new_filename))
+                os.rename(file_path, new_filepath)
                 relative_file_path = os.path.relpath(file_path, os.getcwd())
-                return True, None, f"\n 작업 진행 상태: {file_index}/{total_files} ({percent_complete:.4f}%)\n 원본 파일 명 : \\{relative_file_path}\n 변경된 파일 명 : \\{new_filename.replace(os.sep, '/')}"
+                return True, None, f"\n 작업 진행 상태: {file_index}/{total_files} ({percent_complete:.4f}%)\n 원본 파일 명 : \\{relative_file_path}\n 변경된 파일 명 : \\{new_filepath.replace(os.sep, '/')}"
             except FileNotFoundError:
                 print(f" {file_path}을(를) 찾을 수 없습니다.")
+                return False, file_path, None
+            except FileExistsError:
+                print(f" {new_filepath} 파일이 이미 존재합니다.")
                 return False, file_path, None
 
         # xxhash64로 해시 계산 후 파일 이름 변경 시도
@@ -187,12 +193,18 @@ class RenameHashedFile:
         hash_xxhash64_value = hash_xxhash64.hexdigest()
         if hash_xxhash64_value in self.hash_list:
             new_filename = self.hash_list[hash_xxhash64_value]
+            new_filepath = os.path.join(os.getcwd(), new_filename)
+            if os.path.exists(new_filepath):
+                new_filepath = self.get_unique_filename(new_filepath)
             try:
-                os.rename(file_path, os.path.join(os.getcwd(), new_filename))
+                os.rename(file_path, new_filepath)
                 relative_file_path = os.path.relpath(file_path, os.getcwd())
-                return True, None, f"\n 작업 진행 상태: {file_index}/{total_files} ({percent_complete:.4f}%)\n 원본 파일 명 : \\{relative_file_path}\n 변경된 파일 명 : \\{new_filename.replace(os.sep, '/')}"
+                return True, None, f"\n 작업 진행 상태: {file_index}/{total_files} ({percent_complete:.4f}%)\n 원본 파일 명 : \\{relative_file_path}\n 변경된 파일 명 : \\{new_filepath.replace(os.sep, '/')}"
             except FileNotFoundError:
                 print(f" {file_path}을(를) 찾을 수 없습니다.")
+                return False, file_path, None
+            except FileExistsError:
+                print(f" {new_filepath} 파일이 이미 존재합니다.")
                 return False, file_path, None
 
         # 어느 해시 값으로도 일치하지 않을 경우
@@ -237,6 +249,17 @@ class RenameHashedFile:
     def is_sha1(self, s):
         # 문자열이 SHA1 해시 값 형식인지 확인
         return len(s) == 40 and all(c in "0123456789abcdefABCDEF" for c in s)
+
+
+
+    def get_unique_filename(self, file_path):
+        base, extension = os.path.splitext(file_path)  # 파일 경로를 기본 이름(base)과 확장자(extension)로 분리
+        counter = 1  # 중복된 파일 이름이 있을 경우 추가할 숫자(counter) 초기화
+        new_file_path = f"{base}_Duplicate({counter}){extension}"  # 숫자를 붙인 새로운 파일 경로(new_file_path) 생성
+        while os.path.exists(new_file_path):  # 새로운 파일 경로가 이미 존재하는지 확인
+            counter += 1  # 존재할 경우 숫자 1 증가
+            new_file_path = f"{base}_{counter}{extension}"  # 증가된 숫자 붙인 새로운 파일 경로 생성
+        return new_file_path  # 중복되지 않는 새로운 파일 경로 반환
 
 
 
