@@ -3,7 +3,7 @@
 TITLE Princess Connect! Re:Dive Original Resource Remover
 
 echo.
-echo. [ 주의 ] 다운로드 된 원본 Resource 파일을 모두 삭제합니다.
+echo. [ 주의 ] 원본 Resource 파일을 모두 삭제합니다.
 echo.          삭제 된 파일은 휴지통을 거치지 않고 바로 삭제됩니다.
 echo.
 echo. 제거 대상은 다음과 같습니다.
