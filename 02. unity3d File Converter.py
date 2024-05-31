@@ -1,5 +1,6 @@
 # 필요한 라이브러리 임포트
 import os  # 파일 및 디렉토리 관리
+import sys  # 파이썬 시스템과 관련된 기능을 제공하는 sys 모듈
 import UnityPy  # Unity3D 파일 처리
 import json  # JSON 파일 작성
 import base64  # 데이터 디코딩

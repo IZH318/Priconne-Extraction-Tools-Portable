@@ -1,5 +1,6 @@
 # 필요한 라이브러리 임포트
 import os  # 파일 및 디렉토리 조작을 위한 라이브러리
+import sys  # 파이썬 시스템과 관련된 기능을 제공하는 sys 모듈
 import re  # 정규 표현식 사용을 위한 라이브러리
 import tkinter as tk  # GUI 생성을 위한 라이브러리
 from tkinter import filedialog  # 파일 대화상자 기능을 사용하기 위한 라이브러리 임포트

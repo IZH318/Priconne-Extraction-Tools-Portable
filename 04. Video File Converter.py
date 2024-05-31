@@ -1,5 +1,6 @@
 # 필요한 라이브러리 임포트
 import os  # 파일 시스템 작업을 위한 라이브러리
+import sys  # 파이썬 시스템과 관련된 기능을 제공하는 sys 모듈
 from pathlib import Path  # 경로 관리를 위한 Path 클래스
 
 
