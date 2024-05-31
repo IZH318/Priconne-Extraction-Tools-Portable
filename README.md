@@ -274,10 +274,10 @@
 ### ※ 이 작업은 Python 언어로 작성 된 Script의 내용을 이해하고 응용할 수 있는 분들께 추천드리는 작업입니다. <BR><BR>
 
 ### ❗ 필수 작업 ❗ <BR>
-![2024-03-30 02 18 44](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS/assets/99892351/935aef2e-f653-448e-8c0d-8c1a7d8fb5c0) <BR>
+![PRICONNE_EXTRACTION_TOOLS(Portable)_AIO 숨김폴더 해제 지시](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/assets/99892351/6a58735a-0eaa-4ca0-b4a7-188d4483335b) <BR>
 `파일 -> 옵션 -> 보기 -> 숨김 파일 및 폴더`상태를 `숨김 파일, 폴더 및 드라이브 표시`로 변경 후 확인 <BR><BR>
 
-![2024-03-30 02 23 35](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS/assets/99892351/020ff6da-1dcd-4b5a-834a-abaabd2e2c70) <BR>
+![PRICONNE_EXTRACTION_TOOLS(Portable)_AIO 읽기전용 해제 지시](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/assets/99892351/33179bbf-4e0d-4624-9b1d-4e313879d2bb) <BR>
 수정하고자 하는 파일 선택 후 `마우스 우클릭 -> 속성 -> 일반 -> 특성`항목 중 `읽기 전용(R)`상태 해제 후 확인 <BR><BR>
 
 **위 작업을 모두 끝낸 후 작업하시기 바랍니다.**
@@ -289,14 +289,14 @@
 <details>
   <summary>🛠 *.usm 파일을 *.mp4 파일이 아닌 다른 확장자로 변환하고자 하는 경우?</summary><BR>
 
-`PRICONNE_EXTRACTION_TOOLS`에 포함 된 `UsmToolkit`은 FFmpeg 표준 구문을 사용합니다.<BR><BR>
+`PRICONNE_EXTRACTION_TOOLS(Portable)_AIO`에 포함 된 `UsmToolkit`은 FFmpeg 표준 구문을 사용합니다.<BR><BR>
 
-01. `\04. Video File Converter.py`파일 IDE로 실행 후 `extract_path = output_folder_path / (usm_file.stem + ".mp4")` 중 `.mp4` 수정 <BR>
+01. `\04. Video File Converter.py`코드 중 `extract_path = output_folder_path / (usm_file.stem + ".mp4")` 부분에서 `.mp4` 수정 <BR>
 02. `\02_Tools\usmtoolkit`로 이동 후 `config.json`파일 내용 중 `OutputFormat`부분 수정 <BR><BR>
 ```
     # 만약, *.mp4 파일이 아닌 *.mkv 파일로 저장하고 싶다면?
 
-    # ▼ movie_file.py 파일 내용 중 일부 ▼
+    # ▼ 04. Video File Converter.py 파일 내용 중 일부 ▼
     # 변환할 *.mp4 파일 경로 생성
     extract_path = output_folder_path / (usm_file.stem + ".mp4")  # <--- 확장자 수정
 
