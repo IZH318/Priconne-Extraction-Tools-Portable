@@ -193,9 +193,13 @@ class RenameHashedFile:
                 self.processed_count_check += 1
                 print(f"\n 특정 문자열 'manifest/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
             elif 'm/' in first_line:
-                new_filename = os.path.join("manifest", "assetmanifest")
+                new_filename = os.path.join("manifest", "movie2manifest")
                 self.processed_count_check += 1
                 print(f"\n 특정 문자열 'm/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+            elif 'b/' in first_line:
+                new_filename = os.path.join("manifest", "soundmanifest")
+                self.processed_count_check += 1
+                print(f"\n 특정 문자열 'b/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
             
             # 새 파일 이름이 결정되었으면 파일 이름 변경
             if new_filename:
@@ -395,7 +399,7 @@ class RenameHashedFile:
         """
         base, extension = os.path.splitext(file_path)  # 파일 경로를 기본 이름(base)과 확장자(extension)로 분리
         counter = 1  # 중복된 파일 이름이 있을 경우 추가할 숫자(counter) 초기화
-        new_file_path = f"{base}_(Duplicate_{counter}){extension}"  # 숫자를 붙인 새로운 파일 경로(new_file_path) 생성
+        new_file_path = f"{base}{extension}"  # 숫자를 붙인 새로운 파일 경로(new_file_path) 생성
         while os.path.exists(new_file_path):  # 새로운 파일 경로가 이미 존재하는지 확인
             counter += 1  # 존재할 경우 숫자 1 증가
             new_file_path = f"{base}_(Duplicate_{counter}){extension}"  # 증가된 숫자 붙인 새로운 파일 경로 생성
