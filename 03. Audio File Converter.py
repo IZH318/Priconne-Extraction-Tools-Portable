@@ -135,6 +135,7 @@ class ConvertSound:
             if user_input == 'y':
                 return False  # 처음부터 작업
             elif user_input == 'n':
+                print("\n\n\n [ 안내 ] 이미 변환 된 파일을 찾고 있습니다. 파일 개수에 따라 시간이 오래 거릴 수 있습니다.")
                 return True  # 이미 존재하는 파일을 생략
             else:
                 print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
