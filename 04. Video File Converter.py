@@ -48,10 +48,10 @@ def find_usm_files(directory):
     특정 디렉토리에서 ".usm" 확장자를 가진 파일들을 찾아 경로를 리스트에 저장하는 함수.
 
     Parameters:
-        directory (str): 파일을 찾을 디렉토리의 경로.
+        - directory (str): 파일을 찾을 디렉토리의 경로.
 
     Returns:
-        list: ".usm" 확장자를 가진 파일들의 경로를 담은 리스트.
+        - list: ".usm" 확장자를 가진 파일들의 경로를 담은 리스트.
     """
     usm_files = []  # ".usm" 확장자를 가진 파일들의 경로를 저장할 리스트
 
@@ -70,10 +70,10 @@ def search_usm_files_in_folder(folder):
     특정 폴더와 그 하위 폴더에서 ".usm" 확장자를 가진 파일들을 찾아 경로를 리스트에 저장하는 함수.
 
     Parameters:
-        folder (str): 파일을 찾을 폴더의 경로.
+        - folder (str): 파일을 찾을 폴더의 경로.
 
     Returns:
-        list: ".usm" 확장자를 가진 파일들의 경로를 담은 리스트.
+        - list: ".usm" 확장자를 가진 파일들의 경로를 담은 리스트.
     """
     usm_files = []  # ".usm" 확장자를 가진 파일들의 경로를 저장할 리스트
 

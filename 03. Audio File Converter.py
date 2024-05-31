@@ -38,11 +38,36 @@ print("\n\n [Y]/[N] 중 대소문자 구분 없이 입력 후 Enter 키를 누�
 
 class ConvertSound:
     def __init__(self, desc):
+        """
+        클래스가 인스턴스화될 때 호출, 주어진 desc 처리하는 process 메서드 호출
+
+        Attributes:
+            None
+
+        Parameters:
+            - desc (str): 초기화 작업에 사용될 설명 문자열
+
+        Returns:
+            None
+        """
         self.process(desc)  # 생성자에서 process 메서드 호출
 
 
 
     def process(self, desc):
+        """
+        주어진 desc 처리, 현재 디렉터리와 하위 폴더에서 *.awb 파일을 검색하여 처리
+
+        Attributes:
+            None
+
+        Parameters:
+            - desc (str): 처리할 설명 문자열
+
+        Returns:
+            None
+        """
+
         current_directory = "."  # 현재 디렉터리로 설정, 필요에 따라 변경 가능
         
         # 현재 디렉터리에 있는 *.awb 파일 검색
@@ -93,7 +118,18 @@ class ConvertSound:
 
 
     def ask_user_skip_existing_files(self):
-        
+        """
+        사용자에게 이미 존재하는 파일을 생략할지 묻고, 사용자의 입력에 따라 해당 작업 방식 반환
+
+        Attributes:
+            None
+
+        Parameters:
+            None
+
+        Returns:
+            - bool: 처음부터 작업할 경우 False, 이미 존재하는 파일을 생략할 경우 True 반환
+        """
         while True:
             user_input = input(" >>> ").strip().lower()
             if user_input == 'y':
@@ -106,6 +142,18 @@ class ConvertSound:
 
 
     def get_tracks(self, file_path):
+        """
+        주어진 파일에서 트랙 정보 가져와 반환
+
+        Attributes:
+            None
+
+        Parameters:
+            - file_path (str): 트랙 정보를 가져올 파일의 경로
+
+        Returns:
+            - list[dict] 또는 None: 트랙 정보를 담은 리스트 또는 파일을 열지 못했거나 예외가 발생한 경우 None 반환
+        """
         try:
             vgmstream_path = self.get_vgmstream()  # vgmstream 실행 경로 가져오기
             result = subprocess.run([vgmstream_path, "-m", file_path], capture_output=True, text=True)  # vgmstream으로 트랙 정보 가져오기
@@ -139,6 +187,19 @@ class ConvertSound:
 
 
     def get_track_name(self, file_path, track_num=None):
+        """
+        주어진 파일의 트랙 이름을 가져와 반환
+
+        Attributes:
+            None
+
+        Parameters:
+            - file_path (str): 트랙 이름을 가져올 파일의 경로
+            - track_num (int 또는 None): 특정 트랙의 번호 (기본값: None)
+
+        Returns:
+            - str 또는 None: 트랙 이름을 반환하거나 파일을 열지 못했거나 예외가 발생한 경우 None 반환
+        """
         try:
             vgmstream_path = self.get_vgmstream()  # vgmstream 실행 경로 가져오기
             command = [vgmstream_path, "-m"]  # vgmstream으로 트랙 이름 가져오기
@@ -163,6 +224,21 @@ class ConvertSound:
 
 
     def convert(self, input_file, output_file, track_num=None, file_count=0):
+        """
+        주어진 파일을 변환하여 지정된 경로에 파일로 저장
+
+        Attributes:
+            None
+
+        Parameters:
+            - input_file (str): 변환할 입력 파일의 경로
+            - output_file (str): 변환된 파일을 저장할 출력 파일의 경로
+            - track_num (int 또는 None): 특정 트랙의 번호 (기본값: None)
+            - file_count (int): 처리된 파일의 순서 (기본값: 0)
+
+        Returns:
+            - bool: 변환이 성공하면 True 반환, 실패하면 False 반환
+        """
         try:
             # 백분율 계산
             percent_complete = (file_count / self.total_files) * 100
@@ -187,6 +263,18 @@ class ConvertSound:
 
 
     def get_vgmstream(self):
+        """
+        vgmstream 실행 파일 경로 반환
+
+        Attributes:
+            None
+
+        Parameters:
+            None
+
+        Returns:
+            - str: vgmstream 실행 파일 경로 반환
+        """
         vgmstream_path = r".\usmtoolkit\vgmstream\test.exe"  # vgmstream 실행 경로 반환
         if not os.path.exists(vgmstream_path):  # vgmstream_path에 지정 한 경로에 파일이 존재하지 않는 경우
             print(f"\n\n\n [ 경고 ] vgmstream 실행 파일을 찾을 수 없습니다. usmtoolkit 폴더 내에 test.exe 파일이 있는지 확인하십시오.")
@@ -198,13 +286,34 @@ class ConvertSound:
 
     def sanitize_filename(self, filename):
         """
-        파일 이름에서 세미콜론을 쉼표로 대체하는 함수
+        파일 이름에서 세미콜론을 쉼표로 대체
+
+        Attributes:
+            None
+
+        Parameters:
+            - filename (str): 처리할 파일 이름
+
+        Returns:
+            - str: 세미콜론이 쉼표로 대체된 파일 이름 반환
         """
         return filename.replace(';', ',')
 
 
 
 def main():
+    """
+    ConvertSound 클래스의 인스턴스를 생성하여 사운드 변환 작업 시작
+
+    Attributes:
+        None
+
+    Parameters:
+        None
+
+    Returns:
+        None
+    """
     desc = "Conversion Progress"  # 진행 상황 설명
     convert_sound = ConvertSound(desc)  # ConvertSound 클래스 인스턴스 생성
 

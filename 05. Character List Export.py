@@ -38,7 +38,7 @@ def find_files_with_name():
     현재 디렉토리부터 시작하여 모든 하위 디렉토리를 포함해 *.json 확장자를 가진 파일들 중에서 'name' 필드를 찾아 해당 파일과 이름을 튜플로 반환.
     
     Returns:
-        found_files (list): 파일 경로와 해당 이름을 포함한 튜플들의 리스트
+        - found_files (list): 파일 경로와 해당 이름을 포함한 튜플들의 리스트
     """
     
     print("\n\n [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
@@ -86,7 +86,7 @@ def save_results_to_txt(found_files):
     텍스트 파일로 저장
     
     Args:
-        found_files (list): 파일 경로와 해당 이름을 포함한 튜플들의 리스트
+        - found_files (list): 파일 경로와 해당 이름을 포함한 튜플들의 리스트
     """
     root = tk.Tk()
     root.withdraw()
@@ -103,9 +103,9 @@ def save_results_to_txt(found_files):
 def main():
     """
     프로그램의 주 실행 함수
+    
     작업이 성공적으로 완료되면 결과를 표시하거나 저장
     """
-    
     while True:
         enter_check = input(" >>> ")
 

@@ -35,5 +35,7 @@ del /s *.usm
 echo.
 
 echo.
+echo.
+echo. 원본 Resource 파일을 모두 삭제했습니다. 아무 키를 눌러 창을 종료하십시오 . . .
 
 pause

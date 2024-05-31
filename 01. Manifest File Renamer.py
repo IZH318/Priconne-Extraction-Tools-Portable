@@ -45,6 +45,23 @@ print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분
 # 파일 이름 변경 및 파일 내용 확인 클래스 정의
 class RenameHashedFile:
     def __init__(self):
+        """
+        FileProcessor 클래스의 초기화 메서드
+
+        Attributes:
+            - target_folders (list): 파일 처리 대상 폴더들을 포함하는 리스트.
+            - hash_list (dict): 해시 값과 파일 이름을 매핑하는 딕셔너리.
+            - processed_count_rename (int): 파일 이름이 변경된 횟수.
+            - processed_count_check (int): 파일 내용이 확인된 횟수.
+            - unprocessed_files (list): 처리되지 않은 파일 목록.
+            - results (list): 처리된 결과를 담는 리스트.
+            
+        Parameters:
+            None
+
+        Returns:
+            None
+        """
         # 클래스 초기화
         self.target_folders = ['a', 'b', 'm', 'manifest', 's', 'v']  # 대상 폴더들을 지정
         self.hash_list = {}  # 해시 값과 파일 이름을 매핑할 딕셔너리
@@ -57,6 +74,17 @@ class RenameHashedFile:
 
     # 사용자 입력을 받아서 작업을 시작하거나 종료
     def start_processing(self):
+        """
+        파일 처리를 시작하는 메서드
+
+        사용자로부터 확인을 받은 후, 파일 처리를 시작하거나 프로그램을 종료
+
+        Parameters:
+            None
+
+        Returns:
+            None
+        """
         while True:
             user_input = input(" >>> ").strip().lower()  # 사용자 입력을 받음
             if user_input == 'y':
@@ -73,6 +101,22 @@ class RenameHashedFile:
 
     # 파일을 처리하는 메인 함수
     def process_files(self):
+        """
+        대상 폴더 내의 파일을 처리하는 메서드
+
+        01. 'manifest.db' 파일의 존재 여부를 확인하고, 없으면 경고 메시지를 출력하고 종료
+        02. 대상 폴더 내의 모든 파일을 가져옴
+        03. 'manifest.db' 파일에서 해시 값과 파일 이름을 가져와 딕셔너리에 저장
+        04. 스레드 풀을 사용하여 파일을 처리, 처리 중 실패한 파일은 목록에 추가
+        05. 처리된 파일의 정보 출력, 처리되지 않은 파일과 인식하지 못한 파일에 대한 예외 처리를 수행
+        06. 처리된 파일의 수를 요약하여 출력
+
+        Parameters:
+            None
+
+        Returns:
+            None
+        """
         manifest_db_path = os.path.join(os.getcwd(), "manifest.db")  # manifest.db 파일 경로 설정
         
         # manifest.db 파일이 현재 디렉토리에 없을 경우 경고 메시지 출력 후 종료
@@ -176,6 +220,27 @@ class RenameHashedFile:
 
     # 파일 처리 함수
     def process(self, file_path, file_index, total_files):
+        """
+        파일을 처리하고 파일 이름을 변경하는 작업을 수행
+        
+        주어진 파일 경로에서 MD5 또는 xxhash64 해시를 계산하고, 해당 해시가 이미 해시 목록에 있는지 확인한 후에 파일 이름을 변경
+        
+        코드는 주어진 파일이름과 이동된 파일 이름을 반환
+
+        Attributes:
+            None
+
+        Parameters:
+            - file_path (str): 처리할 파일의 경로
+            - file_index (int): 현재 처리 중인 파일의 인덱스
+            - total_files (int): 전체 파일 수
+
+        Returns:
+            - tuple: (성공 여부(bool), 원본 파일 경로(str), 변경된 파일 경로(str))
+              - 성공 여부(bool): 파일 이름 변경이 성공했는지 여부를 나타내는 불리언 값
+              - 원본 파일 경로(str): 파일 이름 변경 전의 원본 파일 경로
+              - 변경된 파일 경로(str): 파일 이름 변경 후의 새로운 파일 경로
+        """
         hash_md5 = self.calculate_md5(file_path)  # MD5 해시 값 계산
         hash_md5_value = hash_md5.hexdigest()  # MD5 해시 값을 16진수 문자열로 변환
 
@@ -227,6 +292,18 @@ class RenameHashedFile:
 
     # 파일의 MD5 해시 값 계산
     def calculate_md5(self, file_path):
+        """
+        주어진 파일의 MD5 해시 계산
+
+        Attributes:
+            None
+
+        Parameters:
+            - file_path (str): MD5 해시를 계산할 파일의 경로
+
+        Returns:
+            - md5_hash (hashlib.md5 객체): 주어진 파일의 MD5 해시
+        """
         md5_hash = hashlib.md5()  # MD5 해시 객체 생성
         with open(file_path, "rb") as file:  # 파일을 바이너리 모드로 엶
             for chunk in iter(lambda: file.read(4096), b""):  # 파일을 4096바이트씩 읽음
@@ -237,6 +314,18 @@ class RenameHashedFile:
 
     # 파일의 xxhash64 해시 값 계산
     def calculate_xxhash64(self, file_path):
+        """
+        이 메소드는 주어진 파일의 xxhash64 해시를 계산
+
+        Attributes:
+            None
+
+        Parameters:
+            - file_path (str): xxhash64 해시를 계산할 파일의 경로
+
+        Returns:
+            - xxhash64_hash (xxhash.xxh64 객체): 주어진 파일의 xxhash64 해시
+        """
         xxhash64_hash = xxhash.xxh64()  # xxhash64 해시 객체 생성
         with open(file_path, "rb") as file:  # 파일을 바이너리 모드로 엶
             for chunk in iter(lambda: file.read(4096), b""):  # 파일을 4096바이트씩 읽음
@@ -247,6 +336,18 @@ class RenameHashedFile:
 
     # 대상 폴더 내의 모든 파일 가져오기
     def get_all_files_in_folders(self, target_folders):
+        """
+        이 메소드는 주어진 대상 폴더에서 모든 파일을 찾아내어 반환
+
+        Attributes:
+            None
+
+        Parameters:
+            - target_folders (list of str): 파일을 찾을 대상 폴더의 이름 목록
+
+        Returns:
+            - all_files (list of str): 대상 폴더에서 찾은 모든 파일의 경로 목록
+        """
         all_files = []  # 모든 파일 목록 초기화
         for folder in target_folders:  # 각 대상 폴더에 대해
             folder_path = os.path.join(os.getcwd(), folder)  # 대상 폴더의 전체 경로 생성
@@ -261,12 +362,36 @@ class RenameHashedFile:
 
     # 문자열이 SHA1 해시 값 형식인지 확인
     def is_sha1(self, s):
+        """
+        주어진 문자열이 SHA1 형식인지 확인
+
+        Attributes:
+            None
+
+        Parameters:
+            - s (str): 확인할 문자열
+
+        Returns:
+            - bool: 주어진 문자열이 SHA1 형식이면 True, 그렇지 않으면 False를 반환합니다.
+        """
         return len(s) == 40 and all(c in "0123456789abcdefABCDEF" for c in s)  # 문자열 길이가 40이고, 모든 문자가 16진수인지 확인
 
 
 
     # 중복된 파일 이름이 있을 경우 고유한 파일 이름 생성
     def get_unique_filename(self, file_path):
+        """
+        중복되지 않는 파일 이름 생성
+
+        Attributes:
+            None
+
+        Parameters:
+            - file_path (str): 중복되는 파일 이름을 생성할 파일의 경로
+
+        Returns:
+            - new_file_path (str): 중복되지 않는 새로운 파일 경로
+        """
         base, extension = os.path.splitext(file_path)  # 파일 경로를 기본 이름(base)과 확장자(extension)로 분리
         counter = 1  # 중복된 파일 이름이 있을 경우 추가할 숫자(counter) 초기화
         new_file_path = f"{base}_(Duplicate_{counter}){extension}"  # 숫자를 붙인 새로운 파일 경로(new_file_path) 생성

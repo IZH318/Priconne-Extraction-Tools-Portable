@@ -36,8 +36,12 @@ print("\n\n 입력 후 Enter키를 누르면 작업이 시작됩니다.")
 def find_string_in_json_files(search_query):
     """
     주어진 검색어를 포함하는 *.JSON 파일을 찾고, 해당 파일 내의 정보를 추출하는 함수
-    :param search_query: 검색할 문자열
-    :return: 검색어를 포함하는 *.JSON 파일 내의 정보 리스트
+    
+    param search_query
+        - 검색할 문자열
+    
+    return
+        - 검색어를 포함하는 *.json 파일 내의 정보 리스트
     """
 
     print("\n\n\n [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
@@ -80,7 +84,9 @@ def find_string_in_json_files(search_query):
 def save_results_to_txt(found_files):
     """
     검색 결과를 텍스트 파일로 저장하는 함수
-    :param found_files: 검색 결과 리스트
+    
+    param found_files
+        - 검색 결과 리스트
     """
     root = tk.Tk()  # tkinter의 기본 루트 윈도우 생성
     root.withdraw()  # 윈도우를 숨김
