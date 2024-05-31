@@ -56,7 +56,7 @@ class ConvertSound:
 
     def process(self, desc):
         """
-        주어진 desc 처리, 현재 디렉터리와 하위 폴더에서 *.awb 파일을 검색하여 처리
+        주어진 desc 처리, 현재 디렉터리와 하위 폴더에서 *.acb, *.awb 파일을 검색하여 처리
 
         Attributes:
             None
@@ -70,8 +70,8 @@ class ConvertSound:
 
         current_directory = "."  # 현재 디렉터리로 설정, 필요에 따라 변경 가능
         
-        # 현재 디렉터리에 있는 *.awb 파일 검색
-        current_files = [f for f in os.listdir(current_directory) if f.endswith((".awb"))]
+        # 현재 디렉터리에 있는 *.acb, *.awb 파일 검색
+        current_files = [f for f in os.listdir(current_directory) if f.endswith((".acb", ".awb"))]
 
         # b, s, v 폴더에 있는 모든 하위 폴더의 *.awb 파일 검색
         subfolder_files = []  # 현재 디렉토리에서 하위 디렉토리의 파일 경로를 저장할 리스트
@@ -79,7 +79,7 @@ class ConvertSound:
             folder_path = os.path.join(current_directory, folder_name)  # 탐색할 폴더의 경로 생성
             if os.path.isdir(folder_path):  # 만약 폴더가 존재한다면
                 for root, dirs, files in os.walk(folder_path):  # 해당 폴더 내의 모든 하위 디렉토리 및 파일에 대해 반복
-                    subfolder_files.extend([os.path.join(root, f) for f in files if f.endswith((".awb"))])  # 파일들 중 ".awb" 확장자를 가진 파일들의 경로를 리스트에 추가
+                    subfolder_files.extend([os.path.join(root, f) for f in files if f.endswith((".acb", ".awb"))])  # 파일들 중 "*.acb", ".awb" 확장자를 가진 파일들의 경로를 리스트에 추가
 
         files = current_files + subfolder_files
         self.total_files = len(files)  # 전체 파일 수 업데이트
