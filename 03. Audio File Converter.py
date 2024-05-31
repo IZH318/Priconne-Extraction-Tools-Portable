@@ -1,7 +1,7 @@
 # 필요한 라이브러리 임포트
 import os  # 파일 및 디렉터리 관리를 위한 os 모듈
 import subprocess  # 외부 프로세스 실행을 위한 subprocess 모듈
-import sys
+import sys  # 파이썬 시스템과 관련된 기능을 제공하는 sys 모듈
 from pathlib import Path  # 경로 관리를 위한 Path 클래스
 
 
@@ -49,12 +49,12 @@ class ConvertSound:
         current_files = [f for f in os.listdir(current_directory) if f.endswith((".awb"))]
 
         # b, s, v 폴더에 있는 모든 하위 폴더의 *.awb 파일 검색
-        subfolder_files = []
-        for folder_name in ["b", "s", "v"]:
-            folder_path = os.path.join(current_directory, folder_name)
-            if os.path.isdir(folder_path):
-                for root, dirs, files in os.walk(folder_path):
-                    subfolder_files.extend([os.path.join(root, f) for f in files if f.endswith((".awb"))])
+        subfolder_files = []  # 현재 디렉토리에서 하위 디렉토리의 파일 경로를 저장할 리스트
+        for folder_name in ["b", "s", "v"]:  # 현재 디렉토리와 탐색할 폴더명 리스트
+            folder_path = os.path.join(current_directory, folder_name)  # 탐색할 폴더의 경로 생성
+            if os.path.isdir(folder_path):  # 만약 폴더가 존재한다면
+                for root, dirs, files in os.walk(folder_path):  # 해당 폴더 내의 모든 하위 디렉토리 및 파일에 대해 반복
+                    subfolder_files.extend([os.path.join(root, f) for f in files if f.endswith((".awb"))])  # 파일들 중 ".awb" 확장자를 가진 파일들의 경로를 리스트에 추가
 
         files = current_files + subfolder_files
         self.total_files = len(files)  # 전체 파일 수 업데이트
@@ -83,7 +83,7 @@ class ConvertSound:
             if tracks is not None:
                 file_count += 1  # 처리된 파일 수 증가
                 for track in tracks:
-                    output_file = item_converted_folder / f"{self.sanitize_filename(track['Name'])}.wav"  # *.WAV 파일 경로 생성
+                    output_file = item_converted_folder / f"{self.sanitize_filename(track['Name'])}.wav"  # *.wav 파일 경로 생성
                     if self.convert(item_path, output_file, track['TrackNum'], file_count):  # 파일 변환 수행
                         file_converted_count += 1  # 변환 된 총 파일의 수 증가
 
@@ -175,7 +175,7 @@ class ConvertSound:
             print()
             print(f" [ Source Info ]")
             vgmstream_path = self.get_vgmstream()  # vgmstream 실행 경로 가져오기
-            command = [vgmstream_path, "-o", str(output_file)]  # *.WAV 파일로 변환하는 명령 생성
+            command = [vgmstream_path, "-o", str(output_file)]  # *.wav 파일로 변환하는 명령 생성
             if track_num is not None:
                 command.extend(["-s", str(track_num)])  # 특정 트랙만 변환하는 경우
             command.append(str(input_file))

@@ -62,17 +62,20 @@ def find_files_with_name():
     json_files = [os.path.join(root, file) for root, dirs, files in os.walk(".", topdown=False) for file in files if file.endswith(".json")]
     # 현재 디렉토리부터 모든 하위 디렉토리까지 검색하여 *.json 파일 목록 가져오기
     with tqdm(total=len(json_files), desc=" *.json 파일을 불러오는 중...") as pbar:  # tqdm을 이용한 진행 바 표시
-        for file_path in json_files:
-            with open(file_path, "r", encoding="utf-8") as f:
+        for file_path in json_files:  # 각 *.json 파일에 대해 반복
+            with open(file_path, "r", encoding="utf-8") as f:  # 파일 열기
                 lines = f.readlines()
-                for line in lines:
-                    match = re.search(r'"name":\s*"(.*?)"', line)  # 'name' 필드를 찾는 정규 표현식
+                for line in lines:  # 파일의 각 줄에 대해 반복하여 'name' 필드를 찾음
+                    match = re.search(r'"name":\s*"(.*?)"', line)  # 'name' 필드를 찾는 정규 표현식(* 문자열인 line에서 "name" 필드의 값을 찾음)
                     if match:
-                        character_name = match.group(1)
+                        character_name = match.group(1)  # 'name' 필드가 발견되면 이름 추출
+
+                        # 이미 발견된 이름인지 확인 후, 발견된 경우 리스트에 추가하고 진행
                         if character_name not in found_names:
                             found_names.add(character_name)
                             found_files.append((file_path, character_name))
-                        break
+                            
+                        break  # 'name' 필드를 찾았으면 다음 파일로 넘어감
             pbar.update(1)  # 진행 바 업데이트
     return found_files
 

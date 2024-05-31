@@ -44,22 +44,44 @@ print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분
 
 # 디렉터리에서 *.usm 파일을 찾아 리스트로 반환하는 함수
 def find_usm_files(directory):
-    usm_files = []
+    """
+    특정 디렉토리에서 ".usm" 확장자를 가진 파일들을 찾아 경로를 리스트에 저장하는 함수.
+
+    Parameters:
+        directory (str): 파일을 찾을 디렉토리의 경로.
+
+    Returns:
+        list: ".usm" 확장자를 가진 파일들의 경로를 담은 리스트.
+    """
+    usm_files = []  # ".usm" 확장자를 가진 파일들의 경로를 저장할 리스트
+
+    # 디렉토리 내의 모든 파일에 대해 반복
     for file in os.listdir(directory):
-        file_path = os.path.join(directory, file)
-        if os.path.isfile(file_path) and file.endswith(".usm"):
-            usm_files.append(Path(file_path))
+        file_path = os.path.join(directory, file)  # 파일의 전체 경로 생성
+        if os.path.isfile(file_path) and file.endswith(".usm"):  # 파일이 존재하고 ".usm" 확장자를 가진 경우
+            usm_files.append(Path(file_path))  # 파일의 경로를 Path 객체로 변환하여 리스트에 추가
     return usm_files
 
 
 
 # 디렉터리 내 하위 폴더까지 검색하여 *.usm 파일을 찾아 리스트로 반환하는 함수
 def search_usm_files_in_folder(folder):
-    usm_files = []
+    """
+    특정 폴더와 그 하위 폴더에서 ".usm" 확장자를 가진 파일들을 찾아 경로를 리스트에 저장하는 함수.
+
+    Parameters:
+        folder (str): 파일을 찾을 폴더의 경로.
+
+    Returns:
+        list: ".usm" 확장자를 가진 파일들의 경로를 담은 리스트.
+    """
+    usm_files = []  # ".usm" 확장자를 가진 파일들의 경로를 저장할 리스트
+
+    # 주어진 폴더와 그 하위 폴더에 대해 반복
     for root, dirs, files in os.walk(folder):
-        for file in files:
-            if file.endswith(".usm"):
-                usm_files.append(Path(os.path.join(root, file)))
+        for file in files:  # 각 폴더 내의 파일에 대해 반복
+            if file.endswith(".usm"):  # 파일이 ".usm" 확장자를 가진 경우
+                usm_files.append(Path(os.path.join(root, file)))  # 파일의 전체 경로를 Path 객체로 변환하여 리스트에 추가
     return usm_files
 
 while True:    
@@ -89,38 +111,47 @@ if rewrite_response == 'y':
 
         # 각 폴더에 대해 하위 폴더까지 모두 검색하여 usm 파일 찾기
         target_folder_files = []  # target_folder_files 초기화
+
+        # target_folders 목록의 각 폴더에 대해 반복
         for target_folder in target_folders:
-            target_folder_path = os.path.join(os.getcwd(), target_folder)
+            target_folder_path = os.path.join(os.getcwd(), target_folder)  # 각 폴더의 경로를 현재 작업 디렉토리에 추가하여 완전한 경로 생성
+
+            # 해당 경로가 디렉토리인지 확인
             if os.path.isdir(target_folder_path):
-                target_folder_files = search_usm_files_in_folder(target_folder_path)
+                target_folder_files = search_usm_files_in_folder(target_folder_path)  # 디렉토리인 경우, search_usm_files_in_folder 함수를 사용하여 ".usm" 확장자를 가진 파일들을 찾아 리스트에 저장
             else:
-                continue
+                continue  # 디렉토리가 아닌 경우, 건너뜀
 
         # 모든 *.usm 파일 리스트 구하기
-        all_usm_files = current_directory_files + target_folder_files
-        total_files = len(all_usm_files)
+        all_usm_files = current_directory_files + target_folder_files  # 현재 디렉토리와 대상 폴더에서 찾은 ".usm" 확장자를 가진 파일들을 모두 합쳐서 전체 파일 목록을 만듦
+        total_files = len(all_usm_files)  # 전체 ".usm" 파일 수 계산
 
         # 변환
-        for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):
+        for idx, usm_file in enumerate(current_directory_files + target_folder_files, start=1):  # 현재 디렉토리 파일과 대상 폴더 파일을 모두 포함하여 모든 ".usm" 파일에 대해 반복
             print(f" [ Source Info ]")
             
             # _Converted 폴더 생성
-            output_folder_name = "_Converted"
-            output_folder_path = usm_file.parent / output_folder_name
+            output_folder_name = "_Converted"  # 변환된 파일을 저장할 폴더 이름 설정
+            output_folder_path = usm_file.parent / output_folder_name  # 변환된 파일을 저장할 폴더 경로 생성
+
+            # 폴더가 존재하지 않으면 폴더를 생성
             if not output_folder_path.exists():
                 output_folder_path.mkdir()
 
             # 변환할 *.mp4 파일 경로 생성
             extract_path = output_folder_path / (usm_file.stem + ".mp4")
 
-            # 이미 존재하는지 확인 후 없으면 변환
+            # 이미 변환된 파일이 존재하지 않는 경우에만 변환 작업 실행
             if not extract_path.exists():
+                # 변환 명령어 생성
                 command = (
-                    f'cd "{usmtoolkit_path.parent.absolute()}" '
-                    f'&& "{usmtoolkit_path.name}" convert '
-                    f'-c "{usm_file.absolute()}" '
-                    f'-o "{output_folder_path}"'
+                    f'cd "{usmtoolkit_path.parent.absolute()}" '  # usmtoolkit 경로로 이동
+                    f'&& "{usmtoolkit_path.name}" convert '  # convert 명령어 실행
+                    f'-c "{usm_file.absolute()}" '  # 변환할 원본 파일 지정
+                    f'-o "{output_folder_path}"'  # 변환된 파일을 저장할 경로 지정
                 )
+                
+                # 변환 명령어 실행
                 os.system(command)
 
                 total_processed += 1 # 처리된 파일 수 증가
