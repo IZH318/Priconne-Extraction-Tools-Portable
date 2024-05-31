@@ -256,50 +256,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         with open(dest, "wb") as f:  # 추출된 폰트 데이터 파일 저장
                             f.write(font.m_FontData)
                             total_processed += 1  # 처리된 파일 수 증가
-                            print(f"추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
-                            
-        # 예외 발생 처리
-        except Exception as e:def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
-    # 각 Unity3D 파일에 대해 반복
-    for index, file_path in enumerate(unity3d_files, start=1):
-        # 백분율 계산
-        percent_complete = (index / len(unity3d_files)) * 100
-        
-        print(f"\n\n\n [ Source Info ]")
-        print(f" 작업 진행 상태: {index}/{len(unity3d_files)} ({percent_complete:.4f}%)")
-        print(f" 원본 파일 경로: {file_path} \n")
-        print(f" [ Processing Results ]")
-
-        # 처리된 파일 개수를 전역 변수로 설정
-        global total_processed
-
-        try:
-            env = UnityPy.load(file_path)  # UnityPy를 사용하여 *.unity3d 파일 로드
-
-            folder_name = os.path.splitext(os.path.basename(file_path))[0]  # 파일명에서 확장자 제거하여 폴더명으로 사용
-
-            converted_folder_path = os.path.join(os.path.dirname(file_path), "_Converted")  # _Converted 폴더 경로 생성
-            os.makedirs(converted_folder_path, exist_ok=True)  # 폴더 생성 (이미 존재할 경우 무시)
-
-            folder_path = os.path.join(converted_folder_path, folder_name)  # 폴더 생성 후 파일 경로 설정
-            os.makedirs(folder_path, exist_ok=True)  # 폴더 생성 (이미 존재할 경우 무시)
-
-            # *.unity3d 파일 내 객체들을 반복하여 처리
-            for obj in env.objects:
-                # Font 객체인 경우 폰트 데이터를 추출하여 저장
-                if obj.type.name == "Font":
-                    font = obj.read()  # 객체에서 폰트 데이터를 읽어옴
-                    if font.m_FontData:  # 만약 폰트 데이터가 존재한다면 실행
-                        extension = ".ttf"  # 기본 확장자를 .ttf로 설정
-                        if font.m_FontData[:4] == b"OTTO":  # 만약 폰트 데이터의 첫 4바이트가 "OTTO"면 .otf로 확장자 설정
-                            extension = ".otf"
-                        
-                        dest = os.path.join(folder_path, font.name + extension)  # 추출된 폰트 파일의 경로 설정
-                        
-                        with open(dest, "wb") as f:  # 추출된 폰트 데이터 파일 저장
-                            f.write(font.m_FontData)
-                            total_processed += 1  # 처리된 파일 수 증가
-                            print(f"추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
+                            print(f" 추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
                             
         # 예외 발생 처리
         except Exception as e:
@@ -319,7 +276,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                     dest = dest + ".png"
                     data.image.save(dest)  # 이미지 저장
                     total_processed += 1  # 처리된 파일 수 증가
-                    print(f"추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
+                    print(f" 추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
 
 
                 # TextAsset 객체인 경우 텍스트 데이터를 추출하여 저장
@@ -338,113 +295,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         with open(dest, "wb") as f:
                             f.write(bytes(data.script))
                             total_processed += 1  # 처리된 파일 수 증가
-                            print(f"추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
-
-                # MonoScript, MonoBehaviour, GameObject, Transform, AssetBundle 객체인 경우 처리
-                elif obj.type.name in ["MonoBehaviour", "MonoScript", "GameObject", "Transform", "AssetBundle"]:
-                    if obj.serialized_type.nodes:
-                        tree = obj.read_typetree()  # 객체 타입 트리 읽어옴
-                        os.makedirs(folder_path, exist_ok=True)  # 저장할 디렉토리 생성
-                        fp = os.path.join(folder_path, f"{tree['m_Name']}.json")  # 타입 트리 *.json 파일로 저장
-                        with open(fp, "wt", encoding="utf8") as f:
-                            json.dump(tree, f, ensure_ascii=False, indent=4)
-                        total_processed += 1  # 처리된 파일 수 증가
-                        print(f" 추출된 파일 경로: \{fp}")  # 저장된 파일 경로 출력
-                    else:
-                        data = obj.read()  # Unity MonoBehaviour 헤더 없이 관련된 데이터를 저장
-                        os.makedirs(folder_path, exist_ok=True)  # 저장할 디렉토리 생성
-                        fp = os.path.join(folder_path, f"{data.name}.bin")  # 저장할 파일 경로 설정
-
-                        with open(fp, "wb") as f:  # 바이너리 파일로 데이터 저장
-                            f.write(data.raw_data)
-                        total_processed += 1  # 처리된 파일 수 증가
-                        print(f" 추출된 파일 경로: \{fp}")  # 저장된 파일 경로 출력
-
-                    # edit 단계
-                    if obj.serialized_type.nodes:
-                        tree = obj.read_typetree()  # 트리 내의 데이터에 수정 내역 적용
-                        obj.save_typetree(tree)  # 읽어온 타입 트리를 다시 저장
-                    else:
-                        data = obj.read()  # 데이터 읽어온 후 수정된 내용 저장
-
-                        # 대체할 파일이 있는 디렉토리의 경로와 데이터의 이름을 조합하여 파일 경로 설정
-                        with open(os.path.join(replace_dir, data.name)) as f:
-                            data.save(raw_data=f.read())  # 대체할 파일을 읽어서 데이터로 저장
-
-                # AudioClip 객체인 경우 오디오 클립을 추출하여 저장
-                elif obj.type.name == "AudioClip":
-                    clip = obj.read()  # 객체에서 오디오 클립 읽어옴
-                    for name, data in clip.samples.items():  # 오디오 클립의 각 샘플 추출 후 *.wav 파일로 저장
-                        dest = os.path.join(folder_path, name + ".wav")  # *.wav 파일 저장 경로 설정
-                        with open(dest, "wb") as f:  # *.wav 파일로 저장하기 위해 바이너리 쓰기 모드로 파일 실행
-                            f.write(data)  # 클립 데이터 *.wav 파일로 저장
-                            total_processed += 1  # 처리된 파일 수 증가
-                            print(f" 추출된 파일 경로: \{dest}")  # 저장된 파일 경로 출력
-
-                # Mesh 객체인 경우 메시 데이터를 추출하여 저장
-                elif obj.type.name == "Mesh":
-                    mesh = obj.read()  # "Mesh" 타입 객체 읽어옴
-                    dest = os.path.join(folder_path, f"{mesh.name}.obj")  # *.obj 파일로 메시 추출 후 저장
-
-                    # *.obj 파일로 메시 추출 후 저장하기 위해 대상 파일을 텍스트 모드로 실행 (* 줄바꿈 문자를 자동 변환 X)
-                    with open(dest, "wt", newline="") as f:
-                        f.write(str(mesh.export()))  # 메시를 *.obj로 저장
-                        total_processed += 1  # 처리된 파일 수 증가
-                        print(f" 추출된 파일 경로: \{dest}")  # 저장된 파일 경로 출력
-
-                # Texture2DArray 객체인 경우 텍스처 배열 이미지를 추출하여 저장
-                elif obj.type.name == "Texture2DArray":
-                    # "Texture2DArray" 타입 객체를 읽어옴
-                    data = obj.read()
-
-                    # 각 이미지를 개별적으로 추출하여 *.png 파일로 저장
-                    for i, image in enumerate(data.images):
-                        dest = os.path.join(folder_path, f"{data.name}_{i}.png")  # 저장할 파일 경로 설정
-                        image.save(dest)  # 이미지 파일로 저장
-                        total_processed += 1  # 처리된 파일 수 증가
-                        print(f" 추출된 파일 경로: \{dest}")  # 저장된 파일의 경로 출력
-
-        except Exception as e:
-            # 오류 발생 시 해당 리소스를 무시하고 다음 작업을 진행합니다.
-            print(f" 오류 발생: 추출할 수 없는 리소스가 발견되었습니다. 해당 리소스를 무시하고 다음 작업을 진행합니다.")
-            print(f" 오류 메시지: {e}")
-            continue
-            continue  # 예외 발생 시 계속 진행
-
-        try:
-            env = UnityPy.load(file_path)  # UnityPy를 사용하여 *.unity3d 파일 로드
-
-            os.makedirs(folder_path, exist_ok=True)  # 폴더 생성 (이미 존재할 경우 무시)
-
-            for path, obj in env.container.items():  # *.unity3d 파일 내 객체들을 반복하여 처리
-                if obj.type.name in ["Texture2D", "Sprite"]:  # Texture2D 또는 Sprite 객체인 경우 이미지를 추출하여 저장
-                    data = obj.read()  # 객체에서 이미지 데이터 읽어옴
-                    dest = os.path.join(folder_path, path)  # 이미지 저장 경로 설정
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)  # 저장 경로의 디렉토리가 존재하지 않으면 생성
-                    dest, _ = os.path.splitext(dest)  # 확장자 .png로 설정
-                    dest = dest + ".png"
-                    data.image.save(dest)  # 이미지 저장
-                    total_processed += 1  # 처리된 파일 수 증가
-                    print(f"추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
-
-
-                # TextAsset 객체인 경우 텍스트 데이터를 추출하여 저장
-                elif obj.type.name == "TextAsset":
-                    data = obj.read()  # 객체에서 텍스트 데이터 읽어옴
-                    dest = os.path.join(folder_path, data.name)  # 텍스트 저장 경로 설정
-                    
-                    # file_path 문자열이 \와 'storydata_'문자열, 그 뒤 7자리 숫자, 마지막으로 ".unity3d"로 끝나는 패턴일 때
-                    if re.match(r'^.*\\storydata_\d{7}\.unity3d$', file_path):
-                        dest_json = os.path.join(folder_path, data.name + ".json")  # *.json 파일 저장 경로 설정
-                        deserialize_story(data.script, dest_json)  # *.json 데이터 역직렬화 후, 역직렬화된 데이터 dest_json 경로에 저장
-                        
-                    # 그 외의 경우에는 바이너리 형태로 저장
-                    else:
-                        # dest 경로에 바이너리 파일 쓰기 모드로 열고 데이터 기록
-                        with open(dest, "wb") as f:
-                            f.write(bytes(data.script))
-                            total_processed += 1  # 처리된 파일 수 증가
-                            print(f"추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
+                            print(f" 추출된 파일 경로: {dest}")  # 저장된 파일 경로 출력
 
                 # MonoScript, MonoBehaviour, GameObject, Transform, AssetBundle 객체인 경우 처리
                 elif obj.type.name in ["MonoBehaviour", "MonoScript", "GameObject", "Transform", "AssetBundle"]:
