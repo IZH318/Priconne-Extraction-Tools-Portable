@@ -167,7 +167,7 @@
 
 ![녹화_2024_05_31_21_06_50_102 mp4_snapshot_00 00 000](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/assets/99892351/f232bf41-85ff-4352-ba32-af4c0907c695) <BR>
 
-![ezgif-4-b28ffe7a05](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/assets/99892351/edfff47e-de9b-4acc-971e-9097cb96a58f) <BR>
+![ezgif-6-3dc6ee929c](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/assets/99892351/a053907f-6979-4806-a488-d7706425407f) <BR>
 
 ![녹화_2024_05_31_21_06_50_102 mp4_snapshot_00 01 282](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/assets/99892351/ca0a94af-f572-45a8-8934-8c8c4eeb1514) <BR>
 (📌 파일 이름이 모두 변경되면 위와 같은 화면이 표시됩니다.) <BR><BR><BR>
@@ -291,25 +291,21 @@
 
 `PRICONNE_EXTRACTION_TOOLS`에 포함 된 `UsmToolkit`은 FFmpeg 표준 구문을 사용합니다.<BR><BR>
 
-01. `\Priconne_Extractor\src\files`로 이동 후 `movie_file.py`파일 내용 중 `extract_path`부분 수정 <BR>
-02. `\Priconne_Extractor\usmtoolkit`로 이동 후 `config.json`파일 내용 중 `OutputFormat`부분 수정<BR><BR>
+01. `\04. Video File Converter.py`파일 IDE로 실행 후 `extract_path = output_folder_path / (usm_file.stem + ".mp4")` 중 `.mp4` 수정 <BR>
+02. `\02_Tools\usmtoolkit`로 이동 후 `config.json`파일 내용 중 `OutputFormat`부분 수정 <BR><BR>
 ```
     # 만약, *.mp4 파일이 아닌 *.mkv 파일로 저장하고 싶다면?
 
     # ▼ movie_file.py 파일 내용 중 일부 ▼
-    def extract(self) -> None:
-        self.download()
-        extract_path = self.path.parent.parent / (self.path.stem + ".mkv")  # <--- 확장자 수정
-        if extract_path.exists():
-            return
+    # 변환할 *.mp4 파일 경로 생성
+    extract_path = output_folder_path / (usm_file.stem + ".mp4")  # <--- 확장자 수정
 
     # ▼ config.json 파일 내용 ▼
 {
     "VideoParameter" : "-c:v copy",
-    "AudioParameter" : "-c:a ac3 -b:a 640k -af pan='stereo|FL=FL+FC+0.5*BL+BR|FR=FR+LFE+0.5*BL+BR'",
-    "OutputFormat" : "mkv"
+    "AudioParameter" : "-c:a ac3",
+    "OutputFormat" : "mkv"  # <--- 확장자 수정
 }
-    # ▲ OutputFormat을 mkv로 수정 ▲
 ```
 
 <BR>
