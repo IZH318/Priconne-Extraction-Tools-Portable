@@ -13,8 +13,9 @@ echo.
 
 echo. [ Package List ]
 echo. requests-futures==1.0.0
-echo. UnityPy==1.9.28
 echo. tqdm==4.66.2
+echo. UnityPy==1.9.28
+echo. xxHash==3.4.1
 
 echo.
 echo.

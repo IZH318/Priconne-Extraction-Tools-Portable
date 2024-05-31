@@ -1,9 +1,12 @@
 # 필요한 라이브러리 임포트
 import os  # 파일 및 디렉토리 조작을 위한 라이브러리
+import sys  # 파이썬 시스템과 관련된 기능을 제공하는 sys 모듈
 import re  # 정규 표현식 사용을 위한 라이브러리
 import tkinter as tk  # GUI 생성을 위한 라이브러리
 from tkinter import filedialog  # 파일 대화상자 기능을 사용하기 위한 라이브러리 임포트
 from tqdm import tqdm  # 진행 바 표시를 위한 라이브러리 임포트
+
+
 
 print("""
            ___      _                        _____                       __  __      ___      _ ___  _         
@@ -19,6 +22,8 @@ print("""
                                                                                         /_/
     """)
 
+
+
 print(" [ 안내 ] 찾고자 하는 캐릭터 명의 일부분 또는 전체를 입력하십시오.")
 print("          ( * 아무 값도 입력하지 않을 시 모든 내용을 반환합니다.)\n")
 print(" [ 주의 ] 본 도구는 '02. unity3d File Converter.py'에서 모든 Resource를 추출 후 작업해야 합니다.\n")
@@ -28,11 +33,16 @@ print("                           02. 콘솔 내부 클릭 후 Enter키 누르�
 print("\n\n 입력 후 Enter키를 누르면 작업이 시작됩니다.")
 
 
+
 def find_string_in_json_files(search_query):
     """
     주어진 검색어를 포함하는 *.JSON 파일을 찾고, 해당 파일 내의 정보를 추출하는 함수
-    :param search_query: 검색할 문자열
-    :return: 검색어를 포함하는 *.JSON 파일 내의 정보 리스트
+    
+    param search_query
+        - 검색할 문자열
+    
+    return
+        - 검색어를 포함하는 *.json 파일 내의 정보 리스트
     """
 
     print("\n\n\n [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
@@ -71,10 +81,13 @@ def find_string_in_json_files(search_query):
     return found_files
 
 
+
 def save_results_to_txt(found_files):
     """
     검색 결과를 텍스트 파일로 저장하는 함수
-    :param found_files: 검색 결과 리스트
+    
+    param found_files
+        - 검색 결과 리스트
     """
     root = tk.Tk()  # tkinter의 기본 루트 윈도우 생성
     root.withdraw()  # 윈도우를 숨김
@@ -88,7 +101,7 @@ def save_results_to_txt(found_files):
                 f.write(f" [Vo Data] {file_info[3]}\n")
                 f.write(f" [Character Dialogue] {file_info[4]}\n\n")
         input("\n\n\n 검색 결과가 성공적으로 저장되었습니다. Enter 키를 누르면 창이 종료됩니다.\n >>> ")
-        quit()
+        sys.exit()
 
 
 
