@@ -7,10 +7,9 @@ import queue
 import multiprocessing
 
 # --------------------------------------------------------------------------
-# 스크립트 파싱 로직 (이전과 동일)
+# 스크립트 파싱 로직
 # --------------------------------------------------------------------------
 def parse_script_to_readable_flow(script_text):
-    # ... (이전과 동일한 파싱 함수, 생략)
     lines = script_text.strip().split('\n')
     output = ""
     scene_count = 0
@@ -75,7 +74,6 @@ def parse_script_to_readable_flow(script_text):
     return output
 
 def worker_process_file(filepath):
-    # ... (이전과 동일한 멀티프로세싱 워커 함수, 생략)
     file_content = None
     encodings_to_try = ['utf-8', 'cp949', 'euc-kr']
     for encoding in encodings_to_try:
@@ -100,10 +98,10 @@ class ScriptAnalyzerApp:
     def __init__(self, root):
         self.root = root
         
-        # [수정된 부분] 언어 데이터 딕셔너리
+        # 언어 데이터 딕셔너리
         self.LANGUAGES = {
             'ko': {
-                'title': "게임 스크립트 분석기 v8.0 (다국어 지원)",
+                'title': "Priconne Storydata Explorer",
                 'file_list': "파일 목록",
                 'tab_original': "원본 스크립트",
                 'tab_converted': "변환 결과",
@@ -132,7 +130,7 @@ class ScriptAnalyzerApp:
                 'error_no_files_to_save': "저장할 파일이 목록에 없습니다."
             },
             'en': {
-                'title': "Game Script Analyzer v8.0 (Multi-language)",
+                'title': "Priconne Storydata Explorer",
                 'file_list': "File List",
                 'tab_original': "Original Script",
                 'tab_converted': "Converted Result",
@@ -161,7 +159,7 @@ class ScriptAnalyzerApp:
                 'error_no_files_to_save': "There are no files in the list to save."
             },
             'ja': {
-                'title': "ゲームスクリプト分析ツール v8.0 (多言語対応)",
+                'title': "Priconne Storydata Explorer",
                 'file_list': "ファイルリスト",
                 'tab_original': "元のスクリプト",
                 'tab_converted': "変換結果",
@@ -289,7 +287,6 @@ class ScriptAnalyzerApp:
         
         self.update_progressbar_text(lang_data['progress_idle'])
 
-    # ... (나머지 함수들은 이전과 동일하지만, 메시지 박스 등에서 self.LANGUAGES 사용하도록 수정)
     def open_file(self):
         filepath = filedialog.askopenfilename(
             title=self.LANGUAGES[self.lang]['open_file_title'],
