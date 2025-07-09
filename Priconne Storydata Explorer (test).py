@@ -7,9 +7,10 @@ import queue
 import multiprocessing
 
 # --------------------------------------------------------------------------
-# 전역 스코프에 파서 함수 정의 (멀티프로세싱을 위해)
+# 스크립트 파싱 로직 (이전과 동일)
 # --------------------------------------------------------------------------
 def parse_script_to_readable_flow(script_text):
+    # ... (이전과 동일한 파싱 함수, 생략)
     lines = script_text.strip().split('\n')
     output = ""
     scene_count = 0
@@ -74,6 +75,7 @@ def parse_script_to_readable_flow(script_text):
     return output
 
 def worker_process_file(filepath):
+    # ... (이전과 동일한 멀티프로세싱 워커 함수, 생략)
     file_content = None
     encodings_to_try = ['utf-8', 'cp949', 'euc-kr']
     for encoding in encodings_to_try:
@@ -97,7 +99,98 @@ def worker_process_file(filepath):
 class ScriptAnalyzerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("게임 스크립트 분석기 v7.2 (Final)")
+        
+        # [수정된 부분] 언어 데이터 딕셔너리
+        self.LANGUAGES = {
+            'ko': {
+                'title': "게임 스크립트 분석기 v8.0 (다국어 지원)",
+                'file_list': "파일 목록",
+                'tab_original': "원본 스크립트",
+                'tab_converted': "변환 결과",
+                'progress_idle': "대기 중...",
+                'menu_main': "메뉴(Menu)",
+                'menu_file_open': "파일 열기...",
+                'menu_folder_open': "폴더 열기...",
+                'menu_save': "변환 결과 저장...",
+                'menu_lang': "언어(Language)",
+                'menu_exit': "종료",
+                'save_option_title': "저장 옵션",
+                'save_option_msg': "현재 선택된 파일만 저장하시겠습니까?\n\n- 예(Y): 현재 선택한 파일 1개만 저장\n- 아니요(N): 목록의 모든 파일 저장",
+                'open_folder_title': "스크립트가 포함된 상위 폴더를 선택하세요",
+                'open_file_title': "스크립트 파일 선택",
+                'save_folder_title': "결과를 저장할 폴더를 선택하세요",
+                'search_start': "검색 시작...",
+                'search_progress': "검색 중... ({}/{})",
+                'search_done': "완료! ({}개 파일)",
+                'search_none': "해당 패턴의 파일을 찾을 수 없습니다.",
+                'save_prep': "변환 작업 준비 중... (총 {}개)",
+                'save_progress': "저장 중... ({}/{})",
+                'save_done': "총 {}개의 파일이 저장되었습니다.",
+                'save_complete': "저장 완료!",
+                'error_file_read': "{} 파일을 읽을 수 없습니다.",
+                'error_no_selection': "선택된 파일이 없습니다.",
+                'error_no_files_to_save': "저장할 파일이 목록에 없습니다."
+            },
+            'en': {
+                'title': "Game Script Analyzer v8.0 (Multi-language)",
+                'file_list': "File List",
+                'tab_original': "Original Script",
+                'tab_converted': "Converted Result",
+                'progress_idle': "Idle...",
+                'menu_main': "Menu",
+                'menu_file_open': "Open File...",
+                'menu_folder_open': "Open Folder...",
+                'menu_save': "Save Converted Result...",
+                'menu_lang': "Language",
+                'menu_exit': "Exit",
+                'save_option_title': "Save Option",
+                'save_option_msg': "Save only the currently selected file?\n\n- Yes: Save only the selected file.\n- No: Save all files in the list.",
+                'open_folder_title': "Select the parent folder containing scripts",
+                'open_file_title': "Select a script file",
+                'save_folder_title': "Select a folder to save results",
+                'search_start': "Searching...",
+                'search_progress': "Searching... ({}/{})",
+                'search_done': "Complete! ({} files found)",
+                'search_none': "Could not find files with the specified pattern.",
+                'save_prep': "Preparing to convert... (Total {} files)",
+                'save_progress': "Saving... ({}/{})",
+                'save_done': "{} files have been saved.",
+                'save_complete': "Save Complete!",
+                'error_file_read': "Could not read file: {}",
+                'error_no_selection': "No file selected.",
+                'error_no_files_to_save': "There are no files in the list to save."
+            },
+            'ja': {
+                'title': "ゲームスクリプト分析ツール v8.0 (多言語対応)",
+                'file_list': "ファイルリスト",
+                'tab_original': "元のスクリプト",
+                'tab_converted': "変換結果",
+                'progress_idle': "待機中...",
+                'menu_main': "メニュー(Menu)",
+                'menu_file_open': "ファイルを開く...",
+                'menu_folder_open': "フォルダを開く...",
+                'menu_save': "変換結果を保存...",
+                'menu_lang': "言語(Language)",
+                'menu_exit': "終了",
+                'save_option_title': "保存オプション",
+                'save_option_msg': "現在選択されているファイルのみを保存しますか？\n\n- はい(Y): 選択したファイル1つだけを保存\n- いいえ(N): リスト内のすべてのファイルを保存",
+                'open_folder_title': "スクリプトが含まれている親フォルダを選択してください",
+                'open_file_title': "スクリプトファイルを選択",
+                'save_folder_title': "結果を保存するフォルダを選択してください",
+                'search_start': "検索開始...",
+                'search_progress': "検索中... ({}/{})",
+                'search_done': "完了！ ({}個のファイル)",
+                'search_none': "指定されたパターンのファイルが見つかりませんでした。",
+                'save_prep': "変換準備中... (合計 {}個)",
+                'save_progress': "保存中... ({}/{})",
+                'save_done': "{}個のファイルが保存されました。",
+                'save_complete': "保存完了！",
+                'error_file_read': "{} ファイルを読み込めません。",
+                'error_no_selection': "ファイルが選択されていません。",
+                'error_no_files_to_save': "保存するファイルがリストにありません。"
+            }
+        }
+        self.lang = 'ko' # 기본 언어 설정
         
         window_width = 800
         window_height = 600
@@ -108,17 +201,22 @@ class ScriptAnalyzerApp:
         self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
 
         self.file_list_map = {}
-        # [수정된 부분] 큐 변수 이름 변경
         self.data_queue = queue.Queue()
 
+        self.create_widgets() # 위젯 생성 함수 호출
+        self.change_language(self.lang) # 초기 언어 적용
+
+    def create_widgets(self):
+        """GUI 위젯들을 생성하는 함수"""
         self.create_menu()
 
-        main_pane = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
+        main_pane = tk.PanedWindow(self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         list_frame = tk.Frame(main_pane, bd=2, relief=tk.SUNKEN)
         main_pane.add(list_frame, width=240)
-        tk.Label(list_frame, text="파일 목록").pack(pady=5)
+        self.list_label = tk.Label(list_frame)
+        self.list_label.pack(pady=5)
         self.listbox = tk.Listbox(list_frame, font=("Arial", 10))
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar = tk.Scrollbar(list_frame, orient="vertical", command=self.listbox.yview)
@@ -129,44 +227,73 @@ class ScriptAnalyzerApp:
         self.notebook = ttk.Notebook(main_pane)
         main_pane.add(self.notebook)
         
-        tab1 = tk.Frame(self.notebook)
-        self.notebook.add(tab1, text='원본 스크립트')
-        self.input_text = scrolledtext.ScrolledText(tab1, wrap=tk.WORD, font=("Consolas", 10))
+        self.tab1 = tk.Frame(self.notebook)
+        self.notebook.add(self.tab1)
+        self.input_text = scrolledtext.ScrolledText(self.tab1, wrap=tk.WORD, font=("Consolas", 10))
         self.input_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        tab2 = tk.Frame(self.notebook)
-        self.notebook.add(tab2, text='변환 결과')
-        self.output_text = scrolledtext.ScrolledText(tab2, wrap=tk.WORD, font=("Consolas", 10))
+        self.tab2 = tk.Frame(self.notebook)
+        self.notebook.add(self.tab2)
+        self.output_text = scrolledtext.ScrolledText(self.tab2, wrap=tk.WORD, font=("Consolas", 10))
         self.output_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.output_text.config(state=tk.DISABLED)
         
-        bottom_frame = tk.Frame(root)
+        bottom_frame = tk.Frame(self.root)
         bottom_frame.pack(fill=tk.X, padx=10, pady=(5,10))
         
-        self.style = ttk.Style(root)
+        self.style = ttk.Style(self.root)
         self.style.layout('text.Horizontal.TProgressbar', [('Horizontal.Progressbar.trough', {'children': [('Horizontal.Progressbar.pbar', {'side': 'left', 'sticky': 'ns'})], 'sticky': 'nswe'}), ('Horizontal.Progressbar.label', {'sticky': ''})])
-        self.style.configure('text.Horizontal.TProgressbar', text='대기 중...', anchor='center')
+        self.style.configure('text.Horizontal.TProgressbar', anchor='center')
         
         self.progress_var = tk.DoubleVar()
         self.progressbar = ttk.Progressbar(bottom_frame, variable=self.progress_var, maximum=100, style='text.Horizontal.TProgressbar')
         self.progressbar.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def create_menu(self):
-        menubar = tk.Menu(self.root)
-        self.root.config(menu=menubar)
-        file_menu = tk.Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="메뉴(Menu)", menu=file_menu)
-        file_menu.add_command(label="파일 열기...", command=self.open_file)
-        file_menu.add_command(label="폴더 열기...", command=self.open_folder)
-        file_menu.add_separator()
-        file_menu.add_command(label="변환 결과 저장...", command=self.save_results)
-        file_menu.add_separator()
-        file_menu.add_command(label="종료", command=self.root.destroy)
+        self.menubar = tk.Menu(self.root)
+        self.root.config(menu=self.menubar)
+        self.file_menu = tk.Menu(self.menubar, tearoff=0)
+        self.lang_menu = tk.Menu(self.menubar, tearoff=0)
 
+        self.menubar.add_cascade(menu=self.file_menu)
+        self.menubar.add_cascade(menu=self.lang_menu)
+        
+        self.file_menu.add_command(command=self.open_file)
+        self.file_menu.add_command(command=self.open_folder)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(command=self.save_results)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(command=self.root.destroy)
+        
+        self.lang_menu.add_command(label="한국어", command=lambda: self.change_language('ko'))
+        self.lang_menu.add_command(label="English", command=lambda: self.change_language('en'))
+        self.lang_menu.add_command(label="日本語", command=lambda: self.change_language('ja'))
+
+    def change_language(self, lang_code):
+        """UI의 모든 텍스트를 선택된 언어로 변경합니다."""
+        self.lang = lang_code
+        lang_data = self.LANGUAGES[self.lang]
+        
+        self.root.title(lang_data['title'])
+        self.list_label.config(text=lang_data['file_list'])
+        self.notebook.tab(self.tab1, text=lang_data['tab_original'])
+        self.notebook.tab(self.tab2, text=lang_data['tab_converted'])
+        
+        self.menubar.entryconfig(1, label=lang_data['menu_main'])
+        self.menubar.entryconfig(2, label=lang_data['menu_lang'])
+        
+        self.file_menu.entryconfig(0, label=lang_data['menu_file_open'])
+        self.file_menu.entryconfig(1, label=lang_data['menu_folder_open'])
+        self.file_menu.entryconfig(3, label=lang_data['menu_save'])
+        self.file_menu.entryconfig(5, label=lang_data['menu_exit'])
+        
+        self.update_progressbar_text(lang_data['progress_idle'])
+
+    # ... (나머지 함수들은 이전과 동일하지만, 메시지 박스 등에서 self.LANGUAGES 사용하도록 수정)
     def open_file(self):
         filepath = filedialog.askopenfilename(
-            title="스크립트 파일 선택",
-            filetypes=(("BIN 파일", "*.bin"), ("모든 파일", "*.*"))
+            title=self.LANGUAGES[self.lang]['open_file_title'],
+            filetypes=(("BIN", "*.bin"), ("All files", "*.*"))
         )
         if not filepath: return
         filename = os.path.basename(filepath)
@@ -176,49 +303,48 @@ class ScriptAnalyzerApp:
         self.file_list_map[filename] = filepath
         self.listbox.selection_set(0)
         self.on_file_select(None)
-        self.update_progressbar_text(f"'{filename}' 파일 로드 완료")
+        self.update_progressbar_text(f"'{filename}' loaded.")
 
     def open_folder(self):
-        folder_path = filedialog.askdirectory(title="스크립트가 포함된 상위 폴더를 선택하세요")
+        folder_path = filedialog.askdirectory(title=self.LANGUAGES[self.lang]['open_folder_title'])
         if not folder_path: return
         self.listbox.delete(0, tk.END)
         self.file_list_map.clear()
         self.progressbar.config(mode='determinate')
         self.progress_var.set(0)
-        self.update_progressbar_text("검색 시작...")
+        self.update_progressbar_text(self.LANGUAGES[self.lang]['search_start'])
         threading.Thread(target=self.search_files_thread, args=(folder_path,), daemon=True).start()
         self.process_queue('search')
 
     def save_results(self):
         if not self.file_list_map:
-            messagebox.showwarning("저장 오류", "저장할 파일이 목록에 없습니다.")
+            messagebox.showwarning("Error", self.LANGUAGES[self.lang]['error_no_files_to_save'])
             return
-        choice = messagebox.askyesnocancel("저장 옵션", "현재 선택된 파일만 저장하시겠습니까?\n\n- 예(Y): 현재 선택한 파일 1개만 저장\n- 아니요(N): 목록의 모든 파일 저장")
+        choice = messagebox.askyesnocancel(self.LANGUAGES[self.lang]['save_option_title'], self.LANGUAGES[self.lang]['save_option_msg'])
         if choice is None: return
         
         files_to_save_names = []
         if choice:
             selected_indices = self.listbox.curselection()
             if not selected_indices:
-                messagebox.showwarning("저장 오류", "선택된 파일이 없습니다.")
+                messagebox.showwarning("Error", self.LANGUAGES[self.lang]['error_no_selection'])
                 return
             files_to_save_names.append(self.listbox.get(selected_indices[0]))
         else:
             files_to_save_names = list(self.file_list_map.keys())
             
-        save_folder = filedialog.askdirectory(title="결과를 저장할 폴더를 선택하세요")
+        save_folder = filedialog.askdirectory(title=self.LANGUAGES[self.lang]['save_folder_title'])
         if not save_folder: return
         
         filepaths_to_process = [self.file_list_map[name] for name in files_to_save_names]
         
         self.progress_var.set(0)
         self.progressbar.config(mode='indeterminate')
-        self.update_progressbar_text(f"변환 작업 준비 중... (총 {len(filepaths_to_process)}개)")
+        self.update_progressbar_text(self.LANGUAGES[self.lang]['save_prep'].format(len(filepaths_to_process)))
         self.root.update_idletasks()
-
         threading.Thread(target=self.save_results_multiprocess, args=(filepaths_to_process, save_folder), daemon=True).start()
         self.process_queue('save')
-
+    
     def save_results_multiprocess(self, filepaths, save_folder):
         try:
             pool_size = min(multiprocessing.cpu_count(), 4)
@@ -237,7 +363,7 @@ class ScriptAnalyzerApp:
                 except Exception as e:
                     self.data_queue.put(('error', f"{new_filename} 저장 중 오류:\n{e}"))
                 progress = ((i + 1) / total_files) * 100
-                self.data_queue.put(('progress', (progress, f"저장 중... ({i+1}/{total_files})")))
+                self.data_queue.put(('progress', (progress, self.LANGUAGES[self.lang]['save_progress'].format(i+1, total_files))))
             self.data_queue.put(('done', total_files))
         except Exception as e:
             self.data_queue.put(('error', f"멀티프로세싱 중 오류 발생:\n{e}"))
@@ -261,15 +387,13 @@ class ScriptAnalyzerApp:
                     if os.path.exists(target_filepath):
                         self.data_queue.put(('file_found', (d, target_filepath)))
                 progress = (processed_dirs / total_dirs) * 100 if total_dirs > 0 else 0
-                self.data_queue.put(('progress', (progress, f"검색 중... ({processed_dirs}/{total_dirs})")))
+                self.data_queue.put(('progress', (progress, self.LANGUAGES[self.lang]['search_progress'].format(processed_dirs, total_dirs))))
         self.data_queue.put(('search_done', None))
-    
+
     def process_queue(self, task_type):
         try:
             while True:
-                # [수정된 부분] self.process_queue -> self.data_queue
                 msg_type, data = self.data_queue.get_nowait()
-                
                 if msg_type == 'progress':
                     progress, text = data
                     self.progress_var.set(progress)
@@ -286,31 +410,31 @@ class ScriptAnalyzerApp:
                 elif task_type == 'save':
                     if msg_type == 'save_start':
                         self.progressbar.config(mode='determinate')
-                        self.update_progressbar_text(f"저장 시작... (총 {data}개)")
+                        self.update_progressbar_text(self.LANGUAGES[self.lang]['save_prep'].format(data))
                     elif msg_type == 'done':
-                        messagebox.showinfo("완료", f"총 {data}개의 파일 처리가 완료되었습니다.")
-                        self.update_progressbar_text("완료!")
-                        self.root.after(2000, lambda: self.update_progressbar_text("대기 중..."))
+                        messagebox.showinfo("Complete", self.LANGUAGES[self.lang]['save_done'].format(data))
+                        self.update_progressbar_text(self.LANGUAGES[self.lang]['save_complete'])
+                        self.root.after(2000, lambda: self.update_progressbar_text(self.LANGUAGES[self.lang]['progress_idle']))
                         return
                     elif msg_type == 'error':
-                        messagebox.showerror("오류", data)
-                        self.update_progressbar_text("오류 발생")
+                        messagebox.showerror("Error", data)
+                        self.update_progressbar_text("Error")
                         return
         except queue.Empty:
             self.root.after(100, lambda: self.process_queue(task_type))
 
     def finalize_loading(self):
         if not self.file_list_map:
-            messagebox.showinfo("결과", "해당 패턴의 폴더/파일 구조를 찾을 수 없습니다.")
-            self.update_progressbar_text("파일 없음")
+            messagebox.showinfo("Result", self.LANGUAGES[self.lang]['search_none'])
+            self.update_progressbar_text("No files")
         else:
             sorted_files = sorted(self.file_list_map.keys())
             for display_name in sorted_files:
                 self.listbox.insert(tk.END, display_name)
             num_files = len(self.file_list_map)
-            self.update_progressbar_text(f"완료! ({num_files}개 파일)")
+            self.update_progressbar_text(self.LANGUAGES[self.lang]['search_done'].format(num_files))
         self.progress_var.set(100)
-        self.root.after(2000, lambda: self.update_progressbar_text("대기 중..."))
+        self.root.after(2000, lambda: self.update_progressbar_text(self.LANGUAGES[self.lang]['progress_idle']))
         
     def update_progressbar_text(self, text):
         self.style.configure('text.Horizontal.TProgressbar', text=text)
@@ -335,7 +459,7 @@ class ScriptAnalyzerApp:
             self.input_text.insert('1.0', file_content)
             self.update_conversion()
         else:
-            messagebox.showerror("파일 읽기 오류", f"{selected_display_name} 파일을 읽을 수 없습니다.")
+            messagebox.showerror("Error", self.LANGUAGES[self.lang]['error_file_read'].format(selected_display_name))
             
     def update_conversion(self):
         script_content = self.input_text.get('1.0', tk.END)
@@ -349,7 +473,7 @@ class ScriptAnalyzerApp:
         self.output_text.delete('1.0', tk.END)
         self.output_text.insert('1.0', flow_text_result)
         self.output_text.config(state=tk.DISABLED)
-        
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
     root = tk.Tk()
