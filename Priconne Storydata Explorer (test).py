@@ -4,9 +4,10 @@ import os
 import re
 import threading
 import queue
+import multiprocessing
 
 # --------------------------------------------------------------------------
-# 스크립트 파싱 로직 (이전과 동일)
+# 전역 스코프에 파서 함수 정의 (멀티프로세싱을 위해)
 # --------------------------------------------------------------------------
 def parse_script_to_readable_flow(script_text):
     lines = script_text.strip().split('\n')
@@ -72,13 +73,31 @@ def parse_script_to_readable_flow(script_text):
     flush_action_buffer()
     return output
 
+def worker_process_file(filepath):
+    file_content = None
+    encodings_to_try = ['utf-8', 'cp949', 'euc-kr']
+    for encoding in encodings_to_try:
+        try:
+            with open(filepath, 'r', encoding=encoding) as f:
+                file_content = f.read()
+            break
+        except Exception:
+            continue
+    
+    if file_content:
+        converted_text = parse_script_to_readable_flow(file_content)
+        original_basename = os.path.basename(filepath)
+        new_filename = f"{os.path.splitext(original_basename)[0]}_Export.txt"
+        return (new_filename, converted_text)
+    return None
+
 # --------------------------------------------------------------------------
 # GUI 애플리케이션 클래스
 # --------------------------------------------------------------------------
 class ScriptAnalyzerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("게임 스크립트 분석기 v6.1 (Final)")
+        self.root.title("게임 스크립트 분석기 v7.2 (Final)")
         
         window_width = 800
         window_height = 600
@@ -89,16 +108,16 @@ class ScriptAnalyzerApp:
         self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
 
         self.file_list_map = {}
-        self.file_queue = queue.Queue()
+        # [수정된 부분] 큐 변수 이름 변경
+        self.data_queue = queue.Queue()
 
         self.create_menu()
 
         main_pane = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
+        
         list_frame = tk.Frame(main_pane, bd=2, relief=tk.SUNKEN)
         main_pane.add(list_frame, width=240)
-
         tk.Label(list_frame, text="파일 목록").pack(pady=5)
         self.listbox = tk.Listbox(list_frame, font=("Arial", 10))
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -106,34 +125,28 @@ class ScriptAnalyzerApp:
         self.listbox.config(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill="y")
         self.listbox.bind('<<ListboxSelect>>', self.on_file_select)
-
+        
         self.notebook = ttk.Notebook(main_pane)
         main_pane.add(self.notebook)
-
+        
         tab1 = tk.Frame(self.notebook)
         self.notebook.add(tab1, text='원본 스크립트')
         self.input_text = scrolledtext.ScrolledText(tab1, wrap=tk.WORD, font=("Consolas", 10))
         self.input_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-
+        
         tab2 = tk.Frame(self.notebook)
         self.notebook.add(tab2, text='변환 결과')
         self.output_text = scrolledtext.ScrolledText(tab2, wrap=tk.WORD, font=("Consolas", 10))
         self.output_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.output_text.config(state=tk.DISABLED)
-
+        
         bottom_frame = tk.Frame(root)
         bottom_frame.pack(fill=tk.X, padx=10, pady=(5,10))
         
         self.style = ttk.Style(root)
-        self.style.layout('text.Horizontal.TProgressbar',
-                         [('Horizontal.Progressbar.trough',
-                           {'children': [('Horizontal.Progressbar.pbar',
-                                          {'side': 'left', 'sticky': 'ns'})],
-                            'sticky': 'nswe'}),
-                          ('Horizontal.Progressbar.label',
-                           {'sticky': ''})])
+        self.style.layout('text.Horizontal.TProgressbar', [('Horizontal.Progressbar.trough', {'children': [('Horizontal.Progressbar.pbar', {'side': 'left', 'sticky': 'ns'})], 'sticky': 'nswe'}), ('Horizontal.Progressbar.label', {'sticky': ''})])
         self.style.configure('text.Horizontal.TProgressbar', text='대기 중...', anchor='center')
-
+        
         self.progress_var = tk.DoubleVar()
         self.progressbar = ttk.Progressbar(bottom_frame, variable=self.progress_var, maximum=100, style='text.Horizontal.TProgressbar')
         self.progressbar.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -174,16 +187,13 @@ class ScriptAnalyzerApp:
         self.progress_var.set(0)
         self.update_progressbar_text("검색 시작...")
         threading.Thread(target=self.search_files_thread, args=(folder_path,), daemon=True).start()
-        self.process_queue()
-        
+        self.process_queue('search')
+
     def save_results(self):
         if not self.file_list_map:
             messagebox.showwarning("저장 오류", "저장할 파일이 목록에 없습니다.")
             return
-        choice = messagebox.askyesnocancel("저장 옵션",
-                                           "현재 선택된 파일만 저장하시겠습니까?\n\n"
-                                           "- 예(Y): 현재 선택한 파일 1개만 저장\n"
-                                           "- 아니요(N): 목록의 모든 파일 저장")
+        choice = messagebox.askyesnocancel("저장 옵션", "현재 선택된 파일만 저장하시겠습니까?\n\n- 예(Y): 현재 선택한 파일 1개만 저장\n- 아니요(N): 목록의 모든 파일 저장")
         if choice is None: return
         
         files_to_save_names = []
@@ -199,49 +209,46 @@ class ScriptAnalyzerApp:
         save_folder = filedialog.askdirectory(title="결과를 저장할 폴더를 선택하세요")
         if not save_folder: return
         
+        filepaths_to_process = [self.file_list_map[name] for name in files_to_save_names]
+        
         self.progress_var.set(0)
-        self.update_progressbar_text("저장 준비 중...")
-        # [수정된 부분] 저장 작업을 별도 스레드에서 실행
-        threading.Thread(target=self.save_results_thread, args=(files_to_save_names, save_folder), daemon=True).start()
-        self.process_queue()
+        self.progressbar.config(mode='indeterminate')
+        self.update_progressbar_text(f"변환 작업 준비 중... (총 {len(filepaths_to_process)}개)")
+        self.root.update_idletasks()
 
-    def save_results_thread(self, files_to_save_names, save_folder):
-        """(백그라운드 스레드) 파일을 읽고, 변환하고, 저장하는 작업"""
-        total_files = len(files_to_save_names)
-        for i, display_name in enumerate(files_to_save_names):
-            filepath = self.file_list_map[display_name]
-            file_content = None
-            encodings_to_try = ['utf-8', 'cp949', 'euc-kr']
-            for encoding in encodings_to_try:
-                try:
-                    with open(filepath, 'r', encoding=encoding) as f:
-                        file_content = f.read()
-                    break
-                except Exception:
-                    continue
-            
-            if file_content:
-                converted_text = parse_script_to_readable_flow(file_content)
-                original_basename = os.path.basename(filepath)
-                new_filename = f"{os.path.splitext(original_basename)[0]}_Export.txt"
+        threading.Thread(target=self.save_results_multiprocess, args=(filepaths_to_process, save_folder), daemon=True).start()
+        self.process_queue('save')
+
+    def save_results_multiprocess(self, filepaths, save_folder):
+        try:
+            pool_size = min(multiprocessing.cpu_count(), 4)
+            with multiprocessing.Pool(processes=pool_size) as pool:
+                async_result = pool.map_async(worker_process_file, filepaths)
+                results = async_result.get()
+
+            self.data_queue.put(('save_start', len(results)))
+            total_files = len(results)
+            for i, result in enumerate(filter(None, results)):
+                new_filename, converted_text = result
                 save_path = os.path.join(save_folder, new_filename)
-                
                 try:
                     with open(save_path, 'w', encoding='utf-8') as f:
                         f.write(converted_text)
                 except Exception as e:
-                    self.file_queue.put(('save_error', f"{new_filename} 저장 중 오류:\n{e}"))
-                    return # 오류 발생 시 스레드 중단
-            
-            progress = ((i + 1) / total_files) * 100
-            self.file_queue.put(('progress', (progress, f"저장 중... ({i+1}/{total_files})")))
-
-        self.file_queue.put(('save_done', total_files))
+                    self.data_queue.put(('error', f"{new_filename} 저장 중 오류:\n{e}"))
+                progress = ((i + 1) / total_files) * 100
+                self.data_queue.put(('progress', (progress, f"저장 중... ({i+1}/{total_files})")))
+            self.data_queue.put(('done', total_files))
+        except Exception as e:
+            self.data_queue.put(('error', f"멀티프로세싱 중 오류 발생:\n{e}"))
 
     def search_files_thread(self, folder_path):
         parent_folder_pattern = re.compile(r'storydata_storydata_(\d{7})')
-        try: total_dirs = sum(1 for _, dirs, _ in os.walk(folder_path) for _ in dirs)
-        except Exception: total_dirs = 1
+        try:
+            dir_list = [d for _, dirs, _ in os.walk(folder_path) for d in dirs]
+            total_dirs = len(dir_list)
+        except Exception:
+            total_dirs = 1
         processed_dirs = 0
         for root_dir, dirs, _ in os.walk(folder_path):
             for d in dirs:
@@ -252,38 +259,46 @@ class ScriptAnalyzerApp:
                     target_filename = f"storydata_{story_id}.bin"
                     target_filepath = os.path.join(root_dir, d, target_filename)
                     if os.path.exists(target_filepath):
-                        self.file_queue.put(('file', (d, target_filepath)))
+                        self.data_queue.put(('file_found', (d, target_filepath)))
                 progress = (processed_dirs / total_dirs) * 100 if total_dirs > 0 else 0
-                self.file_queue.put(('progress', (progress, f"검색 중... ({processed_dirs}/{total_dirs})")))
-        self.file_queue.put(('done', None))
-
-    def process_queue(self):
+                self.data_queue.put(('progress', (progress, f"검색 중... ({processed_dirs}/{total_dirs})")))
+        self.data_queue.put(('search_done', None))
+    
+    def process_queue(self, task_type):
         try:
             while True:
-                msg_type, data = self.file_queue.get_nowait()
-                if msg_type == 'file':
-                    display_name, fullpath = data
-                    self.file_list_map[display_name] = fullpath
-                elif msg_type == 'progress':
+                # [수정된 부분] self.process_queue -> self.data_queue
+                msg_type, data = self.data_queue.get_nowait()
+                
+                if msg_type == 'progress':
                     progress, text = data
                     self.progress_var.set(progress)
                     self.update_progressbar_text(text)
-                elif msg_type == 'done':
-                    self.finalize_loading()
-                    return
-                # [수정된 부분] 저장 관련 메시지 처리
-                elif msg_type == 'save_done':
-                    messagebox.showinfo("저장 완료", f"총 {data}개의 파일이 저장되었습니다.")
-                    self.update_progressbar_text("저장 완료!")
-                    self.root.after(2000, lambda: self.update_progressbar_text("대기 중..."))
-                    return
-                elif msg_type == 'save_error':
-                    messagebox.showerror("저장 실패", data)
-                    self.update_progressbar_text("저장 중단")
-                    return
+                
+                if task_type == 'search':
+                    if msg_type == 'file_found':
+                        display_name, fullpath = data
+                        self.file_list_map[display_name] = fullpath
+                    elif msg_type == 'search_done':
+                        self.finalize_loading()
+                        return
+                
+                elif task_type == 'save':
+                    if msg_type == 'save_start':
+                        self.progressbar.config(mode='determinate')
+                        self.update_progressbar_text(f"저장 시작... (총 {data}개)")
+                    elif msg_type == 'done':
+                        messagebox.showinfo("완료", f"총 {data}개의 파일 처리가 완료되었습니다.")
+                        self.update_progressbar_text("완료!")
+                        self.root.after(2000, lambda: self.update_progressbar_text("대기 중..."))
+                        return
+                    elif msg_type == 'error':
+                        messagebox.showerror("오류", data)
+                        self.update_progressbar_text("오류 발생")
+                        return
         except queue.Empty:
-            self.root.after(100, self.process_queue)
-            
+            self.root.after(100, lambda: self.process_queue(task_type))
+
     def finalize_loading(self):
         if not self.file_list_map:
             messagebox.showinfo("결과", "해당 패턴의 폴더/파일 구조를 찾을 수 없습니다.")
@@ -312,7 +327,7 @@ class ScriptAnalyzerApp:
             try:
                 with open(filepath, 'r', encoding=encoding) as f:
                     file_content = f.read()
-                break 
+                break
             except Exception:
                 continue
         if file_content is not None:
@@ -334,8 +349,9 @@ class ScriptAnalyzerApp:
         self.output_text.delete('1.0', tk.END)
         self.output_text.insert('1.0', flow_text_result)
         self.output_text.config(state=tk.DISABLED)
-
+        
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     root = tk.Tk()
     app = ScriptAnalyzerApp(root)
     root.mainloop()
