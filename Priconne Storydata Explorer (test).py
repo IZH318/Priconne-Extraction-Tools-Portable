@@ -2,11 +2,13 @@ import tkinter as tk
 from tkinter import filedialog, scrolledtext, messagebox, ttk
 import os
 import re
+import threading
+import queue
 
 # --------------------------------------------------------------------------
 # 스크립트 파싱 로직 (이전과 동일)
 # --------------------------------------------------------------------------
-def parse_script_to_readable_flow(script_text, show_original_code=False):
+def parse_script_to_readable_flow(script_text):
     lines = script_text.strip().split('\n')
     output = ""
     scene_count = 0
@@ -55,15 +57,11 @@ def parse_script_to_readable_flow(script_text, show_original_code=False):
                     output += f"  - 연출 상세:\n"
                     for tag in tags:
                         output += f"      - {tag}\n"
-                if show_original_code:
-                    output += f"  - 원본 코드: {line}\n"
                 output += "───────────────\n"
         elif line.startswith('choice'):
             parts = line.split('"')
             output += f"\n▶─── [플레이어 선택지] ───\n"
             output += f"  \"{parts[1]}\" (→ tag {parts[2].strip()})\n"
-            if show_original_code:
-                output += f"  - 원본 코드: {line}\n"
             output += "───────────────\n"
         elif line.startswith('tag'):
             output += f"\n--- [분기 시작: tag {line.split(' ')[1]}] ---\n"
@@ -80,28 +78,36 @@ def parse_script_to_readable_flow(script_text, show_original_code=False):
 class ScriptAnalyzerApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("게임 스크립트 분석기 v3.1 (폴더 구조 지원)")
-        self.root.geometry("800x600")
+        self.root.title("게임 스크립트 분석기 v5.3 (Final)")
+        
+        window_width = 800
+        window_height = 600
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        center_x = int(screen_width/2 - window_width / 2)
+        center_y = int(screen_height/2 - window_height / 2)
+        self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+
         self.file_list_map = {}
+        self.file_queue = queue.Queue()
+
+        self.create_menu()
 
         main_pane = tk.PanedWindow(root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         list_frame = tk.Frame(main_pane, bd=2, relief=tk.SUNKEN)
-        list_frame.pack(fill=tk.BOTH, expand=True)
         main_pane.add(list_frame, width=240)
 
         tk.Label(list_frame, text="파일 목록").pack(pady=5)
         self.listbox = tk.Listbox(list_frame, font=("Arial", 10))
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar = tk.Scrollbar(list_frame, orient="vertical")
-        scrollbar.config(command=self.listbox.yview)
-        scrollbar.pack(side=tk.RIGHT, fill="y")
+        scrollbar = tk.Scrollbar(list_frame, orient="vertical", command=self.listbox.yview)
         self.listbox.config(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill="y")
         self.listbox.bind('<<ListboxSelect>>', self.on_file_select)
 
         self.notebook = ttk.Notebook(main_pane)
-        self.notebook.pack(fill=tk.BOTH, expand=True)
         main_pane.add(self.notebook)
 
         tab1 = tk.Frame(self.notebook)
@@ -116,64 +122,134 @@ class ScriptAnalyzerApp:
         self.output_text.config(state=tk.DISABLED)
 
         bottom_frame = tk.Frame(root)
-        bottom_frame.pack(fill=tk.X, padx=10, pady=5)
+        bottom_frame.pack(fill=tk.X, padx=10, pady=(5,10))
         
-        button_frame = tk.Frame(bottom_frame)
-        button_frame.pack(side=tk.LEFT)
-        tk.Button(button_frame, text="폴더 열기", command=self.open_folder).pack(side=tk.LEFT, padx=5)
+        self.style = ttk.Style(root)
+        self.style.layout('text.Horizontal.TProgressbar',
+                         [('Horizontal.Progressbar.trough',
+                           {'children': [('Horizontal.Progressbar.pbar',
+                                          {'side': 'left', 'sticky': 'ns'})],
+                            'sticky': 'nswe'}),
+                          ('Horizontal.Progressbar.label',
+                           {'sticky': ''})])
+        self.style.configure('text.Horizontal.TProgressbar', text='대기 중...', anchor='center')
+
+        self.progress_var = tk.DoubleVar()
+        self.progressbar = ttk.Progressbar(bottom_frame, variable=self.progress_var, maximum=100, style='text.Horizontal.TProgressbar')
+        self.progressbar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+    def create_menu(self):
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="메뉴(Menu)", menu=file_menu)
+        # [수정된 부분] 파일 열기, 폴더 열기 메뉴 추가
+        file_menu.add_command(label="파일 열기...", command=self.open_file)
+        file_menu.add_command(label="폴더 열기...", command=self.open_folder)
+        file_menu.add_separator()
+        file_menu.add_command(label="종료", command=self.root.destroy)
+
+    def open_file(self):
+        """단일 .bin 파일을 엽니다."""
+        filepath = filedialog.askopenfilename(
+            title="스크립트 파일 선택",
+            filetypes=(("BIN 파일", "*.bin"), ("모든 파일", "*.*"))
+        )
+        if not filepath: return
         
-        option_frame = tk.Frame(bottom_frame)
-        option_frame.pack(side=tk.RIGHT)
-        self.show_original_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(option_frame, text="원본 코드 표시", variable=self.show_original_var, command=self.update_conversion).pack(side=tk.LEFT, padx=10)
+        filename = os.path.basename(filepath)
+        
+        # 리스트 박스 초기화 및 단일 파일 추가
+        self.listbox.delete(0, tk.END)
+        self.file_list_map.clear()
+        
+        self.listbox.insert(tk.END, filename)
+        self.file_list_map[filename] = filepath
+        
+        # 자동으로 해당 파일 선택 및 내용 로드
+        self.listbox.selection_set(0)
+        self.on_file_select(None) # 이벤트 강제 호출
+        self.update_progressbar_text(f"'{filename}' 파일 로드 완료")
+
 
     def open_folder(self):
-        """
-        사용자가 선택한 폴더와 그 하위에서 특정 구조를 가진 스크립트 파일을 찾습니다.
-        구조: storydata_storydata_#######/storydata_#######.bin
-        """
+        """폴더를 열어 여러 스크립트 파일을 찾습니다."""
         folder_path = filedialog.askdirectory(title="스크립트가 포함된 상위 폴더를 선택하세요")
         if not folder_path: return
 
         self.listbox.delete(0, tk.END)
         self.file_list_map.clear()
-        
-        # 1. 상위 폴더 이름 패턴: storydata_storydata_숫자7자리
+        self.progressbar.config(mode='determinate')
+        self.progress_var.set(0)
+        self.update_progressbar_text("검색 시작...")
+
+        threading.Thread(target=self.search_files_thread, args=(folder_path,), daemon=True).start()
+        self.process_queue()
+
+    def search_files_thread(self, folder_path):
         parent_folder_pattern = re.compile(r'storydata_storydata_(\d{7})')
-        
-        found_files = []
+        try:
+            total_dirs = sum(1 for _, dirs, _ in os.walk(folder_path) for _ in dirs)
+        except Exception:
+            total_dirs = 1
+            
+        processed_dirs = 0
         for root_dir, dirs, _ in os.walk(folder_path):
             for d in dirs:
+                processed_dirs += 1
                 match = parent_folder_pattern.match(d)
                 if match:
-                    # 2. 하위 파일 이름 패턴: storydata_숫자7자리.bin
-                    story_id = match.group(1) # 폴더 이름에서 숫자 7자리를 추출
+                    story_id = match.group(1)
                     target_filename = f"storydata_{story_id}.bin"
                     target_filepath = os.path.join(root_dir, d, target_filename)
-                    
-                    # 3. 실제 파일이 존재하는지 확인
                     if os.path.exists(target_filepath):
-                        # 리스트에 표시할 이름은 상위 폴더 이름으로 함 (더 구별하기 쉬움)
-                        display_name = d 
-                        found_files.append((display_name, target_filepath))
+                        self.file_queue.put(('file', (d, target_filepath)))
+                
+                progress = (processed_dirs / total_dirs) * 100 if total_dirs > 0 else 0
+                self.file_queue.put(('progress', (progress, f"검색 중... ({processed_dirs}/{total_dirs})")))
         
-        if not found_files:
-            messagebox.showinfo("결과", "해당 패턴의 폴더/파일 구조를 찾을 수 없습니다.")
-            return
+        self.file_queue.put(('done', None))
 
-        # 찾은 파일들을 이름순으로 정렬
-        found_files.sort()
-        for display_name, fullpath in found_files:
-            self.listbox.insert(tk.END, display_name)
-            self.file_list_map[display_name] = fullpath
+    def process_queue(self):
+        try:
+            while True:
+                msg_type, data = self.file_queue.get_nowait()
+                if msg_type == 'file':
+                    display_name, fullpath = data
+                    self.file_list_map[display_name] = fullpath
+                elif msg_type == 'progress':
+                    progress, text = data
+                    self.progress_var.set(progress)
+                    self.update_progressbar_text(text)
+                elif msg_type == 'done':
+                    self.finalize_loading()
+                    return
+        except queue.Empty:
+            self.root.after(100, self.process_queue)
+            
+    def finalize_loading(self):
+        if not self.file_list_map:
+            messagebox.showinfo("결과", "해당 패턴의 폴더/파일 구조를 찾을 수 없습니다.")
+            self.update_progressbar_text("파일 없음")
+        else:
+            sorted_files = sorted(self.file_list_map.keys())
+            for display_name in sorted_files:
+                self.listbox.insert(tk.END, display_name)
+            
+            num_files = len(self.file_list_map)
+            self.update_progressbar_text(f"완료! ({num_files}개 파일)")
+        
+        self.progress_var.set(100)
+        self.root.after(2000, lambda: self.update_progressbar_text("대기 중..."))
+        
+    def update_progressbar_text(self, text):
+        self.style.configure('text.Horizontal.TProgressbar', text=text)
 
     def on_file_select(self, event):
         selected_indices = self.listbox.curselection()
         if not selected_indices: return
-
         selected_display_name = self.listbox.get(selected_indices[0])
         filepath = self.file_list_map.get(selected_display_name)
-        
         if not filepath: return
         
         encodings_to_try = ['utf-8', 'cp949', 'euc-kr']
@@ -200,15 +276,13 @@ class ScriptAnalyzerApp:
             self.output_text.delete('1.0', tk.END)
             self.output_text.config(state=tk.DISABLED)
             return
-
-        show_original = self.show_original_var.get()
-        flow_text_result = parse_script_to_readable_flow(script_content, show_original_code=show_original)
+        
+        flow_text_result = parse_script_to_readable_flow(script_content)
         
         self.output_text.config(state=tk.NORMAL)
         self.output_text.delete('1.0', tk.END)
         self.output_text.insert('1.0', flow_text_result)
         self.output_text.config(state=tk.DISABLED)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
