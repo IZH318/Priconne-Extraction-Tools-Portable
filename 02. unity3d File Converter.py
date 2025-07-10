@@ -246,18 +246,36 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
             for obj in env.objects:
                 # Font 객체인 경우 폰트 데이터를 추출하여 저장
                 if obj.type.name == "Font":
-                    font = obj.read()  # 객체에서 폰트 데이터를 읽어옴
-                    if font.m_FontData:  # 만약 폰트 데이터가 존재한다면 실행
-                        extension = ".ttf"  # 기본 확장자를 .ttf로 설정
-                        if font.m_FontData[:4] == b"OTTO":  # 만약 폰트 데이터의 첫 4바이트가 "OTTO"면 .otf로 확장자 설정
+                    # 이미 처리한 폰트인지 확인하기 위한 리스트 (함수 내에서만 사용)
+                    if 'processed_fonts' not in locals():
+                        processed_fonts = []
+
+                    font = obj.read()
+                    if hasattr(font, 'm_FontData') and font.m_FontData:
+                        font_data_bytes = font.m_FontData
+                        if isinstance(font_data_bytes, list):
+                            font_data_bytes = bytes(font_data_bytes)
+
+                        extension = ".ttf"
+                        if font_data_bytes[:4] == b"OTTO":
                             extension = ".otf"
                         
-                        dest = os.path.join(folder_path, font.name + extension)  # 추출된 폰트 파일의 경로 설정
+                        font_name = getattr(font, 'm_Name', getattr(font, 'name', None))
                         
-                        with open(dest, "wb") as f:  # 추출된 폰트 데이터 파일 저장
-                            f.write(font.m_FontData)
-                            total_processed += 1  # 처리된 파일 수 증가
-                            print(f" 추출된 파일 경로: \\{dest}")  # 저장된 파일 경로 출력
+                        if font_name:
+                            # 현재 파일과 폰트 이름 조합으로 고유 키 생성
+                            font_key = (file_path, font_name)
+
+                            # 이 폰트를 이 파일 처리 중에 처음 본 경우에만 저장 및 출력
+                            if font_key not in processed_fonts:
+                                dest = os.path.join(folder_path, font_name + extension)
+                                
+                                with open(dest, "wb") as f:
+                                    f.write(font_data_bytes)
+                                
+                                total_processed += 1
+                                print(f" 추출된 파일 경로: \\{dest}")
+                                processed_fonts.append(font_key) # 처리했다고 기록
                             
             # 두 번째 처리 시작
             for path, obj in env.container.items():  # *.unity3d 파일 내 객체들을 반복하여 처리
