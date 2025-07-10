@@ -242,7 +242,7 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
             folder_path = os.path.join(converted_folder_path, folder_name)  # 폴더 생성 후 파일 경로 설정
             os.makedirs(folder_path, exist_ok=True)  # 폴더 생성 (이미 존재할 경우 무시)
 
-            # *.unity3d 파일 내 객체들을 반복하여 처리
+            # *.unity3d 파일 내 객체들을 반복하여 처리 (Font만 처리)
             for obj in env.objects:
                 # Font 객체인 경우 폰트 데이터를 추출하여 저장
                 if obj.type.name == "Font":
@@ -484,17 +484,6 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                             total_processed += 1  # 처리된 파일 수 증가
                             print(f" 추출된 파일 경로: \\{dest}")  # 저장된 파일 경로 출력
 
-                # Mesh 객체인 경우 메시 데이터를 추출하여 저장
-                elif obj.type.name == "Mesh":
-                    mesh = obj.read()  # "Mesh" 타입 객체 읽어옴
-                    dest = os.path.join(folder_path, f"{mesh.name}.obj")  # *.obj 파일로 메시 추출 후 저장
-
-                    # *.obj 파일로 메시 추출 후 저장하기 위해 대상 파일을 텍스트 모드로 실행 (* 줄바꿈 문자를 자동 변환 X)
-                    with open(dest, "wt", newline="") as f:
-                        f.write(str(mesh.export()))  # 메시를 *.obj로 저장
-                        total_processed += 1  # 처리된 파일 수 증가
-                        print(f" 추출된 파일 경로: \\{dest}")  # 저장된 파일 경로 출력
-
                 # Texture2DArray 객체인 경우 텍스처 배열 이미지를 추출하여 저장
                 elif obj.type.name == "Texture2DArray":
                     # "Texture2DArray" 타입 객체를 읽어옴
@@ -506,6 +495,24 @@ def process_unity3d_files(unity3d_files: list[str], destination_folder: str):
                         image.save(dest)  # 이미지 파일로 저장
                         total_processed += 1  # 처리된 파일 수 증가
                         print(f" 추출된 파일 경로: \\{dest}")  # 저장된 파일의 경로 출력
+                
+                # Mesh 객체인 경우 메시 데이터를 추출하여 저장 (수정된 부분)
+                elif obj.type.name == "Mesh":
+                    mesh = obj.read()  # "Mesh" 타입 객체 읽어옴
+
+                    # 경로(path)에서 순수 파일명(확장자 제외)을 추출
+                    base_name = os.path.basename(path)
+                    mesh_name = os.path.splitext(base_name)[0]
+
+                    # 추출한 파일명을 기반으로 .obj 파일 경로 설정
+                    dest = os.path.join(folder_path, f"{mesh_name}.obj")
+
+                    # *.obj 파일로 메시 추출 후 저장
+                    with open(dest, "wt", newline="") as f:
+                        f.write(str(mesh.export()))
+                        total_processed += 1  # 처리된 파일 수 증가
+                        print(f" 추출된 파일 경로: \\{dest}")  # 저장된 파일 경로 출력
+
 
         except Exception as e:
             # 오류 발생 시 해당 리소스를 무시하고 다음 작업을 진행합니다.
