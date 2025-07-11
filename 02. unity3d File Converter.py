@@ -77,13 +77,27 @@ class AssetExtractorApp:
         left_frame = ttk.Frame(paned_window, padding=5)
         paned_window.add(left_frame)
         
-        list_frame = ttk.LabelFrame(left_frame, text="작업할 파일 목록")
+        list_frame = ttk.LabelFrame(left_frame, text="파일 목록")
         list_frame.pack(fill=tk.BOTH, expand=True)
         list_scrollbar = Scrollbar(list_frame)
         list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.file_listbox = tk.Listbox(list_frame, yscrollcommand=list_scrollbar.set, selectmode=tk.EXTENDED)
         self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         list_scrollbar.config(command=self.file_listbox.yview)
+
+        # ==================== 수정된 부분 1: 제거 기능 추가 ====================
+        # 키보드 Delete 키 바인딩
+        self.file_listbox.bind("<Delete>", self._remove_selected_files)
+
+        # 마우스 오른쪽 클릭 메뉴 생성
+        self.listbox_menu = tk.Menu(self.root, tearoff=0)
+        self.listbox_menu.add_command(label="선택 항목 제거", command=self._remove_selected_files)
+        self.listbox_menu.add_command(label="전체 항목 제거", command=self._remove_all_files)
+        
+        # 마우스 오른쪽 클릭 이벤트 바인딩
+        self.file_listbox.bind("<Button-3>", self._show_listbox_menu) # Windows/Linux
+        self.file_listbox.bind("<Button-2>", self._show_listbox_menu) # macOS
+        # =======================================================================
 
         right_frame = ttk.Frame(paned_window, padding=5)
         paned_window.add(right_frame)
@@ -104,7 +118,7 @@ class AssetExtractorApp:
 
         bottom_controls_frame.grid_columnconfigure(0, weight=1)
 
-        output_frame = ttk.LabelFrame(bottom_controls_frame, text="출력 폴더 설정")
+        output_frame = ttk.LabelFrame(bottom_controls_frame, text="출력 폴더")
         output_frame.grid(row=0, column=0, sticky='ew', padx=(0, 10))
 
         self.output_entry = ttk.Entry(output_frame, state='readonly')
@@ -130,10 +144,7 @@ class AssetExtractorApp:
         self.log_queue.put((log_message, level.upper()))
 
     def _process_log_queue(self):
-        # ==================== 수정된 부분 ====================
         try:
-            # 1. 로그를 추가하기 전에, 현재 스크롤바가 맨 아래에 있는지 확인합니다.
-            # yview()는 (상단비율, 하단비율) 튜플을 반환하며, 하단비율이 1.0이면 맨 아래입니다.
             scroll_at_bottom = self.log_text.yview()[1] >= 1.0
 
             self.log_text.config(state='normal')
@@ -142,14 +153,12 @@ class AssetExtractorApp:
                 self.log_text.insert(tk.END, message, tag)
             self.log_text.config(state='disabled')
 
-            # 2. 스크롤바가 맨 아래에 있었을 경우에만 자동으로 스크롤을 내립니다.
             if scroll_at_bottom:
                 self.log_text.see(tk.END)
         except queue.Empty:
             pass
         finally:
             self.root.after(100, self._process_log_queue)
-        # =======================================================
 
     def _toggle_controls(self, enabled):
         state = 'normal' if enabled else 'disabled'
@@ -184,6 +193,57 @@ class AssetExtractorApp:
             self.file_listbox.delete(0, tk.END)
             for path in self.file_paths: self.file_listbox.insert(tk.END, os.path.basename(path))
             self._log(f"{added_count}개의 새 파일을 목록에 추가했습니다. (총 {len(self.file_paths)}개)")
+    
+    # ==================== 수정된 부분 2: 제거 로직 메서드 추가 ====================
+    def _remove_selected_files(self, event=None):
+        """키보드 또는 메뉴를 통해 선택된 파일들을 목록에서 제거합니다."""
+        if self.is_running:
+            return
+        
+        # .curselection()은 선택된 항목의 인덱스 튜플을 반환합니다.
+        selected_indices = self.file_listbox.curselection()
+        if not selected_indices:
+            return
+
+        # 리스트에서 항목을 제거할 때는 인덱스가 꼬이지 않도록 뒤에서부터 제거해야 합니다.
+        for index in sorted(selected_indices, reverse=True):
+            del self.file_paths[index]
+            self.file_listbox.delete(index)
+
+        self._log(f"{len(selected_indices)}개의 파일을 목록에서 제거했습니다. (남은 파일: {len(self.file_paths)}개)")
+
+    def _remove_all_files(self):
+        """메뉴를 통해 모든 파일을 목록에서 제거합니다."""
+        if self.is_running:
+            return
+        if not self.file_paths:
+            return
+
+        total_count = len(self.file_paths)
+        self.file_paths.clear()
+        self.file_listbox.delete(0, tk.END)
+        self._log(f"모든 파일({total_count}개)을 목록에서 제거했습니다.")
+
+    def _show_listbox_menu(self, event):
+        """마우스 오른쪽 클릭 위치에 팝업 메뉴를 표시합니다."""
+        if self.is_running:
+            return
+        
+        # 선택된 항목이 있을 때만 "선택 항목 제거" 활성화
+        if self.file_listbox.curselection():
+            self.listbox_menu.entryconfig("선택 항목 제거", state=tk.NORMAL)
+        else:
+            self.listbox_menu.entryconfig("선택 항목 제거", state=tk.DISABLED)
+        
+        # 목록에 항목이 하나라도 있을 때만 "전체 항목 제거" 활성화
+        if self.file_paths:
+            self.listbox_menu.entryconfig("전체 항목 제거", state=tk.NORMAL)
+        else:
+            self.listbox_menu.entryconfig("전체 항목 제거", state=tk.DISABLED)
+
+        # event.x_root, event.y_root는 전체 화면 기준의 마우스 클릭 좌표입니다.
+        self.listbox_menu.post(event.x_root, event.y_root)
+    # =======================================================================
     
     def _select_output_dir(self):
         if self.is_running: return
