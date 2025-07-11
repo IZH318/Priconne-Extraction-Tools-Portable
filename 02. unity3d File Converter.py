@@ -37,7 +37,7 @@ class AssetExtractorApp:
     """고급 기능을 갖춘 Unity 에셋 추출기 GUI 애플리케이션입니다."""
     def __init__(self, root):
         self.root = root
-        self.root.title("Unity 에셋 추출기 (v2.7 - 최종)")
+        self.root.title("Unity 에셋 추출기")
         
         self.file_paths = []
         self.output_path = ""
@@ -85,7 +85,6 @@ class AssetExtractorApp:
         self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         list_scrollbar.config(command=self.file_listbox.yview)
 
-        # ==================== 수정된 부분 1: 제거 기능 추가 ====================
         # 키보드 Delete 키 바인딩
         self.file_listbox.bind("<Delete>", self._remove_selected_files)
 
@@ -97,7 +96,6 @@ class AssetExtractorApp:
         # 마우스 오른쪽 클릭 이벤트 바인딩
         self.file_listbox.bind("<Button-3>", self._show_listbox_menu) # Windows/Linux
         self.file_listbox.bind("<Button-2>", self._show_listbox_menu) # macOS
-        # =======================================================================
 
         right_frame = ttk.Frame(paned_window, padding=5)
         paned_window.add(right_frame)
@@ -194,7 +192,6 @@ class AssetExtractorApp:
             for path in self.file_paths: self.file_listbox.insert(tk.END, os.path.basename(path))
             self._log(f"{added_count}개의 새 파일을 목록에 추가했습니다. (총 {len(self.file_paths)}개)")
     
-    # ==================== 수정된 부분 2: 제거 로직 메서드 추가 ====================
     def _remove_selected_files(self, event=None):
         """키보드 또는 메뉴를 통해 선택된 파일들을 목록에서 제거합니다."""
         if self.is_running:
@@ -243,7 +240,6 @@ class AssetExtractorApp:
 
         # event.x_root, event.y_root는 전체 화면 기준의 마우스 클릭 좌표입니다.
         self.listbox_menu.post(event.x_root, event.y_root)
-    # =======================================================================
     
     def _select_output_dir(self):
         if self.is_running: return
@@ -354,7 +350,7 @@ class AssetExtractorApp:
 
     def get_export_path(self, obj, output_dir, extension):
         data = obj.read()
-        base_name = getattr(data, 'name', '') or getattr(data, 'm_Name', '') or f"{obj.type.name} #{obj.path_id}"
+        base_name = getattr(data, 'name', '') or getattr(data, 'm_Name', '') or f"{obj.type.name} (#{obj.path_id})"
         folder_name = SPECIAL_TYPES.get(obj.type.name, obj.type.name)
         dest_folder = os.path.join(output_dir, folder_name)
         os.makedirs(dest_folder, exist_ok=True)
