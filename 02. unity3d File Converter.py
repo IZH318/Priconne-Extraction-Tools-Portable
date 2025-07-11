@@ -50,6 +50,9 @@ SUPPORTED_EXTENSIONS = ('.unity3d', '.assets', '.bundle')
 # ==============================================================================
 # 병렬 처리 워커 함수 (Worker Function for Parallel Processing)
 # ==============================================================================
+# ==============================================================================
+# 병렬 처리 워커 함수 (Worker Function for Parallel Processing) - 수정된 버전
+# ==============================================================================
 def process_single_file(file_path, output_path, log_queue, progress_queue):
     """
     단일 에셋 파일을 처리하는 독립적인 워커(Worker) 함수.
@@ -170,6 +173,31 @@ def process_single_file(file_path, output_path, log_queue, progress_queue):
                         with open(path, "w", encoding="utf-8") as f:
                             f.write(data)
                         saved_path = path
+                
+                # ==========================================================
+                # <<< 폰트 처리 블록 추가됨 >>>
+                # ==========================================================
+                elif obj_type == "Font":
+                    data = obj.read()
+                    # 폰트 데이터(m_FontData)가 있고, 비어있지 않은지 확인
+                    if hasattr(data, 'm_FontData') and data.m_FontData:
+                        font_data_bytes = bytes(data.m_FontData)
+                        
+                        # 폰트 시그니처(파일 헤더)를 확인하여 확장자 결정
+                        # OpenType 폰트는 'OTTO'로 시작
+                        extension = ".ttf"
+                        if font_data_bytes.startswith(b"OTTO"):
+                            extension = ".otf"
+                        
+                        # 헬퍼 함수를 사용하여 고유한 저장 경로 생성
+                        path = get_export_path(obj, extension)
+                        
+                        # 폰트 바이너리 데이터를 파일에 쓰기
+                        with open(path, "wb") as f:
+                            f.write(font_data_bytes)
+                        saved_path = path
+                # ==========================================================
+                
                 else:  # 그 외 모든 지원/미지원 타입은 JSON으로 저장 (폴백)
                     path = get_export_path(obj, ".json")
                     typetree = obj.read_typetree()  # 에셋의 데이터 구조를 딕셔너리로 읽어옴
