@@ -72,16 +72,11 @@ class AssetExtractorApp:
         file_menu.add_command(label="종료", command=self.root.quit)
 
         paned_window = PanedWindow(self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
-        paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(5, 0))
 
         left_frame = ttk.Frame(paned_window, padding=5)
         paned_window.add(left_frame)
-        output_frame = ttk.LabelFrame(left_frame, text="출력 폴더 설정")
-        output_frame.pack(fill=tk.X, pady=(0, 10))
-        self.output_entry = ttk.Entry(output_frame, state='readonly')
-        self.output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
-        self.output_button = ttk.Button(output_frame, text="찾아보기...", command=self._select_output_dir)
-        self.output_button.pack(side=tk.RIGHT, padx=(0, 5), pady=5)
+        
         list_frame = ttk.LabelFrame(left_frame, text="작업할 파일 목록")
         list_frame.pack(fill=tk.BOTH, expand=True)
         list_scrollbar = Scrollbar(list_frame)
@@ -89,8 +84,6 @@ class AssetExtractorApp:
         self.file_listbox = tk.Listbox(list_frame, yscrollcommand=list_scrollbar.set, selectmode=tk.EXTENDED)
         self.file_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         list_scrollbar.config(command=self.file_listbox.yview)
-        self.start_button = ttk.Button(left_frame, text="에셋 추출 시작", command=self._start_extraction_thread)
-        self.start_button.pack(fill=tk.X, pady=(10, 0))
 
         right_frame = ttk.Frame(paned_window, padding=5)
         paned_window.add(right_frame)
@@ -105,40 +98,58 @@ class AssetExtractorApp:
         self.log_text.tag_config('SUCCESS', foreground='#4CAF50')
         self.log_text.tag_config('ERROR', foreground='#F44336')
         self.log_text.tag_config('WARNING', foreground='#FFC107')
+        
+        bottom_controls_frame = ttk.Frame(self.root, padding=(5, 0, 5, 5))
+        bottom_controls_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
 
+        bottom_controls_frame.grid_columnconfigure(0, weight=1)
+
+        output_frame = ttk.LabelFrame(bottom_controls_frame, text="출력 폴더 설정")
+        output_frame.grid(row=0, column=0, sticky='ew', padx=(0, 10))
+
+        self.output_entry = ttk.Entry(output_frame, state='readonly')
+        self.output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        self.output_button = ttk.Button(output_frame, text="찾아보기...", command=self._select_output_dir)
+        self.output_button.pack(side=tk.RIGHT, padx=(0, 5), pady=5)
+
+        start_button_container = ttk.LabelFrame(bottom_controls_frame, text="실행")
+        start_button_container.grid(row=0, column=1, sticky='ns')
+
+        self.start_button = ttk.Button(start_button_container, text="에셋 추출 시작", command=self._start_extraction_thread)
+        self.start_button.pack(expand=True, padx=6)
+        
         status_frame = ttk.Frame(self.root, padding=5)
         status_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
         
-        self.file_progress_label = ttk.Label(status_frame, text="파일 (0/0)", width=12, anchor=tk.W)
-        self.file_progress_label.pack(side=tk.LEFT, padx=(0, 5))
-        self.asset_progress_label = ttk.Label(status_frame, text="에셋 (0/0)", width=15, anchor=tk.E)
-        self.asset_progress_label.pack(side=tk.RIGHT, padx=(5, 0))
-        progress_container = ttk.Frame(status_frame)
-        progress_container.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        self.progressbar = ttk.Progressbar(progress_container, orient='horizontal', mode='determinate')
-        self.progressbar.pack(fill=tk.X, expand=True)
-        style = ttk.Style(self.root)
-        style.configure('Progress.TLabel', background=style.lookup('TFrame', 'background'), foreground='black')
-        self.progress_label_center = ttk.Label(progress_container, text="대기 중...", style='Progress.TLabel', anchor=tk.CENTER)
-        self.progress_label_center.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
-        
+        self.progress_label_center = ttk.Label(status_frame, text="대기 중...", anchor=tk.CENTER)
+        self.progress_label_center.pack(fill=tk.X, expand=True)
+
     def _log(self, message, level='INFO'):
         timestamp = datetime.now().strftime("[%H:%M:%S] ")
-        log_message = f"{timestamp}{message}\n"
+        log_message = f"{timestamp}{message}\n\n"
         self.log_queue.put((log_message, level.upper()))
 
     def _process_log_queue(self):
+        # ==================== 수정된 부분 ====================
         try:
+            # 1. 로그를 추가하기 전에, 현재 스크롤바가 맨 아래에 있는지 확인합니다.
+            # yview()는 (상단비율, 하단비율) 튜플을 반환하며, 하단비율이 1.0이면 맨 아래입니다.
+            scroll_at_bottom = self.log_text.yview()[1] >= 1.0
+
             self.log_text.config(state='normal')
             while not self.log_queue.empty():
                 message, tag = self.log_queue.get_nowait()
                 self.log_text.insert(tk.END, message, tag)
             self.log_text.config(state='disabled')
-            self.log_text.see(tk.END)
+
+            # 2. 스크롤바가 맨 아래에 있었을 경우에만 자동으로 스크롤을 내립니다.
+            if scroll_at_bottom:
+                self.log_text.see(tk.END)
         except queue.Empty:
             pass
         finally:
             self.root.after(100, self._process_log_queue)
+        # =======================================================
 
     def _toggle_controls(self, enabled):
         state = 'normal' if enabled else 'disabled'
@@ -190,73 +201,80 @@ class AssetExtractorApp:
         if not self.output_path: messagebox.showwarning("시작 불가", "결과를 저장할 출력 폴더를 지정해주세요."); return
         self.is_running = True
         self._toggle_controls(False)
-        self.progressbar['value'] = 0
         thread = threading.Thread(target=self._process_all_files, daemon=True)
         thread.start()
 
     def _process_all_files(self):
         total_files = len(self.file_paths)
-        self._log(f"총 {total_files}개의 파일에 대한 에셋 추출 작업을 시작합니다.")
+        self._log("전체 에셋 수를 계산하기 위해 파일을 스캔합니다...")
+        self.root.after(0, self._update_progress, "파일 스캔 중...", False)
         
+        grand_total_assets = 0
+        asset_counts_per_file = {}
+        for file_path in self.file_paths:
+            try:
+                env = UnityPy.load(file_path)
+                num_assets = len(env.objects)
+                grand_total_assets += num_assets
+                asset_counts_per_file[file_path] = num_assets
+                del env
+            except Exception as e:
+                self._log(f"파일 '{os.path.basename(file_path)}' 스캔 중 오류: {e}", "WARNING")
+                asset_counts_per_file[file_path] = 0
+
+        if grand_total_assets == 0:
+            self._log("처리할 에셋을 찾지 못했습니다. 작업을 종료합니다.", "WARNING")
+            self.root.after(0, self._update_progress, "에셋 없음", True)
+            self.is_running = False
+            self.root.after(0, lambda: self._toggle_controls(True))
+            return
+
+        self._log(f"총 {total_files}개 파일에서 {grand_total_assets}개의 에셋을 발견했습니다. 추출을 시작합니다.")
+        
+        cumulative_assets_processed = 0
         for i, file_path in enumerate(self.file_paths, 1):
             base_name = os.path.basename(file_path)
             output_dir = os.path.join(self.output_path, f"{base_name}_extracted")
             
-            loading_msg = f"로딩 중: {base_name}"
-            self.root.after(0, self._update_progress, i-1, total_files, 0, 1, loading_msg)
             self._log(f"======== 처리 시작: {base_name} ========")
-            
-            # ==================== 수정된 부분 ====================
-            # UnityPy.load() 호출 전에 결과 폴더 경로를 미리 로그로 출력합니다.
             self._log(f"결과 저장 폴더: {output_dir}")
-            # =======================================================
             
+            total_assets_in_file = asset_counts_per_file.get(file_path, 0)
+            if total_assets_in_file == 0:
+                self._log(f"'{base_name}'에서 에셋을 찾을 수 없습니다. 건너뜁니다.", "WARNING")
+                message = f"파일 ({i}/{total_files}): {base_name}  /  추출된 에셋: 0/0"
+                self.root.after(0, self._update_progress, message, False)
+                continue
+
             env = None
             try:
                 env = UnityPy.load(file_path)
-                total_assets = len(env.objects)
-                if total_assets == 0:
-                    self._log(f"'{base_name}'에서 에셋을 찾을 수 없습니다.", "WARNING")
-                    continue
-                
-                self._log(f"총 {total_assets}개의 에셋 발견. 추출을 시작합니다.")
                 extracted_count = 0
                 
                 for j, obj in enumerate(env.objects, 1):
+                    message = f"파일 ({i}/{total_files}): {base_name}  /  추출된 에셋: ({j}/{total_assets_in_file})개"
+                    self.root.after(0, self._update_progress, message, False)
                     saved_path = self.export_asset(obj, output_dir)
-                    
                     if saved_path:
                         extracted_count += 1
-                        center_message = f"저장: {os.path.basename(saved_path)}"
-                        self.root.after(0, self._update_progress, i, total_files, j, total_assets, center_message)
-                    elif j % 100 == 0:
-                        center_message = "처리 중..."
-                        self.root.after(0, self._update_progress, i, total_files, j, total_assets, center_message)
 
-                final_msg = f"완료: {base_name}"
-                self.root.after(0, self._update_progress, i, total_files, total_assets, total_assets, final_msg)
-                self._log(f"추출 완료: 총 {total_assets}개 중 {extracted_count}개 추출", "SUCCESS")
+                self._log(f"추출 완료: 총 {total_assets_in_file}개 중 {extracted_count}개 추출", "SUCCESS")
+
             except Exception as e:
                 self._log(f"파일 '{base_name}' 처리 중 심각한 오류 발생: {e}", "ERROR")
             finally:
-                if env: del env
-        
-        self.root.after(0, self._update_progress, total_files, total_files, 1, 1, "모든 작업 완료!")
-        self._log("========================================", "SUCCESS")
-        self._log("모든 파일 처리가 완료되었습니다.", "SUCCESS")
+                if env:
+                    del env
+                cumulative_assets_processed += total_assets_in_file
+
+        self.root.after(0, self._update_progress, "모든 작업 완료!", True)
+        self._log("========================================")
+        self._log("모든 파일 처리가 완료되었습니다.")
         self.is_running = False
         self.root.after(0, lambda: self._toggle_controls(True))
 
-    def _update_progress(self, file_current, file_total, asset_current, asset_total, center_message):
-        if file_total > 0:
-            file_progress = (file_current - 1) / file_total
-            asset_progress = (asset_current / asset_total) / file_total if asset_total > 0 else 0
-            total_progress = (file_progress + asset_progress) * 100
-            self.progressbar['value'] = total_progress
-        
-        self.file_progress_label.config(text=f"파일 ({file_current}/{file_total})")
-        self.asset_progress_label.config(text=f"에셋 ({asset_current}/{asset_total})")
-        self.progress_label_center.config(text=center_message)
+    def _update_progress(self, message, is_final=False):
+        self.progress_label_center.config(text=message)
 
     def sanitize_filename(self, name):
         return re.sub(r'[\\/:*?"<>|]', '_', name)
