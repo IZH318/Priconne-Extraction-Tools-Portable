@@ -2,35 +2,218 @@
 # Unity 에셋 추출기 (Unity Asset Extractor)
 # ------------------------------------------------------------------------------
 # 이 스크립트는 Unity3D의 에셋 파일에서 내부 리소스를 추출하는 GUI 애플리케이션입니다.
-#
-# v4.5 주요 변경 사항:
-# - 처리 대상 제한: .unity3d 파일만 처리하도록 파일 선택 다이얼로그 및 폴더 검색 로직 수정.
 # ==============================================================================
 
 # --- 모듈 임포트 ---
-from datetime import datetime
-import os
-import queue
-import re
-import sys
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, Text, Scrollbar, PanedWindow
-import math
-from PIL import Image
-import UnityPy
-import concurrent.futures
-import json
-from multiprocessing import Manager, cpu_count
-import threading
-from enum import Enum
-from struct import unpack
-import base64
+# 1. 코어 언어 및 유틸리티
+from enum import Enum # 열거형(Enum) 정의 및 사용
+
+# 2. 시스템 및 OS 상호작용
+import os    # 운영체제와 상호작용 (파일 시스템, 환경 변수 등)
+import sys   # 파이썬 인터프리터 관련 정보 및 제어
+
+# 3. 날짜 및 시간
+from datetime import datetime # 날짜와 시간 객체 처리
+
+# 4. 수학 연산
+import math # 수학 함수 (삼각함수, 로그 등) 및 상수
+
+# 5. 데이터 구조
+import queue # 큐(Queue) 자료구조 (FIFO) 구현
+
+# 6. 텍스트 및 패턴 처리
+import re # 정규 표현식(Regular Expression) 사용
+
+# 7. 데이터 직렬화 및 인코딩/디코딩
+import base64 # 이진 데이터를 ASCII 문자열로 인코딩/디코딩
+import json   # JSON 데이터 처리
+from struct import unpack # 이진 데이터를 파이썬 객체로 변환 (바이너리 패킹/언패킹)
+
+# 8. 병렬 및 비동기 처리
+import concurrent.futures # 비동기 실행을 위한 고수준 인터페이스 (스레드 풀, 프로세스 풀)
+from multiprocessing import Manager, cpu_count # 다중 프로세스 관리 및 CPU 코어 수 확인
+import threading # 스레드를 사용한 병렬 처리
+
+# 9. GUI (Graphical User Interface)
+import tkinter as tk # 파이썬 표준 GUI 툴킷
+from tkinter import ttk, filedialog, messagebox, Text, Scrollbar, PanedWindow # tkinter 하위 모듈 및 위젯
+
+# 10. 이미지 처리 (주로 PIL/Pillow 라이브러리)
+from PIL import Image # 이미지 파일 처리 및 조작
+
+# 11. 특정 목적/전문 라이브러리
+import UnityPy # Unity 게임 엔진의 에셋 파일 처리
 
 # --- UnityPy 라이브러리 전역 설정 ---
 UnityPy.config.FALLBACK_UNITY_VERSION = "2021.3.20f1"
 
 # --- 상수 정의 ---
 SUPPORTED_EXTENSIONS = ('.unity3d',)
+
+# ==============================================================================
+# 다국어 텍스트 데이터
+# ==============================================================================
+LANGUAGES = {
+    'ko': {
+        'window_title': "Unity 에셋 추출기 (전문가 버전 v5.4)",
+        'menu_file': "메뉴",
+        'menu_lang': "언어",
+        'file_open': "파일 열기",
+        'folder_open': "폴더 열기",
+        'exit': "종료",
+        'lang_ko': "한국어",
+        'lang_en': "English",
+        'lang_ja': "日本語",
+        'file_list': "파일 목록",
+        'remove_selected': "선택 항목 제거",
+        'remove_all': "전체 항목 제거",
+        'log_history': "처리 내역",
+        'progress': "진행률: ",
+        'waiting': "대기 중",
+        'output_folder': "출력 폴더",
+        'browse': "찾아보기...",
+        'run': "실행",
+        'start_extraction': "에셋 추출 시작",
+        'program_started': "프로그램이 시작되었습니다. '메뉴'에서 파일을 선택해주세요.",
+        'language_changed': "언어가 {lang}로 변경되었습니다.",
+        'no_files_to_process': "폴더에서 Unity3D 파일을 찾지 못했습니다.",
+        'added_files': "{count}개의 새 파일을 목록에 추가했습니다. (총 {total}개)",
+        'removed_selected_files': "{count}개의 파일을 목록에서 제거했습니다. (남은 파일: {total}개)",
+        'removed_all_files': "모든 파일({count}개)을 목록에서 제거했습니다.",
+        'output_dir_set': "출력 폴더를 '{path}'로 설정했습니다.",
+        'warn_no_files_title': "시작 불가",
+        'warn_no_files_msg': "추출할 파일이 목록에 없습니다.",
+        'warn_no_output_title': "시작 불가",
+        'warn_no_output_msg': "결과를 저장할 출력 폴더를 지정해주세요.",
+        'processing_started': "병렬 처리를 시작합니다. (최대 {num_workers}개 프로세스 사용)",
+        'all_tasks_completed': "모든 파일 처리가 완료되었습니다.",
+        'file_dialog_title': "Unity3D 파일을 선택하세요",
+        'file_dialog_type': "Unity3D 파일",
+        'folder_dialog_title': "Unity3D 파일이 포함된 폴더를 선택하세요",
+        # AssetProcessor 로그
+        'preprocess_renderer_info': "재질 및 렌더러 정보 사전 처리 중...",
+        'preprocess_renderer_fail': "렌더러(PathID:{path_id}) 사전 처리 실패: {error}",
+        'processing_started_assets': "처리 시작. 총 {count}개의 에셋을 발견했습니다.",
+        'no_assets_to_process': "처리할 에셋이 없어 건너뜁니다.",
+        'extraction_complete': "추출 완료: 총 {total}개 중 {success}개 저장 성공.",
+        'extraction_complete_with_fallback': "추출 완료: 총 {total}개 중 {success}개 저장 성공. (오류로 인해 {fallback_count}개는 .bin으로 저장)",
+        'asset_processing_error': "에셋(PathID:{path_id}, Type:{obj_type}) 처리 중 오류 발생: {error}",
+        'mesh_fallback_info': "메시 처리 실패. 원본 데이터를 .bin 파일로 저장합니다.",
+        'json_fallback_error': "에셋(PathID:{path_id}, Type:{obj_type}) JSON 저장 실패: {error}",
+        'storydata_deserialization_fail': "StoryData '{asset_name}' 역직렬화 실패: {error}. 원본 .bin 파일로 저장합니다.",
+        'storydata_deserialization_success': "StoryData '{asset_name}'를 JSON으로 성공적으로 변환했습니다.",
+        'submesh_index_error': "Submesh {submesh_idx}의 인덱스 범위({start}-{end})가 버퍼({buffer_len})를 초과합니다. 건너뜁니다.",
+        'invalid_vertex_index': "Submesh {submesh_idx}에서 잘못된 최종 정점 인덱스 {face}를 가진 면 발견. 건너뜁니다.",
+        'material_process_fail': "재질(PathID:{path_id}) 처리 실패: {error}",
+        'worker_process_error': "파일 처리 중 심각한 오류 발생: {error}",
+    },
+    'en': {
+        'window_title': "Unity Asset Extractor",
+        'menu_file': "Menu",
+        'menu_lang': "Language",
+        'file_open': "Open Files",
+        'folder_open': "Open Folder",
+        'exit': "Exit",
+        'lang_ko': "한국어",
+        'lang_en': "English",
+        'lang_ja': "日本語",
+        'file_list': "File List",
+        'remove_selected': "Remove Selected",
+        'remove_all': "Remove All",
+        'log_history': "Log History",
+        'progress': "Progress: ",
+        'waiting': "Waiting",
+        'output_folder': "Output Folder",
+        'browse': "Browse...",
+        'run': "Run",
+        'start_extraction': "Start Extraction",
+        'program_started': "Program started. Please select files from the 'Menu'.",
+        'language_changed': "Language changed to {lang}.",
+        'no_files_to_process': "No Unity3D files found in the folder.",
+        'added_files': "Added {count} new files to the list. (Total: {total})",
+        'removed_selected_files': "Removed {count} files from the list. (Remaining: {total})",
+        'removed_all_files': "All files ({count}) have been removed from the list.",
+        'output_dir_set': "Output folder set to '{path}'.",
+        'warn_no_files_title': "Cannot Start",
+        'warn_no_files_msg': "No files to extract in the list.",
+        'warn_no_output_title': "Cannot Start",
+        'warn_no_output_msg': "Please specify an output folder.",
+        'processing_started': "Starting parallel processing. (Using up to {num_workers} processes)",
+        'all_tasks_completed': "All file processing is complete.",
+        'file_dialog_title': "Select Unity3D files",
+        'file_dialog_type': "Unity3D Files",
+        'folder_dialog_title': "Select a folder containing Unity3D files",
+        # AssetProcessor Logs
+        'preprocess_renderer_info': "Preprocessing material and renderer information...",
+        'preprocess_renderer_fail': "Failed to preprocess renderer (PathID:{path_id}): {error}",
+        'processing_started_assets': "Processing started. Found {count} assets.",
+        'no_assets_to_process': "No assets to process, skipping.",
+        'extraction_complete': "Extraction complete: Succeeded in saving {success} out of {total} assets.",
+        'extraction_complete_with_fallback': "Extraction complete: Succeeded in saving {success} out of {total} assets. ({fallback_count} saved as .bin due to errors)",
+        'asset_processing_error': "Error processing asset (PathID:{path_id}, Type:{obj_type}): {error}",
+        'mesh_fallback_info': "Mesh processing failed. Saving original data as a .bin file.",
+        'json_fallback_error': "Failed to save asset as JSON (PathID:{path_id}, Type:{obj_type}): {error}",
+        'storydata_deserialization_fail': "Failed to deserialize StoryData '{asset_name}': {error}. Saving original .bin file.",
+        'storydata_deserialization_success': "Successfully converted StoryData '{asset_name}' to JSON.",
+        'submesh_index_error': "Submesh {submesh_idx} index range ({start}-{end}) exceeds buffer size ({buffer_len}). Skipping.",
+        'invalid_vertex_index': "Found a face with an invalid final vertex index {face} in Submesh {submesh_idx}. Skipping.",
+        'material_process_fail': "Failed to process material (PathID:{path_id}): {error}",
+        'worker_process_error': "A critical error occurred while processing the file: {error}",
+    },
+    'ja': {
+        'window_title': "Unityアセット抽出機 (専門家版 v5.4)",
+        'menu_file': "メニュー",
+        'menu_lang': "言語",
+        'file_open': "ファイルを開く",
+        'folder_open': "フォルダを開く",
+        'exit': "終了",
+        'lang_ko': "한국어",
+        'lang_en': "English",
+        'lang_ja': "日本語",
+        'file_list': "ファイルリスト",
+        'remove_selected': "選択項目を削除",
+        'remove_all': "すべて削除",
+        'log_history': "処理履歴",
+        'progress': "進捗: ",
+        'waiting': "待機中",
+        'output_folder': "出力フォルダ",
+        'browse': "参照...",
+        'run': "実行",
+        'start_extraction': "アセット抽出開始",
+        'program_started': "プログラムが起動しました。「メニュー」からファイルを選択してください。",
+        'language_changed': "言語が{lang}に変更されました。",
+        'no_files_to_process': "フォルダ内にUnity3Dファイルが見つかりませんでした。",
+        'added_files': "{count}個の新しいファイルをリストに追加しました。(合計: {total}個)",
+        'removed_selected_files': "{count}個のファイルをリストから削除しました。(残り: {total}個)",
+        'removed_all_files': "すべてのファイル({count}個)をリストから削除しました。",
+        'output_dir_set': "出力フォルダを「{path}」に設定しました。",
+        'warn_no_files_title': "開始不可",
+        'warn_no_files_msg': "抽出するファイルがリストにありません。",
+        'warn_no_output_title': "開始不可",
+        'warn_no_output_msg': "結果を保存する出力フォルダを指定してください。",
+        'processing_started': "並列処理を開始します。(最大{num_workers}個のプロセスを使用)",
+        'all_tasks_completed': "すべてのファイルの処理が完了しました。",
+        'file_dialog_title': "Unity3Dファイルを選択してください",
+        'file_dialog_type': "Unity3Dファイル",
+        'folder_dialog_title': "Unity3Dファイルが含まれているフォルダを選択してください",
+        # AssetProcessor Logs
+        'preprocess_renderer_info': "マテリアルとレンダラー情報を事前処理中...",
+        'preprocess_renderer_fail': "レンダラー(PathID:{path_id})の事前処理に失敗しました: {error}",
+        'processing_started_assets': "処理を開始します。{count}個のアセットが見つかりました。",
+        'no_assets_to_process': "処理するアセットがないため、スキップします。",
+        'extraction_complete': "抽出完了: {total}個中{success}個のアセットの保存に成功しました。",
+        'extraction_complete_with_fallback': "抽出完了: {total}個中{success}個のアセットの保存に成功しました。(エラーのため{fallback_count}個は.binとして保存)",
+        'asset_processing_error': "アセット(PathID:{path_id}, Type:{obj_type})の処理中にエラーが発生しました: {error}",
+        'mesh_fallback_info': "メッシュの処理に失敗しました。元のデータを.binファイルとして保存します。",
+        'json_fallback_error': "アセットのJSON保存に失敗しました(PathID:{path_id}, Type:{obj_type}): {error}",
+        'storydata_deserialization_fail': "StoryData '{asset_name}' のデシリアライズに失敗しました: {error}。元の.binファイルを保存します。",
+        'storydata_deserialization_success': "StoryData '{asset_name}' をJSONに正常に変換しました。",
+        'submesh_index_error': "サブメッシュ{submesh_idx}のインデックス範囲({start}-{end})がバッファサイズ({buffer_len})を超えています。スキップします。",
+        'invalid_vertex_index': "サブメッシュ{submesh_idx}で無効な最終頂点インデックス{face}を持つ面が見つかりました。スキップします。",
+        'material_process_fail': "マテリアル(PathID:{path_id})の処理に失敗しました: {error}",
+        'worker_process_error': "ファイルの処理中に重大なエラーが発生しました: {error}",
+    }
+}
 
 # ==============================================================================
 # StoryData 정밀 역직렬화 클래스 (Advanced StoryData Deserializer Class)
@@ -41,119 +224,7 @@ class StoryDataDeserializer:
     구조화된 Python 딕셔너리로 변환합니다.
     """
     class CommandId(Enum):
-        NONE = -1
-        TITLE = 0
-        OUTLINE = 1
-        VISIBLE = 2
-        FACE = 3
-        FOCUS = 4
-        BACKGROUND = 5
-        PRINT = 6
-        TAG = 7
-        GOTO = 8
-        BGM = 9
-        TOUCH = 10
-        CHOICE = 11
-        VO = 12
-        WAIT = 13
-        IN_L = 14
-        IN_R = 15
-        OUT_L = 16
-        OUT_R = 17
-        FADEIN = 18
-        FADEOUT = 19
-        IN_FLOAT = 20
-        OUT_FLOAT = 21
-        JUMP = 22
-        SHAKE = 23
-        POP = 24
-        NOD = 25
-        SE = 26
-        BLACK_OUT = 27
-        BLACK_IN = 28
-        WHITE_OUT = 29
-        WHITE_IN = 30
-        TRANSITION = 31
-        SITUATION = 32
-        COLOR_FADEIN = 33
-        FLASH = 34
-        SHAKE_TEXT = 35
-        TEXT_SIZE = 36
-        SHAKE_SCREEN = 37
-        DOUBLE = 38
-        SCALE = 39
-        TITLE_TELOP = 40
-        WINDOW_VISIBLE = 41
-        LOG = 42
-        NOVOICE = 43
-        CHANGE = 44
-        FADEOUT_ALL = 45
-        MOVIE = 46
-        MOVIE_STAY = 47
-        BATTLE = 48
-        STILL = 49
-        BUSTUP = 50
-        ENV = 51
-        TUTORIAL_REWARD = 52
-        NAME_EDIT = 53
-        EFFECT = 54
-        EFFECT_DELETE = 55
-        EYE_OPEN = 56
-        MOUTH_OPEN = 57
-        AUTO_END = 58
-        EMOTION = 59
-        EMOTION_END = 60
-        ENV_STOP = 61
-        BGM_PAUSE = 62
-        BGM_RESUME = 63
-        BGM_VOLUME_CHANGE = 64
-        ENV_RESUME = 65
-        ENV_VOLUME = 66
-        SE_PAUSE = 67
-        CHARA_FULL = 68
-        SWAY = 69
-        BACKGROUND_COLOR = 70
-        PAN = 71
-        STILL_UNIT = 72
-        SLIDE_CHARA = 73
-        SHAKE_SCREEN_ONCE = 74
-        TRANSITION_RESUME = 75
-        SHAKE_LOOP = 76
-        SHAKE_DELETE = 77
-        UNFACE = 78
-        WAIT_TOKEN = 79
-        EFFECT_ENV = 80
-        BRIGHT_CHANGE = 81
-        CHARA_SHADOW = 82
-        UI_VISIBLE = 83
-        FADEIN_ALL = 84
-        CHANGE_WINDOW = 85
-        BG_PAN = 86
-        STILL_MOVE = 87
-        STILL_NORMALIZE = 88
-        VOICE_EFFECT = 89
-        TRIAL_END = 90
-        SE_EFFECT = 91
-        CHARACTER_UP_DOWN = 92
-        BG_CAMERA_ZOOM = 93
-        BACKGROUND_SPLIT = 94
-        CAMERA_ZOOM = 95
-        SPLIT_SLIDE = 96
-        BGM_TRANSITION = 97
-        SHAKE_ANIME = 98
-        INSERT_STORY = 99
-        PLACE = 100
-        IGNORE_BGM = 101
-        MULTI_LIPSYNC = 102
-        JINGLE = 103
-        TOUCH_TO_START = 104
-        EVENT_ADV_MOVE_HORIZONTAL = 105
-        BG_PAN_X = 106
-        BACKGROUND_BLUR = 107
-        SEASONAL_REWARD = 108
-        MINI_GAME = 109
-        MAX = 110
-        UNKNOWN = 112
+        NONE = -1; TITLE = 0; OUTLINE = 1; VISIBLE = 2; FACE = 3; FOCUS = 4; BACKGROUND = 5; PRINT = 6; TAG = 7; GOTO = 8; BGM = 9; TOUCH = 10; CHOICE = 11; VO = 12; WAIT = 13; IN_L = 14; IN_R = 15; OUT_L = 16; OUT_R = 17; FADEIN = 18; FADEOUT = 19; IN_FLOAT = 20; OUT_FLOAT = 21; JUMP = 22; SHAKE = 23; POP = 24; NOD = 25; SE = 26; BLACK_OUT = 27; BLACK_IN = 28; WHITE_OUT = 29; WHITE_IN = 30; TRANSITION = 31; SITUATION = 32; COLOR_FADEIN = 33; FLASH = 34; SHAKE_TEXT = 35; TEXT_SIZE = 36; SHAKE_SCREEN = 37; DOUBLE = 38; SCALE = 39; TITLE_TELOP = 40; WINDOW_VISIBLE = 41; LOG = 42; NOVOICE = 43; CHANGE = 44; FADEOUT_ALL = 45; MOVIE = 46; MOVIE_STAY = 47; BATTLE = 48; STILL = 49; BUSTUP = 50; ENV = 51; TUTORIAL_REWARD = 52; NAME_EDIT = 53; EFFECT = 54; EFFECT_DELETE = 55; EYE_OPEN = 56; MOUTH_OPEN = 57; AUTO_END = 58; EMOTION = 59; EMOTION_END = 60; ENV_STOP = 61; BGM_PAUSE = 62; BGM_RESUME = 63; BGM_VOLUME_CHANGE = 64; ENV_RESUME = 65; ENV_VOLUME = 66; SE_PAUSE = 67; CHARA_FULL = 68; SWAY = 69; BACKGROUND_COLOR = 70; PAN = 71; STILL_UNIT = 72; SLIDE_CHARA = 73; SHAKE_SCREEN_ONCE = 74; TRANSITION_RESUME = 75; SHAKE_LOOP = 76; SHAKE_DELETE = 77; UNFACE = 78; WAIT_TOKEN = 79; EFFECT_ENV = 80; BRIGHT_CHANGE = 81; CHARA_SHADOW = 82; UI_VISIBLE = 83; FADEIN_ALL = 84; CHANGE_WINDOW = 85; BG_PAN = 86; STILL_MOVE = 87; STILL_NORMALIZE = 88; VOICE_EFFECT = 89; TRIAL_END = 90; SE_EFFECT = 91; CHARACTER_UP_DOWN = 92; BG_CAMERA_ZOOM = 93; BACKGROUND_SPLIT = 94; CAMERA_ZOOM = 95; SPLIT_SLIDE = 96; BGM_TRANSITION = 97; SHAKE_ANIME = 98; INSERT_STORY = 99; PLACE = 100; IGNORE_BGM = 101; MULTI_LIPSYNC = 102; JINGLE = 103; TOUCH_TO_START = 104; EVENT_ADV_MOVE_HORIZONTAL = 105; BG_PAN_X = 106; BACKGROUND_BLUR = 107; SEASONAL_REWARD = 108; MINI_GAME = 109; MAX = 110; UNKNOWN = 112
 
     @staticmethod
     def _deserialize_command(data) -> tuple['StoryDataDeserializer.CommandId', list[str]]:
@@ -249,7 +320,6 @@ class StoryDataDeserializer:
                 case StoryDataDeserializer.CommandId.TITLE | StoryDataDeserializer.CommandId.SITUATION | StoryDataDeserializer.CommandId.OUTLINE | StoryDataDeserializer.CommandId.VO | StoryDataDeserializer.CommandId.GOTO:
                     block[command_id.name.lower()] = args[0] if len(args) == 1 else args
                 case _:
-                    # Ensure the value is a list before appending
                     if command_id.name.lower() not in block or not isinstance(block[command_id.name.lower()], list):
                         block[command_id.name.lower()] = []
                     block[command_id.name.lower()].append(args[0] if len(args) == 1 else args)
@@ -318,10 +388,9 @@ class AssetProcessor:
         self.mesh_to_materials_map = {}
         self.fallback_count = 0 
 
-    def log(self, message, level='INFO'):
-        timestamp = datetime.now().strftime("[%H:%M:%S] ")
-        full_message = f"{timestamp}[{self.base_name}] {message}\n"
-        self.log_queue.put((full_message, level.upper()))
+    def log(self, message_key, level='INFO', format_args=None):
+        """Send a structured log message to the main thread."""
+        self.log_queue.put(('log', self.base_name, message_key, level, format_args))
 
     def _sanitize_filename(self, name):
         return re.sub(r'[\\/:*?"<>|]', '_', name)
@@ -354,7 +423,7 @@ class AssetProcessor:
 
     def _preprocess_materials(self):
         """메시와 재질(Material)을 미리 매핑하여 성능 향상."""
-        self.log("재질 및 렌더러 정보 사전 처리 중...")
+        self.log("preprocess_renderer_info")
         renderers = [obj for obj in self.env.objects if obj.type.name in ["MeshRenderer", "SkinnedMeshRenderer"]]
         for renderer_obj in renderers:
             try:
@@ -365,17 +434,17 @@ class AssetProcessor:
                     if materials:
                         self.mesh_to_materials_map[mesh_path_id] = materials
             except Exception as e:
-                self.log(f"렌더러(PathID:{renderer_obj.path_id}) 사전 처리 실패: {e}", "WARNING")
+                self.log('preprocess_renderer_fail', "WARNING", {'path_id': renderer_obj.path_id, 'error': e})
 
     def process_all_assets(self):
         """파일 내 모든 에셋을 처리하는 메인 메서드."""
         self.env = UnityPy.load(self.file_path)
         num_assets = len(self.env.objects)
         if num_assets == 0:
-            self.log("처리할 에셋이 없어 건너뜁니다.", "WARNING")
+            self.log("no_assets_to_process", "WARNING")
             return 0
         
-        self.log(f"처리 시작. 총 {num_assets}개의 에셋을 발견했습니다.")
+        self.log('processing_started_assets', format_args={'count': num_assets})
         self._preprocess_materials()
         
         extracted_count = 0
@@ -383,10 +452,10 @@ class AssetProcessor:
             if self._dispatch_asset(obj):
                 extracted_count += 1
         
-        success_log = f"추출 완료: 총 {num_assets}개 중 {extracted_count}개 저장 성공."
         if self.fallback_count > 0:
-            success_log += f" (오류로 인해 {self.fallback_count}개는 .bin으로 저장)"
-        self.log(success_log, "SUCCESS")
+            self.log('extraction_complete_with_fallback', 'SUCCESS', {'total': num_assets, 'success': extracted_count, 'fallback_count': self.fallback_count})
+        else:
+            self.log('extraction_complete', 'SUCCESS', {'total': num_assets, 'success': extracted_count})
 
     def _dispatch_asset(self, obj):
         """에셋 타입에 따라 적절한 추출 메서드를 호출."""
@@ -411,9 +480,9 @@ class AssetProcessor:
                 if obj_type != "Material":
                     return self._export_generic_json(obj)
         except Exception as e:
-            self.log(f"에셋(PathID:{obj.path_id}, Type:{obj_type}) 처리 중 오류 발생: {e}", "ERROR")
+            self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj_type, 'error': e})
             if obj_type == "Mesh":
-                self.log(f"메시 처리 실패. 원본 데이터를 .bin 파일로 저장합니다.", "WARNING")
+                self.log('mesh_fallback_info', "WARNING")
                 if self._export_raw_data(obj):
                     self.fallback_count += 1
                     return True
@@ -422,7 +491,7 @@ class AssetProcessor:
                 try:
                     return self._export_generic_json(obj, error_info=str(e))
                 except Exception as e2:
-                    self.log(f"에셋(PathID:{obj.path_id}, Type:{obj.type.name}) JSON 저장 실패: {e2}", "ERROR")
+                    self.log('json_fallback_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj.type.name, 'error': e2})
         return False
 
     def _export_raw_data(self, obj):
@@ -434,7 +503,7 @@ class AssetProcessor:
                 f.write(raw_data)
             return True
         except Exception as e:
-            self.log(f"원본 데이터(PathID:{obj.path_id}) 저장 실패: {e}", "ERROR")
+            self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': 'raw data', 'error': e})
             return False
 
     def _export_texture(self, obj):
@@ -455,10 +524,7 @@ class AssetProcessor:
 
         # 2. JSON 역직렬화 및 저장을 시도합니다.
         try:
-            # TextAsset에서 원시 데이터를 다시 가져옵니다.
             script_data = getattr(data, 'script', None) or getattr(data, 'm_Script', None)
-
-            # 가져온 데이터를 바이트 형식으로 변환합니다.
             script_bytes = None
             if isinstance(script_data, (bytes, bytearray)):
                 script_bytes = script_data
@@ -468,22 +534,18 @@ class AssetProcessor:
                 script_bytes = str(script_data).encode('utf-8', 'surrogateescape')
 
             if not script_bytes:
-                raise ValueError("Story_data가 비어있거나 바이트 형식으로 변환할 수 없습니다.")
+                raise ValueError("Story_data is empty or cannot be converted to bytes.")
 
-            # 새로운 역직렬화 클래스를 사용하여 데이터를 변환합니다.
             deserialized_data = StoryDataDeserializer.deserialize(script_bytes)
             
-            # .json 파일 경로를 가져옵니다. (sub_folder 인자 제거)
             path = self._get_export_path(obj, ".json")
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(deserialized_data, f, indent=4, ensure_ascii=False)
-            self.log(f"StoryData '{asset_name}'를 JSON으로 성공적으로 변환했습니다.", "SUCCESS")
+            self.log('storydata_deserialization_success', 'SUCCESS', {'asset_name': asset_name})
         
         except Exception as e:
-            # JSON 변환 실패는 오류로 로그에 남기지만, 전체 처리를 실패로 간주하지는 않습니다.
-            self.log(f"StoryData '{asset_name}' JSON 변환 실패: {e}.", "ERROR")
+            self.log('storydata_deserialization_fail', 'ERROR', {'asset_name': asset_name, 'error': e})
         
-        # .bin 파일 저장 여부에 따라 최종 성공 여부를 반환합니다.
         return bin_saved
 
 
@@ -571,7 +633,7 @@ class AssetProcessor:
                 start_index = submesh.firstByte // index_size
                 
                 if start_index + submesh.indexCount > len(triangles_unpacked):
-                    self.log(f"Submesh {i}의 인덱스 범위({start_index}-{start_index+submesh.indexCount})가 버퍼({len(triangles_unpacked)})를 초과합니다. 건너뜁니다.", "WARNING")
+                    self.log('submesh_index_error', 'WARNING', {'submesh_idx': i, 'start': start_index, 'end': start_index + submesh.indexCount, 'buffer_len': len(triangles_unpacked)})
                     continue
                 
                 submesh_indices = triangles_unpacked[start_index : start_index + submesh.indexCount]
@@ -586,7 +648,7 @@ class AssetProcessor:
                     if all(0 <= idx < vertex_count for idx in absolute_face):
                         submesh_faces_map[i].append(absolute_face)
                     else:
-                        self.log(f"Submesh {i}에서 잘못된 최종 정점 인덱스 {absolute_face}를 가진 면 발견. 건너뜁니다.", "WARNING")
+                        self.log('invalid_vertex_index', 'WARNING', {'submesh_idx': i, 'face': absolute_face})
 
             for submesh_idx in submesh_faces_map:
                 for face in submesh_faces_map[submesh_idx]:
@@ -644,7 +706,7 @@ class AssetProcessor:
                         mtl_content += "\n".join(f"  {line}" for line in mat_lines) + "\n\n"
 
                 except Exception as e:
-                    self.log(f"재질(PathID:{mat_pptr.path_id}) 처리 실패: {e}", "WARNING")
+                    self.log('material_process_fail', 'WARNING', {'path_id': mat_pptr.path_id, 'error': e})
         
         obj_path = self._get_export_path(obj, ".obj")
         mtl_path = None
@@ -689,8 +751,7 @@ def process_single_file(file_path, output_path, base_input_path, log_queue, comp
         processor.process_all_assets()
     except Exception as e:
         base_name = os.path.basename(file_path)
-        timestamp = datetime.now().strftime("[%H:%M:%S] ")
-        log_queue.put((f"{timestamp}[{base_name}] 파일 처리 중 심각한 오류 발생: {e}\n", "ERROR"))
+        log_queue.put(('log', base_name, 'worker_process_error', 'ERROR', {'error': e}))
     finally:
         completion_queue.put(True)
 
@@ -700,22 +761,25 @@ def process_single_file(file_path, output_path, base_input_path, log_queue, comp
 class AssetExtractorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Unity 에셋 추출기 (전문가 버전 v4.5)")
         self.file_paths = []
         self.output_path = ""
         self.is_running = False
         self.processed_files_count = 0
         self.base_input_path = None
+        self.log_events = []
+
+        self.lang = tk.StringVar(value='ko')
+        self.lang.trace_add('write', self._on_language_change)
 
         self.manager = Manager()
         self.log_queue = self.manager.Queue()
         self.completion_queue = self.manager.Queue()
         self._setup_ui()
         self._center_window(800, 600)
-        sys.stdout = TextRedirector(self.log_queue, "INFO")
-        sys.stderr = TextRedirector(self.log_queue, "ERROR")
+        sys.stdout = TextRedirector(self, "INFO")
+        sys.stderr = TextRedirector(self, "ERROR")
         self.root.after(100, self._process_queues)
-        self._log("프로그램이 시작되었습니다. '메뉴'에서 파일을 선택해주세요.")
+        self._log('program_started')
 
     def _center_window(self, width, height):
         screen_width = self.root.winfo_screenwidth()
@@ -727,12 +791,21 @@ class AssetExtractorApp:
     def _setup_ui(self):
         self.menu_bar = tk.Menu(self.root)
         self.root.config(menu=self.menu_bar)
-        file_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label="메뉴", menu=file_menu)
-        file_menu.add_command(label="파일 열기", command=self._select_files)
-        file_menu.add_command(label="폴더 열기", command=self._select_folder)
-        file_menu.add_separator()
-        file_menu.add_command(label="종료", command=self.root.quit)
+
+        self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.lang_menu = tk.Menu(self.menu_bar, tearoff=0)
+
+        self.menu_bar.add_cascade(label="", menu=self.file_menu, underline=0)
+        self.menu_bar.add_cascade(label="", menu=self.lang_menu, underline=0)
+        
+        self.file_menu.add_command(label="", command=self._select_files)
+        self.file_menu.add_command(label="", command=self._select_folder)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="", command=self.root.quit)
+
+        self.lang_menu.add_radiobutton(label=LANGUAGES['ko']['lang_ko'], variable=self.lang, value='ko')
+        self.lang_menu.add_radiobutton(label=LANGUAGES['en']['lang_en'], variable=self.lang, value='en')
+        self.lang_menu.add_radiobutton(label=LANGUAGES['ja']['lang_ja'], variable=self.lang, value='ja')
 
         main_paned_window = PanedWindow(self.root, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         main_paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
@@ -740,25 +813,20 @@ class AssetExtractorApp:
         left_pane = ttk.Frame(main_paned_window)
         main_paned_window.add(left_pane, width=240)
         
-        list_frame = ttk.LabelFrame(left_pane, text="파일 목록")
-        list_frame.pack(fill=tk.BOTH, expand=True)
-        list_scrollbar = Scrollbar(list_frame)
+        self.list_frame = ttk.LabelFrame(left_pane, text="")
+        self.list_frame.pack(fill=tk.BOTH, expand=True)
+        list_scrollbar = Scrollbar(self.list_frame)
         list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=5)
-        self.file_listbox = tk.Listbox(list_frame, yscrollcommand=list_scrollbar.set, selectmode=tk.EXTENDED)
+        self.file_listbox = tk.Listbox(self.list_frame, yscrollcommand=list_scrollbar.set, selectmode=tk.EXTENDED)
         self.file_listbox.pack(fill=tk.BOTH, expand=True, padx=(5, 0), pady=5)
         list_scrollbar.config(command=self.file_listbox.yview)
         self.file_listbox.bind("<Delete>", self._remove_selected_files)
-        self.listbox_menu = tk.Menu(self.root, tearoff=0)
-        self.listbox_menu.add_command(label="선택 항목 제거", command=self._remove_selected_files)
-        self.listbox_menu.add_command(label="전체 항목 제거", command=self._remove_all_files)
-        self.file_listbox.bind("<Button-3>", self._show_listbox_menu)
-        self.file_listbox.bind("<Button-2>", self._show_listbox_menu)
         
-        log_frame = ttk.LabelFrame(main_paned_window, text="처리 내역")
-        main_paned_window.add(log_frame)
-        log_frame.grid_rowconfigure(0, weight=1)
-        log_frame.grid_columnconfigure(0, weight=1)
-        log_text_frame = ttk.Frame(log_frame)
+        self.log_frame = ttk.LabelFrame(main_paned_window, text="")
+        main_paned_window.add(self.log_frame)
+        self.log_frame.grid_rowconfigure(0, weight=1)
+        self.log_frame.grid_columnconfigure(0, weight=1)
+        log_text_frame = ttk.Frame(self.log_frame)
         log_text_frame.grid(row=0, column=0, sticky='nsew', pady=(0, 5))
         log_text_frame.grid_rowconfigure(0, weight=1)
         log_text_frame.grid_columnconfigure(0, weight=1)
@@ -773,10 +841,10 @@ class AssetExtractorApp:
         self.log_text.tag_config("ERROR", background="#F8D7DA", foreground="#721C24")
         self.log_text.tag_config("SUCCESS", background="#D4EDDA", foreground="#155724")
 
-        progress_info_frame = ttk.Frame(log_frame)
+        progress_info_frame = ttk.Frame(self.log_frame)
         progress_info_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(0, 5))
         progress_info_frame.grid_columnconfigure(1, weight=1)
-        self.progress_label = ttk.Label(progress_info_frame, text="진행률: 대기 중")
+        self.progress_label = ttk.Label(progress_info_frame, text="")
         self.progress_label.grid(row=0, column=0, sticky='w', padx=(0, 10))
         self.progress_bar = ttk.Progressbar(progress_info_frame, orient='horizontal', mode='determinate')
         self.progress_bar.grid(row=0, column=1, sticky='ew')
@@ -784,33 +852,102 @@ class AssetExtractorApp:
         bottom_controls_frame = ttk.Frame(self.root)
         bottom_controls_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
         bottom_controls_frame.grid_columnconfigure(0, weight=1)
-        output_frame = ttk.LabelFrame(bottom_controls_frame, text="출력 폴더")
-        output_frame.grid(row=0, column=0, sticky='ew', padx=(0, 10))
-        self.output_entry = ttk.Entry(output_frame, state='readonly')
+        self.output_frame = ttk.LabelFrame(bottom_controls_frame, text="")
+        self.output_frame.grid(row=0, column=0, sticky='ew', padx=(0, 10))
+        self.output_entry = ttk.Entry(self.output_frame, state='readonly')
         self.output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
-        self.output_button = ttk.Button(output_frame, text="찾아보기...", command=self._select_output_dir)
+        self.output_button = ttk.Button(self.output_frame, text="", command=self._select_output_dir)
         self.output_button.pack(side=tk.RIGHT, padx=(0, 5), pady=5)
-        start_button_container = ttk.LabelFrame(bottom_controls_frame, text="실행")
-        start_button_container.grid(row=0, column=1, sticky='ns')
-        self.start_button = ttk.Button(start_button_container, text="에셋 추출 시작", command=self._start_extraction)
+        self.start_button_container = ttk.LabelFrame(bottom_controls_frame, text="")
+        self.start_button_container.grid(row=0, column=1, sticky='ns')
+        self.start_button = ttk.Button(self.start_button_container, text="", command=self._start_extraction)
         self.start_button.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        self.listbox_menu = tk.Menu(self.root, tearoff=0)
+        self.listbox_menu.add_command(label="", command=self._remove_selected_files)
+        self.listbox_menu.add_command(label="", command=self._remove_all_files)
+        self.file_listbox.bind("<Button-3>", self._show_listbox_menu)
+        self.file_listbox.bind("<Button-2>", self._show_listbox_menu)
 
-    def _log(self, message, level='INFO'):
-        timestamp = datetime.now().strftime("[%H:%M:%S] ")
-        log_message = f"{timestamp}{message}\n"
-        self.log_queue.put((log_message, level.upper()))
+        self._update_ui_text()
+
+    def _on_language_change(self, *args):
+        self._update_ui_text()
+        d = LANGUAGES[self.lang.get()]
+        self._log('language_changed', format_args={'lang': d[f'lang_{self.lang.get()}']})
+        self._redisplay_logs()
+
+    def _update_ui_text(self):
+        lang = self.lang.get()
+        d = LANGUAGES[lang]
+        self.root.title(d['window_title'])
+        self.menu_bar.entryconfig(1, label=d['menu_file'])
+        self.menu_bar.entryconfig(2, label=d['menu_lang'])
+        self.file_menu.entryconfig(0, label=d['file_open'])
+        self.file_menu.entryconfig(1, label=d['folder_open'])
+        self.file_menu.entryconfig(3, label=d['exit'])
+        self.list_frame.config(text=d['file_list'])
+        self.log_frame.config(text=d['log_history'])
+        self.output_frame.config(text=d['output_folder'])
+        self.output_button.config(text=d['browse'])
+        self.start_button_container.config(text=d['run'])
+        self.start_button.config(text=d['start_extraction'])
+        self.listbox_menu.entryconfig(0, label=d['remove_selected'])
+        self.listbox_menu.entryconfig(1, label=d['remove_all'])
+        self._update_progress_bar()
+
+    def _redisplay_logs(self):
+        """Clear and redisplay all logs in the current language."""
+        self.log_text.config(state='normal')
+        self.log_text.delete('1.0', tk.END)
+        lang = self.lang.get()
+        for event in self.log_events:
+            timestamp, prefix, message_key, level, format_args = event
+            
+            message_template = LANGUAGES[lang].get(message_key, message_key)
+            if message_key == 'raw_text':
+                message = format_args['text']
+            else:
+                message = message_template.format(**format_args) if format_args else message_template
+
+            log_prefix = f"[{prefix}] " if prefix else ""
+            full_message = f"[{timestamp}] {log_prefix}{message}\n"
+            self.log_text.insert(tk.END, full_message, level)
+        self.log_text.config(state='disabled')
+        self.log_text.see(tk.END)
+
+    def _log(self, message_key, level='INFO', format_args=None, prefix=None):
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        event = (timestamp, prefix, message_key, level, format_args)
+        self.log_events.append(event)
+        
+        # Format and display immediately
+        lang = self.lang.get()
+        message_template = LANGUAGES[lang].get(message_key, message_key)
+        if message_key == 'raw_text':
+            message = format_args['text']
+        else:
+            message = message_template.format(**format_args) if format_args else message_template
+        
+        log_prefix = f"[{prefix}] " if prefix else ""
+        full_message = f"[{timestamp}] {log_prefix}{message}\n"
+        
+        self.log_text.config(state='normal')
+        self.log_text.insert(tk.END, full_message, level)
+        self.log_text.config(state='disabled')
+        self.log_text.see(tk.END)
 
     def _process_queues(self):
         try:
-            scroll_at_bottom = self.log_text.yview()[1] >= 1.0
-            self.log_text.config(state='normal')
             while not self.log_queue.empty():
-                message, tag = self.log_queue.get_nowait()
-                self.log_text.insert(tk.END, message, tag)
-            self.log_text.config(state='disabled')
-            if scroll_at_bottom:
-                self.log_text.see(tk.END)
-            
+                log_type, *data = self.log_queue.get_nowait()
+                if log_type == 'log':
+                    prefix, message_key, level, format_args = data
+                    self._log(message_key, level, format_args, prefix)
+                elif log_type == 'raw':
+                    text, level = data
+                    self._log('raw_text', level, {'text': text})
+
             while not self.completion_queue.empty():
                 self.completion_queue.get_nowait()
                 self.processed_files_count += 1
@@ -821,28 +958,31 @@ class AssetExtractorApp:
             self.root.after(100, self._process_queues)
     
     def _update_progress_bar(self):
+        d = LANGUAGES[self.lang.get()]
         if self.is_running and self.file_paths:
             total_files = len(self.file_paths)
+            self.progress_label.config(text=f"{d['progress']}{self.processed_files_count} / {total_files}")
             self.progress_bar['value'] = self.processed_files_count
-            self.progress_label.config(text=f"진행률: {self.processed_files_count} / {total_files}")
         else:
             self.progress_bar['value'] = 0
-            self.progress_label.config(text="진행률: 대기 중")
+            self.progress_label.config(text=f"{d['progress']}{d['waiting']}")
 
     def _toggle_controls(self, enabled):
         state = 'normal' if enabled else 'disabled'
         self.start_button.config(state=state)
         self.output_button.config(state=state)
         try:
-            self.menu_bar.entryconfig("메뉴", state=state)
+            self.menu_bar.entryconfig(1, state=state)
+            self.menu_bar.entryconfig(2, state=state)
         except tk.TclError:
             pass
     
     def _select_files(self):
         if self.is_running: return
+        d = LANGUAGES[self.lang.get()]
         paths = filedialog.askopenfilenames(
-            title="Unity3D 파일을 선택하세요",
-            filetypes=(("Unity3D 파일", "*.unity3d"),)
+            title=d['file_dialog_title'],
+            filetypes=((d['file_dialog_type'], "*.unity3d"),)
         )
         if paths:
             self.base_input_path = None
@@ -850,14 +990,15 @@ class AssetExtractorApp:
         
     def _select_folder(self):
         if self.is_running: return
-        folder_path = filedialog.askdirectory(title="Unity3D 파일이 포함된 폴더를 선택하세요")
+        d = LANGUAGES[self.lang.get()]
+        folder_path = filedialog.askdirectory(title=d['folder_dialog_title'])
         if folder_path:
             self.base_input_path = folder_path
             found_paths = [os.path.join(r, f) for r, _, fs in os.walk(folder_path) for f in fs if f.lower().endswith(SUPPORTED_EXTENSIONS)]
             if found_paths:
                 self._add_files_to_list(found_paths)
             else:
-                self._log("폴더에서 Unity3D 파일을 찾지 못했습니다.", "WARNING")
+                self._log('no_files_to_process', "WARNING")
             
     def _add_files_to_list(self, new_paths):
         current_paths_set = set(self.file_paths)
@@ -873,49 +1014,53 @@ class AssetExtractorApp:
             self.file_listbox.delete(0, tk.END)
             for path in self.file_paths:
                 self.file_listbox.insert(tk.END, os.path.basename(path))
-            self._log(f"{added_count}개의 새 파일을 목록에 추가했습니다. (총 {len(self.file_paths)}개)")
+            self._log('added_files', format_args={'count': added_count, 'total': len(self.file_paths)})
             
     def _remove_selected_files(self, event=None):
         if self.is_running: return
         selected_indices = self.file_listbox.curselection()
         if not selected_indices: return
+        
+        count = len(selected_indices)
         for index in sorted(selected_indices, reverse=True):
             del self.file_paths[index]
             self.file_listbox.delete(index)
-        self._log(f"{len(selected_indices)}개의 파일을 목록에서 제거했습니다. (남은 파일: {len(self.file_paths)}개)")
+        self._log('removed_selected_files', format_args={'count': count, 'total': len(self.file_paths)})
         
     def _remove_all_files(self):
         if self.is_running: return
         if not self.file_paths: return
-        total_count = len(self.file_paths)
+        count = len(self.file_paths)
         self.file_paths.clear()
         self.file_listbox.delete(0, tk.END)
         self.base_input_path = None
-        self._log(f"모든 파일({total_count}개)을 목록에서 제거했습니다.")
+        self._log('removed_all_files', format_args={'count': count})
         
     def _show_listbox_menu(self, event):
         if self.is_running: return
-        self.listbox_menu.entryconfig("선택 항목 제거", state=tk.NORMAL if self.file_listbox.curselection() else tk.DISABLED)
-        self.listbox_menu.entryconfig("전체 항목 제거", state=tk.NORMAL if self.file_paths else tk.DISABLED)
+        self.listbox_menu.entryconfig(0, state=tk.NORMAL if self.file_listbox.curselection() else tk.DISABLED)
+        self.listbox_menu.entryconfig(1, state=tk.NORMAL if self.file_paths else tk.DISABLED)
         self.listbox_menu.post(event.x_root, event.y_root)
         
     def _select_output_dir(self):
         if self.is_running: return
-        path = filedialog.askdirectory(title="결과를 저장할 폴더를 선택하세요")
+        d = LANGUAGES[self.lang.get()]
+        path = filedialog.askdirectory(title=d['output_folder'])
         if path:
             self.output_path = path
             self.output_entry.config(state='normal')
             self.output_entry.delete(0, tk.END)
             self.output_entry.insert(0, path)
             self.output_entry.config(state='readonly')
-            self._log(f"출력 폴더를 '{path}'로 설정했습니다.")
+            self._log('output_dir_set', format_args={'path': path})
 
     def _start_extraction(self):
+        d = LANGUAGES[self.lang.get()]
         if not self.file_paths:
-            messagebox.showwarning("시작 불가", "추출할 파일이 목록에 없습니다.")
+            messagebox.showwarning(d['warn_no_files_title'], d['warn_no_files_msg'])
             return
         if not self.output_path:
-            messagebox.showwarning("시작 불가", "결과를 저장할 출력 폴더를 지정해주세요.")
+            messagebox.showwarning(d['warn_no_output_title'], d['warn_no_output_msg'])
             return
             
         self.is_running = True
@@ -928,8 +1073,7 @@ class AssetExtractorApp:
 
     def _run_process_pool(self):
         num_workers = min(cpu_count(), len(self.file_paths))
-        self._log(f"병렬 처리를 시작합니다. (최대 {num_workers}개 프로세스 사용)")
-        self._log("StoryData 자동 변환이 기본 활성화되었습니다.")
+        self._log('processing_started', format_args={'num_workers': num_workers})
 
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
             for file_path in self.file_paths:
@@ -941,19 +1085,19 @@ class AssetExtractorApp:
 
     def _on_extraction_complete(self):
         """추출 완료 후 UI를 업데이트하는 메서드."""
+        self._log("raw_text", format_args={'text': "========================================"})
+        self._log('all_tasks_completed', "SUCCESS")
         self.is_running = False
-        self._toggle_controls(True)
-        self._log("========================================", "INFO")
-        self._log("모든 파일 처리가 완료되었습니다.", "SUCCESS")
+        self.root.after(0, self._toggle_controls, True)
 
 
 class TextRedirector:
-    def __init__(self, queue_instance, tag="INFO"):
-        self.queue = queue_instance
+    def __init__(self, app_instance, tag="INFO"):
+        self.app = app_instance
         self.tag = tag
     def write(self, text):
         if text.strip():
-            self.queue.put((f"{datetime.now().strftime('[%H:%M:%S] ')}{text.strip()}\n", self.tag))
+            self.app.log_queue.put(('raw', text.strip(), self.tag))
     def flush(self):
         pass
 
