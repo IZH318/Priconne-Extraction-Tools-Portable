@@ -21,6 +21,7 @@ import re                      # 파일명 생성을 위한 정규 표현식 사
 import sys                     # 표준 출력/오류를 리디렉션하여 GUI에 로그를 표시하기 위함
 import tkinter as tk           # GUI 구성을 위한 파이썬 표준 라이브러리
 from tkinter import ttk, filedialog, messagebox, Text, Scrollbar, PanedWindow # GUI 고급 위젯 및 대화상자 임포트
+import math                    # 법선 벡터 계산을 위한 수학 함수 사용
 
 # --- 핵심 에셋 처리 모듈 ---
 from PIL import Image          # Texture2D, Sprite 에셋을 이미지 파일로 변환 및 저장
@@ -45,6 +46,62 @@ SPECIAL_TYPES = {
 }
 # 프로그램이 인식하고 처리할 수 있는 파일 확장자 목록
 SUPPORTED_EXTENSIONS = ('.unity3d', '.assets', '.bundle')
+
+
+# ==============================================================================
+# 압축 해제 헬퍼 함수 (Decompression Helper Function)
+# ==============================================================================
+def unpack_packed_bit_vector(packed_vector, is_int=False):
+    """
+    Unity의 PackedBitVector 데이터를 실제 숫자 리스트로 압축 해제합니다.
+    
+    Args:
+        packed_vector: 압축된 데이터 객체 (예: m_Vertices, m_UV).
+        is_int (bool): 정수형으로 압축 해제할지 여부 (주로 삼각형 인덱스에 사용).
+        
+    Returns:
+        list: 압축 해제된 숫자 리스트.
+    """
+    if not packed_vector.m_Data:
+        return []
+
+    unpacked_values = []
+    bit_pos = 0
+    byte_data = bytes(packed_vector.m_Data)
+    bit_size = packed_vector.m_BitSize
+    
+    if bit_size == 0:
+        return [0.0] * packed_vector.m_NumItems if not is_int else [0] * packed_vector.m_NumItems
+
+    for _ in range(packed_vector.m_NumItems):
+        val = 0
+        i = 0
+        while i < bit_size:
+            byte_index = bit_pos // 8
+            bit_index_in_byte = bit_pos % 8
+            
+            bits_left_in_byte = 8 - bit_index_in_byte
+            bits_to_read = min(bit_size - i, bits_left_in_byte)
+
+            mask = (1 << bits_to_read) - 1
+            chunk = (byte_data[byte_index] >> bit_index_in_byte) & mask
+            
+            val |= chunk << i
+            
+            bit_pos += bits_to_read
+            i += bits_to_read
+
+        if is_int:
+            unpacked_values.append(val)
+        else:
+            denominator = (1 << bit_size) - 1
+            if denominator == 0:
+                float_val = 0.0
+            else:
+                float_val = (val / denominator) * packed_vector.m_Range + packed_vector.m_Start
+            unpacked_values.append(float_val)
+            
+    return unpacked_values
 
 
 # ==============================================================================
@@ -83,7 +140,6 @@ def process_single_file(file_path, output_path, log_queue, completion_queue):
         def sanitize_filename(name):
             return re.sub(r'[\\/:*?"<>|]', '_', name)
 
-        # [수정됨] 이름 중복 처리 로직 개선
         def get_unique_path(path, obj_path_id):
             """
             파일 경로가 중복될 경우, path_id와 카운터를 이용해 고유한 경로를 생성합니다.
@@ -94,12 +150,10 @@ def process_single_file(file_path, output_path, log_queue, completion_queue):
             directory, filename = os.path.split(path)
             name, ext = os.path.splitext(filename)
 
-            # 1차 중복 방지: 이름 뒤에 에셋의 고유 ID (path_id) 추가
             new_path = os.path.join(directory, f"{name} (#{obj_path_id}){ext}")
             if not os.path.exists(new_path):
                 return new_path
 
-            # 2차 중복 방지: path_id로도 중복될 경우, 뒤에 (1), (2)... 와 같이 숫자 추가
             count = 1
             base_name_for_counting = f"{name} (#{obj_path_id})"
             while True:
@@ -108,19 +162,15 @@ def process_single_file(file_path, output_path, log_queue, completion_queue):
                     return final_path
                 count += 1
         
-        # [수정됨] 기본 이름 생성 시 path_id 제거
         def get_export_path(obj, extension):
             """
             에셋 객체와 확장자를 받아 최종 저장 경로를 결정합니다.
             """
             data = obj.read()
-            # 에셋의 이름(m_Name)을 가져오고, 이름이 없으면 타입 이름으로 대체 (path_id는 여기서 추가하지 않음)
             base_name_asset = getattr(data, 'name', '') or getattr(data, 'm_Name', '') or obj.type.name
-            # SPECIAL_TYPES 딕셔너리를 참고하여 저장할 폴더 결정
             folder_name = SPECIAL_TYPES.get(obj.type.name, obj.type.name)
             dest_folder = os.path.join(output_dir, folder_name)
             os.makedirs(dest_folder, exist_ok=True)
-            # 파일명 정리 및 고유 경로 생성
             sanitized_name = sanitize_filename(base_name_asset)
             initial_path = os.path.join(dest_folder, f"{sanitized_name}{extension}")
             return get_unique_path(initial_path, obj.path_id)
@@ -156,12 +206,81 @@ def process_single_file(file_path, output_path, log_queue, completion_queue):
                                 f.write(audio_data)
                             if idx == 0: saved_path = path
                 elif obj_type == "Mesh":
-                    data = obj.read().export()
-                    if data:
-                        path = get_export_path(obj, ".obj")
-                        with open(path, "w", encoding="utf-8") as f:
-                            f.write(data)
-                        saved_path = path
+                    data = obj.read()
+                    
+                    is_compressed = data.m_VertexData.m_VertexCount == 0 and hasattr(data, 'm_CompressedMesh') and data.m_CompressedMesh.m_Vertices.m_NumItems > 0
+                    
+                    if is_compressed:
+                        log(f"압축 메시(PathID:{obj.path_id})를 발견하여 직접 처리합니다.")
+                        
+                        try:
+                            cm = data.m_CompressedMesh
+                            vertices_unpacked = unpack_packed_bit_vector(cm.m_Vertices)
+                            uvs_unpacked = unpack_packed_bit_vector(cm.m_UV)
+                            triangles_unpacked = unpack_packed_bit_vector(cm.m_Triangles, is_int=True)
+
+                            vertices = [vertices_unpacked[i:i+3] for i in range(0, len(vertices_unpacked), 3)]
+                            uvs = [uvs_unpacked[i:i+2] for i in range(0, len(uvs_unpacked), 2)]
+                            triangles = [triangles_unpacked[i:i+3] for i in range(0, len(triangles_unpacked), 3)]
+
+                            normals = [[0.0, 0.0, 0.0] for _ in range(len(vertices))]
+                            for face in triangles:
+                                if len(face) < 3: continue
+                                idx1, idx2, idx3 = face[0], face[1], face[2]
+                                if not all(i < len(vertices) for i in [idx1, idx2, idx3]): continue
+                                
+                                p1, p2, p3 = vertices[idx1], vertices[idx2], vertices[idx3]
+                                edge1 = [p2[j] - p1[j] for j in range(3)]
+                                edge2 = [p3[j] - p1[j] for j in range(3)]
+
+                                face_normal = [
+                                    edge1[1] * edge2[2] - edge1[2] * edge2[1],
+                                    edge1[2] * edge2[0] - edge1[0] * edge2[2],
+                                    edge1[0] * edge2[1] - edge1[1] * edge2[0]
+                                ]
+                                
+                                for j in range(3):
+                                    normals[idx1][j] += face_normal[j]
+                                    normals[idx2][j] += face_normal[j]
+                                    normals[idx3][j] += face_normal[j]
+                            
+                            for i in range(len(normals)):
+                                normal = normals[i]
+                                length_sq = sum(comp**2 for comp in normal)
+                                
+                                if length_sq > 1e-12:
+                                    length = math.sqrt(length_sq)
+                                    normals[i] = [comp / length for comp in normal]
+                            
+                            path = get_export_path(obj, ".obj")
+                            with open(path, "w", encoding="utf-8") as f:
+                                f.write(f"# Extracted by Unity Asset Extractor\n")
+                                f.write(f"g {sanitize_filename(data.m_Name)}\n")
+                                for v in vertices: f.write(f"v {v[0]} {v[1]} {v[2]}\n")
+                                for uv in uvs: f.write(f"vt {uv[0]} {uv[1]}\n")
+                                for n in normals: f.write(f"vn {n[0]} {n[1]} {n[2]}\n")
+                                
+                                for face in triangles:
+                                    if len(face) < 3: continue
+                                    f1, f2, f3 = face[0]+1, face[1]+1, face[2]+1
+                                    f.write(f"f {f1}/{f1}/{f1} {f2}/{f2}/{f2} {f3}/{f3}/{f3}\n")
+                            saved_path = path
+
+                        except Exception as mesh_e:
+                            log(f"압축 메시(PathID:{obj.path_id}) 처리 중 오류 발생: {mesh_e}", "ERROR")
+                            typetree = obj.read_typetree()
+                            typetree["COMPRESSED_MESH_EXPORT_ERROR"] = str(mesh_e)
+                            path = get_export_path(obj, ".json")
+                            with open(path, "w", encoding="utf-8") as f:
+                                json.dump(typetree, f, indent=4, ensure_ascii=False, default=lambda o: f"<Unserializable: {type(o).__name__}>")
+
+                    else:
+                        data_export = data.export()
+                        if data_export:
+                            path = get_export_path(obj, ".obj")
+                            with open(path, "w", encoding="utf-8") as f:
+                                f.write(data_export)
+                            saved_path = path
                 elif obj_type == "Font":
                     data = obj.read()
                     if hasattr(data, 'm_FontData') and data.m_FontData:
