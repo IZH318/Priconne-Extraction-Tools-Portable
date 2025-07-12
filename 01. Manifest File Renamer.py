@@ -10,15 +10,15 @@ from tkinter import scrolledtext, messagebox, ttk
 import threading
 import queue
 
-# 언어 딕셔너리 (변경 없음)
+# 중앙 언어 관리 시스템
 LANGUAGES = {
     'ko': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "언어", 'start_button': "작업 시작",
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "언어(Language)", 'start_button': "작업 시작",
         'status_waiting': "상태: 대기 중", 'status_searching': "파일 검색 중...", 'status_processing': "처리: {current} / {total}",
         'status_complete': "상태: 완료", 'status_complete_count': "완료: {count} / {count}",
         'initial_info_db': "[ 주의 ] 현재 디렉터리에 'manifest.db' 파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n\n"
                            "         [ 예시 ]\n"
-                           "         C:\\PriconneClient\\\n"
+                           "         C:\\MyRenamer\\\n"
                            "            ├─ 01. Manifest File Renamer.py  (← 실행 파일)\n"
                            "            ├─ manifest.db\n"
                            "{folder_structure}\n",
@@ -26,17 +26,25 @@ LANGUAGES = {
         'folder_item_branch': "            ├─ {folder_name}\\ (← 작업 대상 폴더)",
         'folder_item_last':   "            └─ {folder_name}\\ (← 작업 대상 폴더)",
         'error_title': "오류", 'error_db_not_found': "'manifest.db' 파일을 찾을 수 없습니다。",
-        'log_new_job_start': "[ 작업 시작 ] 새로운 작업을 시작합니다.", 'log_warning_db_not_found': "[ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다.",
-        'log_info_long_time': "[ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.",
-        'log_info_auto_rename': "          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.",
-        'log_searching_files': "[ 진행 ] 대상 폴더에서 파일 목록을 검색 중입니다...", 'log_no_files_found': "대상 폴더에서 처리 할 파일을 찾을 수 없습니다.",
-        'log_found_files': "[ 완료 ] 총 {count}개의 처리 대상 파일을 찾았습니다. 이름 변경을 시작합니다.", 'log_rename_success': "  - 작업 상태: 파일 이름 변경 완료",
-        'log_rename_exception': "  - 작업 상태: 예외 처리된 파일 이름 변경 완료", 'log_rename_original': "  - 원본: \\{path}",
-        'log_rename_changed': "  - 변경: \\{path}", 'log_rename_error': "오류: {error}",
-        'log_unprocessed_header': "[ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.",
-        'log_unprocessed_error': " 오류 발생: 알 수 없는 오류가 발생했습니다. ({error})", 'log_file_process_fail': "파일 처리 실패 {path}: {error}",
-        'log_job_summary': "--- 작업 완료 ---\n총 {count}개의 파일이 처리되었습니다.", 'log_unprocessed_summary': "{count}개의 파일은 처리되지 않았습니다.",
-        'log_job_complete': "작업이 모두 완료되었습니다。",
+        'job_start_log': "\n" + "="*100 + "\n[ 작업 시작 ] 새로운 작업을 시작합니다.\n",
+        'job_complete_log': "\n작업이 모두 완료되었습니다.",
+        # --- 백엔드에서 사용할 텍스트 포맷 ---
+        'backend_warning_db_not_found': "[ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다.",
+        'backend_info_long_time': " [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.",
+        'backend_info_auto_rename': "          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n",
+        'backend_searching_files': "[ 진행 ] 대상 폴더에서 파일 목록을 검색 중입니다...",
+        'backend_no_files_found': "대상 폴더에서 처리 할 파일을 찾을 수 없습니다.",
+        'backend_found_files': "[ 완료 ] 총 {count}개의 처리 대상 파일을 찾았습니다. 이름 변경을 시작합니다.",
+        'backend_unprocessed_header': "\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.",
+        'backend_unprocessed_error': " 오류 발생: 알 수 없는 오류가 발생했습니다. ({error})",
+        'backend_file_process_fail': "파일 처리 실패 {path}: {exc}",
+        'backend_job_summary': "\n\n\n--- 작업 완료 ---\n총 {total_processed}개의 파일이 처리되었습니다.",
+        'backend_unprocessed_summary': "{count}개의 파일은 처리되지 않았습니다.",
+        'backend_rename_exception_success': "\n  - 작업 상태: 예외 처리된 파일 이름 변경 완료",
+        'backend_rename_success': "\n  - 작업 상태: 파일 이름 변경 완료",
+        'backend_rename_original': "    - 원본: \\{path}",
+        'backend_rename_changed': "    - 변경: \\{path}",
+        'backend_rename_error': "오류: {error}",
     },
     'en': {
         'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "Language", 'start_button': "Start Job",
@@ -44,7 +52,7 @@ LANGUAGES = {
         'status_complete': "Status: Complete", 'status_complete_count': "Complete: {count} / {count}",
         'initial_info_db': "[ WARNING ] 'manifest.db' and the target files must be in the current directory with their original structure.\n\n"
                            "         [ Example ]\n"
-                           "         C:\\PriconneClient\\\n"
+                           "         C:\\MyRenamer\\\n"
                            "            ├─ 01. Manifest File Renamer.py  (← Executable)\n"
                            "            ├─ manifest.db\n"
                            "{folder_structure}\n",
@@ -52,25 +60,32 @@ LANGUAGES = {
         'folder_item_branch': "            ├─ {folder_name}\\ (← Target folder)",
         'folder_item_last':   "            └─ {folder_name}\\ (← Target folder)",
         'error_title': "Error", 'error_db_not_found': "'manifest.db' file not found.",
-        'log_new_job_start': "[ JOB START ] Starting a new job.", 'log_warning_db_not_found': "[ WARNING ] 'manifest.db' does not exist in the current directory.",
-        'log_info_long_time': "[ INFO ] This may take a long time if there are many files or the storage device is slow.",
-        'log_info_auto_rename': "          All files will be renamed automatically after being loaded.",
-        'log_searching_files': "[ PROGRESS ] Searching for files in target folders...", 'log_no_files_found': "No files to process were found in the target folders.",
-        'log_found_files': "[ COMPLETE ] Found a total of {count} files to process. Starting rename.", 'log_rename_success': "  - Status: File renamed successfully",
-        'log_rename_exception': "  - Status: Renamed file via exception handling", 'log_rename_original': "  - Original: \\{path}",
-        'log_rename_changed': "  - New: \\{path}", 'log_rename_error': "Error: {error}",
-        'log_unprocessed_header': "[ INFO ] Files not recognized by manifest.db were handled or skipped as follows.",
-        'log_unprocessed_error': " An unknown error occurred. ({error})", 'log_file_process_fail': "Failed to process file {path}: {error}",
-        'log_job_summary': "--- JOB COMPLETE ---\nA total of {count} files have been processed.", 'log_unprocessed_summary': "{count} files were not processed.",
-        'log_job_complete': "The job has been completed.",
+        'job_start_log': "\n" + "="*100 + "\n[ JOB START ] Starting a new job.\n",
+        'job_complete_log': "\nThe job has been completed.",
+        'backend_warning_db_not_found': "[ WARNING ] 'manifest.db' does not exist in the current directory.",
+        'backend_info_long_time': " [ INFO ] This may take a long time if there are many files or the storage device is slow.",
+        'backend_info_auto_rename': "          All files will be renamed automatically after being loaded.\n",
+        'backend_searching_files': "[ PROGRESS ] Searching for files in target folders...",
+        'backend_no_files_found': "No files to process were found in the target folders.",
+        'backend_found_files': "[ COMPLETE ] Found a total of {count} files to process. Starting rename.",
+        'backend_unprocessed_header': "\n\n\n [ INFO ] Files not recognized by manifest.db were handled or skipped as follows.",
+        'backend_unprocessed_error': " An unknown error occurred. ({error})",
+        'backend_file_process_fail': "Failed to process file {path}: {exc}",
+        'backend_job_summary': "\n\n\n--- JOB COMPLETE ---\nA total of {total_processed} files have been processed.",
+        'backend_unprocessed_summary': "{count} files were not processed.",
+        'backend_rename_exception_success': "\n  - Status: Renamed file via exception handling",
+        'backend_rename_success': "\n  - Status: File renamed successfully",
+        'backend_rename_original': "    - Original: \\{path}",
+        'backend_rename_changed': "    - New: \\{path}",
+        'backend_rename_error': "Error: {error}",
     },
     'ja': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "言語", 'start_button': "作業開始",
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "言語(Language)", 'start_button': "作業開始",
         'status_waiting': "状態: 待機中", 'status_searching': "ファイルを検索中...", 'status_processing': "処理中: {current} / {total}",
         'status_complete': "状態: 完了", 'status_complete_count': "完了: {count} / {count}",
         'initial_info_db': "[ 注意 ] 現在のディレクトリに 'manifest.db' ファイルと対象ファイルを元の構造のまま配置してください。\n\n"
                            "         [ 例 ]\n"
-                           "         C:\\PriconneClient\\\n"
+                           "         C:\\MyRenamer\\\n"
                            "            ├─ 01. Manifest File Renamer.py  (← 実行ファイル)\n"
                            "            ├─ manifest.db\n"
                            "{folder_structure}\n",
@@ -78,17 +93,24 @@ LANGUAGES = {
         'folder_item_branch': "            ├─ {folder_name}\\ (← 対象フォルダ)",
         'folder_item_last':   "            └─ {folder_name}\\ (← 対象フォルダ)",
         'error_title': "エラー", 'error_db_not_found': "'manifest.db' ファイルが見つかりません。",
-        'log_new_job_start': "[ 作業開始 ] 新しい作業を開始します。", 'log_warning_db_not_found': "[ 警告 ] 現在のディレクトリに 'manifest.db' が存在しません。",
-        'log_info_long_time': "[ 案内 ] ファイル数が多い、またはストレージの速度が遅い場合、時間がかかることがあります。",
-        'log_info_auto_rename': "          すべてのファイルが読み込まれた後、自動的にリネームされます。",
-        'log_searching_files': "[ 進行 ] 対象フォルダ内のファイルを検索しています...", 'log_no_files_found': "対象フォルダに処理するファイルが見つかりませんでした。",
-        'log_found_files': "[ 完了 ] 合計{count}個の処理対象ファイルを見つけました。名前の変更を開始します。", 'log_rename_success': "  - 状態: ファイル名の変更が完了しました",
-        'log_rename_exception': "\n  - 状態: 例外処理によりファイル名を変更しました", 'log_rename_original': "  - 元の名前: \\{path}",
-        'log_rename_changed': "  - 新しい名前: \\{path}", 'log_rename_error': "エラー: {error}",
-        'log_unprocessed_header': "[ 案内 ] manifest.dbで認識できなかったファイルは、次のように例外処理またはスキップされました。",
-        'log_unprocessed_error': " 不明なエラーが発生しました。({error})", 'log_file_process_fail': "ファイル処理失敗 {path}: {error}",
-        'log_job_summary': "--- 作業完了 ---\n合計{count}個のファイルが処理されました。", 'log_unprocessed_summary': "{count}個のファイルは処理されませんでした。",
-        'log_job_complete': "すべての作業が完了しました。",
+        'job_start_log': "\n" + "="*100 + "\n[ 作業開始 ] 新しい作業を開始します。\n",
+        'job_complete_log': "\nすべての作業が完了しました。",
+        'backend_warning_db_not_found': "[ 警告 ] 現在のディレクトリに 'manifest.db' が存在しません。",
+        'backend_info_long_time': "[ 案内 ] ファイル数が多い、またはストレージの速度が遅い場合、時間がかかることがあります。",
+        'backend_info_auto_rename': "          すべてのファイルが読み込まれた後、自動的にリネームされます。\n",
+        'backend_searching_files': "[ 進行 ] 対象フォルダ内のファイルを検索しています...",
+        'backend_no_files_found': "対象フォルダに処理するファイルが見つかりませんでした。",
+        'backend_found_files': "[ 完了 ] 合計{count}個の処理対象ファイルを見つけました。名前の変更を開始します。",
+        'backend_unprocessed_header': "\n\n\n [ 案内 ] manifest.dbで認識できなかったファイルは、次のように例外処理またはスキップされました。",
+        'backend_unprocessed_error': " 不明なエラーが発生しました。({error})",
+        'backend_file_process_fail': "ファイル処理失敗 {path}: {exc}",
+        'backend_job_summary': "\n\n\n--- 作業完了 ---\n合計{total_processed}個のファイルが処理されました。",
+        'backend_unprocessed_summary': "{count}個のファイルは処理されませんでした。",
+        'backend_rename_exception_success': "\n  - 状態: 例外処理によりファイル名を変更しました",
+        'backend_rename_success': "\n  - 状態: ファイル名の変更が完了しました",
+        'backend_rename_original': "    - 元の名前: \\{path}",
+        'backend_rename_changed': "    - 新しい名前: \\{path}",
+        'backend_rename_error': "エラー: {error}",
     }
 }
 ASCII_ART = r"""
@@ -109,7 +131,10 @@ class FileRenamerGUI:
         self.current_lang = 'ko'
         self.lang_var = tk.StringVar(value=self.current_lang)
         self.lang_var.trace_add("write", self.on_language_change)
-        self.log_history = []
+        
+        # [수정] 로그 기록 방식을 변경. (key, kwargs) 튜플 또는 raw string을 저장.
+        self.log_data = []
+        
         self.last_progress_info = {'current': 0, 'total': 0}
         self.is_processing = False
         window_width = 800
@@ -119,13 +144,17 @@ class FileRenamerGUI:
         center_x = int(screen_width / 2 - window_width / 2)
         center_y = int(screen_height / 2 - window_height / 2)
         self.master.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+
         self.log_queue = queue.Queue()
         self.progress_queue = queue.Queue()
-        self.file_processor = RenameHashedFile(self.log_queue, self.progress_queue)
-        self.MAX_LOGS_PER_CYCLE = 1
-        self.GUI_UPDATE_INTERVAL_MS = 1
+        self.file_processor = RenameHashedFile(self.log_queue, self.progress_queue, self.get_string)
+        
+        self.MAX_LOGS_PER_CYCLE = 1000
+        self.GUI_UPDATE_INTERVAL_MS = 100
+        
         self.progress_label_var = tk.StringVar()
         self.total_files_count = 0
+
         self.create_widgets()
         self.update_ui_language(is_initial_setup=True)
 
@@ -135,6 +164,7 @@ class FileRenamerGUI:
     def set_language(self, lang_code):
         if self.current_lang != lang_code:
             self.current_lang = lang_code
+            self.file_processor.set_get_string_func(self.get_string)
             self.update_ui_language()
 
     def on_language_change(self, *args):
@@ -145,6 +175,7 @@ class FileRenamerGUI:
         self.master.title(self.get_string('window_title'))
         self.create_menubar()
         self.start_button.config(text=self.get_string('start_button'))
+        
         if not self.is_processing:
             if self.total_files_count > 0 and self.progress_bar['value'] == 100:
                 self.progress_label_var.set(self.get_string('status_complete_count', count=self.total_files_count))
@@ -156,14 +187,10 @@ class FileRenamerGUI:
             else:
                 self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
         
+        # [수정] 초기 메시지는 is_initial_setup과 상관없이 언어 변경 시마다 다시 생성되어야 함
         if is_initial_setup:
-            self.log_history = [
-                ('raw', {'text': ASCII_ART}),
-                ('raw', {'text': SEPARATOR}),
-                ('initial_info_db', {}),
-                ('initial_info_start', {}),
-                ('raw', {'text': SEPARATOR}),
-            ]
+            self.show_initial_message()
+        
         self.re_render_logs()
         
     def create_menubar(self):
@@ -190,41 +217,57 @@ class FileRenamerGUI:
         self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9))
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
-    # --- [결정적인 수정] re_render_logs 메서드 ---
+    def show_initial_message(self):
+        # [수정] 초기 메시지는 항상 self.log_data의 첫번째 항목으로 존재하도록 함.
+        # 작업 시작 시에는 클리어 후 다시 추가됨.
+        self.log_data.clear()
+        
+        folder_lines = []
+        folders = self.file_processor.target_folders
+        for i, folder in enumerate(folders):
+            prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
+            folder_lines.append((prefix_key, {'folder_name': folder}))
+
+        # [신규] 초기 메시지를 구성하는 데이터 구조. raw string과 튜플을 혼합.
+        initial_log_structure = [
+            ASCII_ART,
+            SEPARATOR,
+            ('initial_info_db', {'folder_structure': "\n".join([self.get_string(k, **v) for k,v in folder_lines])}),
+            ('initial_info_start', {}),
+            SEPARATOR,
+        ]
+        self.log_data = initial_log_structure
+        self.re_render_logs()
+        
     def re_render_logs(self):
+        # [수정] 로그 데이터를 실시간으로 번역하여 렌더링
         self.log_area.configure(state='normal')
         self.log_area.delete('1.0', tk.END)
         
-        full_log_text = []
-        for key, kwargs in self.log_history:
-            if key == 'raw':
-                message = kwargs.get('text', '')
-            elif key == 'initial_info_db':
-                # --- 폴더 구조를 리스트에 담아 안전하게 생성 ---
-                folder_lines = []
-                folders = self.file_processor.target_folders
-                for i, folder in enumerate(folders):
-                    if i == len(folders) - 1:
-                        prefix_key = 'folder_item_last'
-                    else:
-                        prefix_key = 'folder_item_branch'
-                    folder_lines.append(self.get_string(prefix_key, folder_name=folder))
-                
-                # .strip() 없이 join하여 들여쓰기 보존
-                folder_structure_str = "\n".join(folder_lines)
-                
-                message = self.get_string(key, folder_structure=folder_structure_str)
-            else:
-                message = self.get_string(key, **kwargs)
-            full_log_text.append(message)
-        
-        self.log_area.insert('1.0', "\n".join(full_log_text))
-        
+        rendered_logs = []
+        for item in self.log_data:
+            if isinstance(item, str):  # Raw string (ASCII_ART 등)
+                rendered_logs.append(item)
+            elif isinstance(item, tuple):  # (key, kwargs) 튜플
+                key, kwargs = item
+                # initial_info_db의 folder_structure는 렌더링 시점에 다시 생성해야 함.
+                if key == 'initial_info_db':
+                    folder_lines = []
+                    folders = self.file_processor.target_folders
+                    for i, folder in enumerate(folders):
+                         prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
+                         folder_lines.append(self.get_string(prefix_key, folder_name=folder))
+                    kwargs['folder_structure'] = "\n".join(folder_lines)
+
+                rendered_logs.append(self.get_string(key, **kwargs))
+
+        self.log_area.insert('1.0', "\n".join(rendered_logs))
         self.log_area.configure(state='disabled')
         self.log_area.see(tk.END)
 
-    def add_log(self, key, **kwargs):
-        self.log_history.append((key, kwargs))
+    def add_log_data(self, log_item):
+        # [신규] 로그 "데이터"를 추가하고 다시 렌더링하는 함수
+        self.log_data.append(log_item)
         self.re_render_logs()
 
     def start_processing_thread(self):
@@ -232,45 +275,51 @@ class FileRenamerGUI:
             messagebox.showerror(self.get_string('error_title'), self.get_string('error_db_not_found'))
             return
         
-        self.log_history = [
-            ('raw', {'text': "="*100}),
-            ('log_new_job_start', {}),
-            ('raw', {'text': ""}),
-        ]
+        # [수정] 작업 시작 시 기존 로그 초기화하고 시작 메시지 추가
+        self.show_initial_message()
+        self.add_log_data(('job_start_log', {}))
+        
         self.is_processing = True
         self.start_button.config(state=tk.DISABLED)
         self.progress_bar['value'] = 0
-        self.progress_label_var.set(self.get_string('status_searching'))
         self.last_progress_info = {'current': 0, 'total': 0}
-        self.re_render_logs()
+        self.progress_label_var.set(self.get_string('status_searching'))
+        
+        self.file_processor.set_get_string_func(self.get_string)
+        
         processing_thread = threading.Thread(target=self.file_processor.process_files, daemon=True)
         processing_thread.start()
         self.monitor_queue(processing_thread)
 
     def monitor_queue(self, thread):
-        logs_to_add = []
+        new_log_data = []
         try:
-            while not self.log_queue.empty():
-                logs_to_add.append(self.log_queue.get_nowait())
+            # [수정] 하드코딩된 숫자 100 대신 정의된 속성을 사용합니다.
+            for _ in range(self.MAX_LOGS_PER_CYCLE):
+                new_log_data.append(self.log_queue.get_nowait())
         except queue.Empty:
             pass
-
-        if logs_to_add:
-            self.log_history.extend(logs_to_add)
+        
+        if new_log_data:
+            self.log_data.extend(new_log_data)
             self.re_render_logs()
 
         try:
+            # 진행률 큐는 한 번에 모두 처리해도 UI에 큰 부담이 없으므로 그대로 둡니다.
             while not self.progress_queue.empty():
                 progress_val, current, total = self.progress_queue.get_nowait()
                 self.progress_bar['value'] = progress_val
                 self.last_progress_info = {'current': current, 'total': total}
-                self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
+                self.progress_label_var.set(self.get_string('status_processing', current=current, total=total))
                 self.total_files_count = total
         except queue.Empty:
             pass
+
         if thread.is_alive():
+            # 작업 스레드가 아직 실행 중이면, 일정 시간 후 이 함수를 다시 호출합니다.
             self.master.after(self.GUI_UPDATE_INTERVAL_MS, lambda: self.monitor_queue(thread))
         else:
+            # 작업이 완료된 후 큐에 남아있을 수 있는 모든 로그를 처리합니다.
             final_logs = []
             try:
                 while True: 
@@ -278,8 +327,13 @@ class FileRenamerGUI:
             except queue.Empty: pass
             
             if final_logs:
-                self.log_history.extend(final_logs)
+                self.log_data.extend(final_logs)
             
+            # 작업 완료 로그를 추가하고 최종적으로 화면을 다시 렌더링합니다.
+            self.add_log_data(('job_complete_log', {}))
+            self.re_render_logs()
+
+            # UI 상태를 '완료'로 업데이트하고 버튼을 다시 활성화합니다.
             self.is_processing = False
             self.progress_bar['value'] = 100
             if self.total_files_count > 0:
@@ -287,21 +341,22 @@ class FileRenamerGUI:
             else:
                 self.progress_label_var.set(self.get_string('status_complete'))
             self.start_button.config(state=tk.NORMAL)
-            
-            self.log_history.append(('raw', {'text': ""}))
-            self.log_history.append(('log_job_complete', {}))
-            self.re_render_logs()
 
 
 class RenameHashedFile:
-    def __init__(self, log_queue, progress_queue):
+    def __init__(self, log_queue, progress_queue, get_string_func):
         self.target_folders = ['a', 'b', 'm', 'manifest', 's', 'v']
         self.hash_list = {}
         self.unprocessed_files = []
         self.log_queue = log_queue
         self.progress_queue = progress_queue
+        self.get_string = get_string_func
+
+    def set_get_string_func(self, get_string_func):
+        self.get_string = get_string_func
 
     def log(self, key, **kwargs):
+        # [수정] 큐에 (key, kwargs) 튜플을 넣음
         self.log_queue.put((key, kwargs))
 
     def update_progress(self, value, current, total):
@@ -310,23 +365,23 @@ class RenameHashedFile:
     def process_files(self):
         manifest_db_path = os.path.join(os.getcwd(), "manifest.db")
         if not os.path.exists(manifest_db_path):
-            self.log('log_warning_db_not_found')
+            self.log('backend_warning_db_not_found')
             return
+            
+        self.log('backend_info_long_time')
+        self.log('backend_info_auto_rename')
+        self.log('backend_searching_files')
         
-        self.log('log_info_long_time')
-        self.log('log_info_auto_rename')
-        self.log('raw', text="")
-        self.log('log_searching_files')
-
         files = self.get_all_files_in_folders(self.target_folders)
         total_files = len(files)
+        
         self.update_progress(0, 0, total_files)
 
         if not files:
-            self.log('log_no_files_found')
+            self.log('backend_no_files_found')
             return
             
-        self.log('log_found_files', count=total_files)
+        self.log('backend_found_files', count=total_files)
 
         with sqlite3.connect(manifest_db_path) as connection:
             cursor = connection.cursor()
@@ -343,28 +398,25 @@ class RenameHashedFile:
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.process, file): file for file in files}
+            
             processed_futures = 0
             for future in concurrent.futures.as_completed(futures):
                 processed_futures += 1
                 progress = (processed_futures / total_files) * 100.0
                 self.update_progress(progress, processed_futures, total_files)
+                
                 try:
-                    was_successful, data, log_id_list = future.result()
+                    # [수정] 반환값에서 log_msg 제거
+                    was_successful, data = future.result()
                     if was_successful:
-                        if log_id_list:
-                            for log_id, log_kwargs in log_id_list:
-                                self.log(log_id, **log_kwargs)
                         processed_count_rename += 1
                     else:
                         self.unprocessed_files.append(data)
                 except Exception as exc:
                     file_path = futures[future]
-                    self.log('log_file_process_fail', path=file_path, error=exc)
-        
-        if processed_count_rename > 0 or self.unprocessed_files:
-            self.log('raw', text='\n')
+                    self.log('backend_file_process_fail', path=file_path, exc=str(exc))
 
-        self.log('log_unprocessed_header')
+        self.log('backend_unprocessed_header')
         
         if self.unprocessed_files:
             for file_path in self.unprocessed_files:
@@ -372,41 +424,46 @@ class RenameHashedFile:
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
                         first_line = file.readline().strip()
+                    
                     new_filename = None
                     if 'a/bdl' in first_line: new_filename = os.path.join("manifest", "bdl_assetmanifest")
                     elif 'manifest/' in first_line: new_filename = os.path.join("manifest", "manifest_assetmanifest")
                     elif 'm/' in first_line: new_filename = os.path.join("manifest", "movie2manifest")
                     elif 'b/' in first_line: new_filename = os.path.join("manifest", "soundmanifest")
+                    
                     if new_filename:
                         new_filepath = self.get_unique_filename(new_filename)
                         os.rename(file_path, new_filepath)
                         processed_count_check += 1
                         relative_file_path = os.path.relpath(file_path, os.getcwd())
-                        consistent_new_filename = new_filename.replace(os.sep, '\\').replace('/', '\\')
-                        self.log('raw', {'text': ''})
-                        self.log('log_rename_exception')
-                        self.log('log_rename_original', path=relative_file_path)
-                        self.log('log_rename_changed', path=consistent_new_filename)
+                        
+                        # [수정] 여러 줄 로그를 개별 log 호출로 분리
+                        self.log('backend_rename_exception_success')
+                        self.log('backend_rename_original', path=relative_file_path)
+                        self.log('backend_rename_changed', path=new_filename.replace(os.sep, '\\'))
                         renamed_by_content = True
                 except Exception as e:
-                    self.log('log_unprocessed_error', error=e)
+                    self.log('backend_unprocessed_error', error=str(e))
+                
                 if not renamed_by_content:
                     final_unprocessed_files.append(file_path)
-        
+
         total_processed = processed_count_rename + processed_count_check
-        self.log('raw', text='\n')
-        self.log('log_job_summary', count=total_processed)
+        self.log('backend_job_summary', total_processed=total_processed)
         if final_unprocessed_files:
-            self.log('log_unprocessed_summary', count=len(final_unprocessed_files))
+            self.log('backend_unprocessed_summary', count=len(final_unprocessed_files))
 
     def process(self, file_path):
+        # [수정] 반환값에서 log_msg 제거
         hash_md5_value = self.calculate_md5(file_path).hexdigest()
         if hash_md5_value in self.hash_list:
             return self.rename_file(file_path, self.hash_list[hash_md5_value])
+
         hash_xxhash64_value = self.calculate_xxhash64(file_path).hexdigest()
         if hash_xxhash64_value in self.hash_list:
             return self.rename_file(file_path, self.hash_list[hash_xxhash64_value])
-        return False, file_path, None
+
+        return False, file_path
 
     def rename_file(self, file_path, new_filename):
         new_filepath = os.path.join(os.getcwd(), new_filename)
@@ -416,18 +473,17 @@ class RenameHashedFile:
         try:
             os.rename(file_path, new_filepath)
             relative_file_path = os.path.relpath(file_path, os.getcwd())
-            consistent_new_filename = new_filename.replace('/', '\\').replace(os.sep, '\\')
             
-            log_tuples = [
-                ('raw', {'text': ''}),
-                ('log_rename_success', {}),
-                ('log_rename_original', {'path': relative_file_path}),
-                ('log_rename_changed', {'path': consistent_new_filename})
-            ]
-            return True, new_filepath, log_tuples
+            # [수정] 로그 메시지를 직접 생성하지 않고, self.log를 통해 key와 kwargs를 전달
+            self.log('backend_rename_success')
+            self.log('backend_rename_original', path=relative_file_path)
+            self.log('backend_rename_changed', path=new_filename.replace(os.sep, '\\').replace('/', '\\'))
+            
+            # [수정] 반환값에서 log_msg 제거
+            return True, new_filepath
         except Exception as e:
-            log_tuples = [('log_rename_error', {'error': e})]
-            return False, file_path, log_tuples
+            self.log('backend_rename_error', error=str(e))
+            return False, file_path
 
     def calculate_md5(self, file_path):
         md5_hash = hashlib.md5()
