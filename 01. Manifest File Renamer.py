@@ -1,412 +1,356 @@
-# 필요한 라이브러리 임포트
-import os  # 파일 시스템 작업을 위한 라이브러리
-import sys  # 파이썬 시스템과 관련된 기능을 제공하는 sys 모듈
-import sqlite3  # SQLite 데이터베이스를 사용하기 위한 라이브러리
-import hashlib  # 해시 함수를 사용하기 위한 라이브러리
-import concurrent.futures  # 병렬 처리를 위한 라이브러리
-from tqdm import tqdm  # 진행 상황을 시각적으로 표시하기 위한 라이브러리
-import xxhash  # xxhash64 해시 함수를 사용하기 위한 라이브러리
+# --- 필요한 라이브러리 임포트 ---
+# GUI 구현을 위한 tkinter 라이브러리
+import tkinter as tk
+from tkinter import scrolledtext, messagebox, ttk
+
+# 파일 시스템, 시스템 제어, DB, 해시, 병렬 처리 라이브러리
+import os
+import sys
+import sqlite3
+import hashlib
+import concurrent.futures
+import xxhash
+
+# GUI와 백그라운드 작업 간의 안전한 통신을 위한 스레딩 및 큐 라이브러리
+import threading
+import queue
+
+# --- GUI 애플리케이션 클래스 정의 ---
+class FileRenamerGUI:
+    """
+    파일 리네임 프로그램의 메인 GUI 창을 생성하고 관리하는 클래스
+    """
+    def __init__(self, master):
+        """
+        GUI 애플리케이션의 창과 위젯을 초기화합니다.
+        """
+        # 메인 윈도우(창) 설정
+        self.master = master
+        self.master.title("Manifest File Renamer")
+
+        # --- 창 크기 및 화면 중앙 배치 설정 ---
+        window_width = 800
+        window_height = 600
+
+        # 스크린의 너비와 높이를 구합니다.
+        screen_width = self.master.winfo_screenwidth()
+        screen_height = self.master.winfo_screenheight()
+
+        # 창이 화면 중앙에 위치하도록 x, y 좌표를 계산합니다.
+        center_x = int(screen_width / 2 - window_width / 2)
+        center_y = int(screen_height / 2 - window_height / 2)
+
+        # 창의 크기와 위치를 설정합니다.
+        self.master.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+
+        # GUI 화면에 표시될 위젯들(버튼, 텍스트 상자 등)을 생성합니다.
+        self.create_widgets()
+
+        # 백그라운드에서 파일 처리를 담당할 클래스의 인스턴스를 생성합니다.
+        self.file_processor = RenameHashedFile(self.log_queue, self.progress_queue)
+
+    def create_widgets(self):
+        """
+        GUI를 구성하는 위젯들을 생성하고 화면에 배치합니다.
+        모든 위젯은 기본 스타일(배경색, 폰트 등)을 사용합니다.
+        """
+        # 최상위 프레임: 위젯 간 간격을 위해 사용
+        top_frame = tk.Frame(self.master)
+        top_frame.pack(padx=10, pady=10, fill=tk.X)
+
+        # 컨트롤(버튼, 진행 막대)들을 담을 프레임 위젯
+        control_frame = tk.Frame(top_frame)
+        control_frame.pack(fill=tk.X)
+
+        # 작업 시작 버튼
+        self.start_button = tk.Button(control_frame, text="작업 시작", command=self.start_processing_thread)
+        self.start_button.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # 프로그램 종료 버튼
+        self.close_button = tk.Button(control_frame, text="종료", command=self.master.quit)
+        self.close_button.pack(side=tk.LEFT, padx=5)
+
+        # 작업 진행률을 시각적으로 보여줄 프로그레스 바
+        self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
+        self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(5, 0))
+
+        # 작업 로그를 출력할 스크롤 가능한 텍스트 영역
+        self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD)
+        self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
+        
+        # --- 초기 메시지 및 ASCII 아트를 로그 창에 표시 ---
+        # ASCII 아트 텍스트
+        ascii_art_text = """
+      ___      _                        _____                       __  __      ___      _ ___  _         
+     / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
+    / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
+   /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
+              __  ___          _ ___        __    _____ __      ___                             
+             /  |/  /__ ____  (_) _/__ ___ / /_  / __(_) /__   / _ \___ ___  ___ ___ _  ___ ____
+            / /|_/ / _ `/ _ \/ / _/ -_|_-</ __/ / _// / / -_) / , _/ -_) _ \/ _ `/  ' \/ -_) __/
+           /_/  /_/\_,_/_//_/_/_/ \__/___/\__/ /_/ /_/_/\__/ /_/|_|\__/_//_/\_,_/_/_/_/\__/_/
+        """
+
+        self.log_area.insert(tk.END, ascii_art_text + '\n')
+        self.log_area.insert(tk.END, "--------------------------------------------------------------------------------------------------\n")
+        self.log_area.insert(tk.END, "[ 주의 ] 현재 디렉터리에 'manifest.db'파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n")
+        self.log_area.insert(tk.END, "--------------------------------------------------------------------------------------------------\n")
+        self.log_area.insert(tk.END, "'작업 시작' 버튼을 눌러주세요.\n")
+        self.log_area.configure(state='disabled') # 초기 메시지 출력 후 비활성화
+
+        # 스레드 간의 안전한 데이터 교환을 위한 큐(Queue) 객체 생성
+        self.log_queue = queue.Queue()
+        self.progress_queue = queue.Queue()
+
+    def add_log(self, message):
+        """
+        로그 영역에 새로운 메시지를 추가하고, 항상 최신 로그가 보이도록 스크롤을 내립니다.
+        """
+        self.log_area.configure(state='normal')
+        self.log_area.insert(tk.END, message + '\n')
+        self.log_area.configure(state='disabled')
+        self.log_area.see(tk.END)
+
+    def start_processing_thread(self):
+        """
+        '작업 시작' 버튼을 누르면 호출됩니다.
+        파일 처리 작업은 시간이 오래 걸릴 수 있으므로, GUI가 멈추지 않도록 별도의 스레드에서 실행합니다.
+        """
+        if not os.path.exists(os.path.join(os.getcwd(), "manifest.db")):
+            messagebox.showerror("오류", "현재 디렉터리에 'manifest.db' 파일이 존재하지 않습니다.")
+            return
+
+        self.start_button.config(state=tk.DISABLED)
+        
+        self.log_area.config(state='normal')
+        self.log_area.delete('1.0', tk.END)
+        self.log_area.config(state='disabled')
+        self.progress_bar['value'] = 0
+
+        self.processing_thread = threading.Thread(target=self.file_processor.process_files, daemon=True)
+        self.processing_thread.start()
+
+        self.master.after(100, self.monitor_queue)
+
+    def monitor_queue(self):
+        """
+        주기적으로(100ms마다) 큐를 확인하여 작업 스레드로부터 온 데이터로 GUI를 업데이트합니다.
+        """
+        try:
+            while True:
+                log_msg = self.log_queue.get_nowait()
+                self.add_log(log_msg)
+        except queue.Empty:
+            pass
+
+        try:
+            while True:
+                progress_val = self.progress_queue.get_nowait()
+                self.progress_bar['value'] = progress_val
+        except queue.Empty:
+            pass
+
+        if self.processing_thread.is_alive():
+            self.master.after(100, self.monitor_queue)
+        else:
+            self.start_button.config(state=tk.NORMAL)
 
 
-
-# 변환된 파일의 총 수를 계산하기 위한 변수
-total_processed = 0
-
-
-
-# 프로그램 시작 시 화면에 출력되는 ASCII Art
-print("""
-           ___      _                        _____                       __  __      ___      _ ___  _         
-          / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
-         / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
-        /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
-    """)
-print("""
-                   __  ___          _ ___        __    _____ __      ___                             
-                  /  |/  /__ ____  (_) _/__ ___ / /_  / __(_) /__   / _ \___ ___  ___ ___ _  ___ ____
-                 / /|_/ / _ `/ _ \/ / _/ -_|_-</ __/ / _// / / -_) / , _/ -_) _ \/ _ `/  ' \/ -_) __/
-                /_/  /_/\_,_/_//_/_/_/ \__/___/\__/ /_/ /_/_/\__/ /_/|_|\__/_//_/\_,_/_/_/_/\__/_/
-    """)
-
-
-
-# 작업 진행여부 확인 안내 문구 출력
-print("\n\n [ 주의 ] 현재 디렉터리에 'manifest.db'파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n")
-print("          작업 진행 중 콘솔 창 내부를 클릭(*선택 모드 활성화) 하면 진행이 멈출 수 있습니다.\n")
-print("          (임시 해결 방법) 01. 콘솔 창의 [최대화] 버튼과 [이전 크기로 복원] 버튼을 번갈아가며 클릭")
-print("                           02. 콘솔 내부 클릭 후 Enter 키 누르기\n")
-
-
-
-# 사용자에게 작업을 진행할지 여부를 묻는 메시지 출력
-print("\n\n 작업을 진행하시겠습니까? ([Y]/[N] 중 대소문자 구분 없이 입력 후 Enter 키를 누르십시오.)")
-
-
-
-# 파일 이름 변경 및 파일 내용 확인 클래스 정의
+# --- 파일 처리 로직 클래스 정의 ---
 class RenameHashedFile:
-    def __init__(self):
+    def __init__(self, log_queue, progress_queue):
         """
-        FileProcessor 클래스의 초기화 메서드
-
-        Attributes:
-            - target_folders (list): 파일 처리 대상 폴더들을 포함하는 리스트.
-            - hash_list (dict): 해시 값과 파일 이름을 매핑하는 딕셔너리.
-            - processed_count_rename (int): 파일 이름이 변경된 횟수.
-            - processed_count_check (int): 파일 내용이 확인된 횟수.
-            - unprocessed_files (list): 처리되지 않은 파일 목록.
-            - results (list): 처리된 결과를 담는 리스트.
-            
-        Parameters:
-            None
-
-        Returns:
-            None
+        FileProcessor 클래스의 초기화 메서드.
         """
-        # 클래스 초기화
-        self.target_folders = ['a', 'b', 'm', 'manifest', 's', 'v']  # 대상 폴더들을 지정
-        self.hash_list = {}  # 해시 값과 파일 이름을 매핑할 딕셔너리
-        self.processed_count_rename = 0  # 파일 이름 변경된 개수
-        self.processed_count_check = 0  # 파일 내용 확인된 개수
-        self.unprocessed_files = []  # 처리되지 않은 파일 목록
-        self.results = []  # 처리된 결과
+        self.target_folders = ['a', 'b', 'm', 'manifest', 's', 'v']
+        self.hash_list = {}
+        self.processed_count_rename = 0
+        self.processed_count_check = 0
+        self.unprocessed_files = []
+        self.results = []
+        self.log_queue = log_queue
+        self.progress_queue = progress_queue
 
+    def log(self, message):
+        """GUI의 로그 창에 메시지를 보내기 위해 큐에 데이터를 추가합니다."""
+        self.log_queue.put(message)
 
-
-    # 사용자 입력을 받아서 작업을 시작하거나 종료
-    def start_processing(self):
-        """
-        파일 처리를 시작하는 메서드
-
-        사용자로부터 확인을 받은 후, 파일 처리를 시작하거나 프로그램을 종료
-
-        Parameters:
-            None
-
-        Returns:
-            None
-        """
-        while True:
-            user_input = input(" >>> ").strip().lower()  # 사용자 입력을 받음
-            if user_input == 'y':
-                print("\n\n")
-                self.process_files()  # 파일 처리 시작
-                break
-            elif user_input == 'n':
-                input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-                sys.exit()  # 프로그램 종료
-            else:
-                print("\n\n\n [ 오류 ] 잘못된 입력입니다. [Y] 또는 [N] 을 입력하십시오.")
-
-
-
-    # 파일을 처리하는 메인 함수
+    def update_progress(self, value):
+        """GUI의 진행 막대를 업데이트하기 위해 큐에 데이터를 추가합니다."""
+        self.progress_queue.put(value)
+        
     def process_files(self):
         """
-        대상 폴더 내의 파일을 처리하는 메서드
-
-        01. 'manifest.db' 파일의 존재 여부를 확인하고, 없으면 경고 메시지를 출력하고 종료
-        02. 대상 폴더 내의 모든 파일을 가져옴
-        03. 'manifest.db' 파일에서 해시 값과 파일 이름을 가져와 딕셔너리에 저장
-        04. 스레드 풀을 사용하여 파일을 처리, 처리 중 실패한 파일은 목록에 추가
-        05. 처리된 파일의 정보 출력, 처리되지 않은 파일과 인식하지 못한 파일에 대한 예외 처리를 수행
-        06. 처리된 파일의 수를 요약하여 출력
-
-        Parameters:
-            None
-
-        Returns:
-            None
+        대상 폴더 내의 파일을 처리하는 메인 메서드입니다.
         """
-        manifest_db_path = os.path.join(os.getcwd(), "manifest.db")  # manifest.db 파일 경로 설정
+        self.hash_list.clear()
+        self.unprocessed_files.clear()
+        self.results.clear()
+        self.processed_count_rename = 0
+        self.processed_count_check = 0
+
+        manifest_db_path = os.path.join(os.getcwd(), "manifest.db")
         
-        # manifest.db 파일이 현재 디렉토리에 없을 경우 경고 메시지 출력 후 종료
-        if not os.path.exists(manifest_db_path):
-            input(f" [ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-            sys.exit()
-            
-        print(" [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
-        print("          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n")
+        self.log("[ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기/쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
+        self.log("[ 안내 ] 모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n")
         
-        files = self.get_all_files_in_folders(self.target_folders)  # 대상 폴더 내 모든 파일 가져오기
-        total_files = len(files)  # 전체 파일 수 계산
+        files = self.get_all_files_in_folders(self.target_folders)
+        total_files = len(files)
         
-        # 대상 폴더에서 처리할 파일이 없을 경우 경고 메시지 출력 후 종료
         if not files:
-            input(f"\n\n 대상 폴더에서 처리 할 파일을 찾을 수 없습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-            sys.exit()
+            self.log("[ 경고 ] 대상 폴더에서 처리할 파일을 찾을 수 없습니다.")
+            return
 
-        # manifest.db에서 해시 값과 파일 이름 가져오기
-        with sqlite3.connect(manifest_db_path) as connection:  # manifest.db 파일과 연결
-            cursor = connection.cursor()  # 커서 생성
-            cursor.execute("SELECT * FROM t")  # 테이블 t에서 모든 데이터 선택
-            rows = cursor.fetchall()  # 모든 행 가져오기
-            for row in rows:  # 각 행에 대해
-                filename, hash_value = row  # 파일 이름과 해시 값을 가져옴
-                self.hash_list[hash_value] = filename  # 해시 값을 키로 파일 이름을 딕셔너리에 저장
+        with sqlite3.connect(manifest_db_path) as connection:
+            cursor = connection.cursor()
+            cursor.execute("SELECT * FROM t")
+            rows = cursor.fetchall()
+            for row in rows:
+                filename, hash_value = row
+                self.hash_list[hash_value] = filename
 
-        # 스레드 풀을 사용하여 파일 처리
-        with concurrent.futures.ThreadPoolExecutor() as executor:  # 스레드 풀 생성
-            # 파일 처리를 위한 각 파일에 대한 Future 객체 생성
+        with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.process, file, index, total_files): (file, index) for index, file in enumerate(files, 1)}
-            # tqdm을 사용하여 진행 상황 표시
-            for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc=" 파일을 불러오는 중..."):
-                file_path, file_index = futures[future]  # 파일 경로와 파일 인덱스를 가져옴
+            for future in concurrent.futures.as_completed(futures):
+                file_path, file_index = futures[future]
                 try:
-                    result = future.result()  # 처리 결과를 가져옴
-                except Exception as exc:  # 예외 발생 시
-                    print(f" File processing failed for {file_path}: {exc}")  # 오류 메시지 출력
-                else:
+                    result = future.result()
                     if result is not None:
-                        if not result[0]:  # 처리 실패 시
-                            self.unprocessed_files.append(result[1])  # 처리되지 않은 파일 목록에 추가
-                        else:  # 처리 성공 시
-                            self.results.append((file_index, result[1], result[2]))  # 결과 목록에 추가
+                        if not result[0]:
+                            self.unprocessed_files.append(result[1])
+                        else:
+                            self.results.append((file_index, result[1], result[2]))
+                except Exception as exc:
+                    self.log(f"파일 처리 중 심각한 오류 발생: {file_path}: {exc}")
 
-        print("\n")
-
-        # 결과 출력
+        self.log("\n--- 파일 이름 변경 결과 ---\n")
         for file_index, original_file, new_file_info in sorted(self.results, key=lambda x: x[0]):
-            print(new_file_info)
+            self.log(new_file_info)
             self.processed_count_rename += 1
 
-        # 처리되지 않은 파일 및 manifest.db에서 인식하지 못한 파일 확인
-        print("\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.")
+        self.log("\n\n--- 예외 처리 결과 ---")
+        self.log("[ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 파일 내용을 기반으로 예외 처리됩니다.")
         for file_path in self.unprocessed_files:
             try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:  # errors='ignore'를 추가하여 오류 발생 시 무시
-                    first_line = file.readline().strip()  # 첫 번째 줄 읽기
-            except Exception as e:  # 예외 발생 시
-                print(f" 오류 발생: 알 수 없는 오류가 발생했습니다. 무시하고 다음 작업을 진행합니다.")
-                print(f" 오류 메시지: {e}")
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                    first_line = file.readline().strip()
+            except Exception as e:
+                self.log(f"파일 읽기 오류: {e}. 다음 파일로 넘어갑니다.")
                 continue
             
-            new_filename = None  # 새 파일 이름 초기화
+            new_filename = None
             
-            # 파일 내용에 따라 새 파일 이름 결정
             if 'a/bdl' in first_line:
                 new_filename = os.path.join("manifest", "bdl_assetmanifest")
                 self.processed_count_check += 1
-                print(f"\n 특정 문자열 'a/bdl'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+                self.log(f"\n파일 내용('a/bdl') 확인: {file_path[len(os.getcwd()):]}")
             elif 'manifest/' in first_line:
                 new_filename = os.path.join("manifest", "manifest_assetmanifest")
                 self.processed_count_check += 1
-                print(f"\n 특정 문자열 'manifest/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+                self.log(f"\n파일 내용('manifest/') 확인: {file_path[len(os.getcwd()):]}")
             elif 'm/' in first_line:
                 new_filename = os.path.join("manifest", "movie2manifest")
                 self.processed_count_check += 1
-                print(f"\n 특정 문자열 'm/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+                self.log(f"\n파일 내용('m/') 확인: {file_path[len(os.getcwd()):]}")
             elif 'b/' in first_line:
                 new_filename = os.path.join("manifest", "soundmanifest")
                 self.processed_count_check += 1
-                print(f"\n 특정 문자열 'b/'이(가) {file_path[len(os.getcwd()):]} 파일 내용에 포함되어 있습니다.")
+                self.log(f"\n파일 내용('b/') 확인: {file_path[len(os.getcwd()):]}")
             
-            # 새 파일 이름이 결정되었으면 파일 이름 변경
             if new_filename:
                 new_filepath = self.get_unique_filename(new_filename)
                 try:
                     os.rename(file_path, new_filepath)
                     relative_file_path = os.path.relpath(file_path, os.getcwd())
-                    print(f" 작업 진행 상태: 예외 처리된 파일")
-                    print(f" 원본 파일 명 : \\{relative_file_path}")
-                    print(f" 변경된 파일 명 : \\{new_filepath.replace(os.sep, '/')}")
-                except FileNotFoundError:
-                    print(f" {file_path}을(를) 찾을 수 없습니다.")
-                except FileExistsError:
-                    print(f" {new_filepath} 파일이 이미 존재합니다.")
+                    log_msg = (
+                        f"  - 작업 상태: 예외 처리된 파일 이름 변경 완료\n"
+                        f"  - 원본: \\{relative_file_path}\n"
+                        f"  - 변경: \\{new_filepath.replace(os.sep, '/')}"
+                    )
+                    self.log(log_msg)
+                except (FileNotFoundError, FileExistsError) as e:
+                    self.log(f"예외 처리 중 파일 이름 변경 오류: {e}")
 
-        # 최종 결과 요약 출력
-        global total_processed
         total_processed = self.processed_count_rename + self.processed_count_check
-        input(f"\n\n\n 총 {total_processed}개의 파일이 처리되었습니다. Enter 키를 눌러 창을 종료하십시오.\n >>> ")
-        sys.exit()  # 프로그램 종료
+        self.log(f"\n\n--- 작업 완료 ---")
+        self.log(f"총 {total_processed}개의 파일이 성공적으로 처리되었습니다.")
 
-
-
-    # 파일 처리 함수
     def process(self, file_path, file_index, total_files):
-        """
-        파일을 처리하고 파일 이름을 변경하는 작업을 수행
+        percent_complete = (file_index / total_files) * 100
+        self.update_progress(percent_complete)
         
-        주어진 파일 경로에서 MD5 또는 xxhash64 해시를 계산하고, 해당 해시가 이미 해시 목록에 있는지 확인한 후에 파일 이름을 변경
-        
-        코드는 주어진 파일이름과 이동된 파일 이름을 반환
+        hash_md5_value = self.calculate_md5(file_path).hexdigest()
+        if hash_md5_value in self.hash_list:
+            return self.rename_file(file_path, hash_md5_value, file_index, total_files, percent_complete)
 
-        Attributes:
-            None
+        hash_xxhash64_value = self.calculate_xxhash64(file_path).hexdigest()
+        if hash_xxhash64_value in self.hash_list:
+            return self.rename_file(file_path, hash_xxhash64_value, file_index, total_files, percent_complete)
 
-        Parameters:
-            - file_path (str): 처리할 파일의 경로
-            - file_index (int): 현재 처리 중인 파일의 인덱스
-            - total_files (int): 전체 파일 수
-
-        Returns:
-            - tuple: (성공 여부(bool), 원본 파일 경로(str), 변경된 파일 경로(str))
-              - 성공 여부(bool): 파일 이름 변경이 성공했는지 여부를 나타내는 불리언 값
-              - 원본 파일 경로(str): 파일 이름 변경 전의 원본 파일 경로
-              - 변경된 파일 경로(str): 파일 이름 변경 후의 새로운 파일 경로
-        """
-        hash_md5 = self.calculate_md5(file_path)  # MD5 해시 값 계산
-        hash_md5_value = hash_md5.hexdigest()  # MD5 해시 값을 16진수 문자열로 변환
-
-        # 백분율 계산
-        file_index_int = int(file_index)  # 파일 인덱스를 정수로 변환
-        total_files_int = int(total_files)  # 전체 파일 수를 정수로 변환
-        percent_complete = (file_index_int / total_files_int) * 100  # 진행률 계산
-        
-        # MD5 해시로 파일 이름 변경 시도
-        if hash_md5_value in self.hash_list:  # MD5 해시 값이 해시 목록에 있는지 확인
-            new_filename = self.hash_list[hash_md5_value]  # 새 파일 이름을 해시 목록에서 가져옴
-            new_filepath = os.path.join(os.getcwd(), new_filename)  # 새 파일 경로 생성
-            if os.path.exists(new_filepath):  # 새 파일 경로가 이미 존재하는지 확인
-                new_filepath = self.get_unique_filename(new_filepath)  # 고유한 파일 이름 생성
-            try:
-                os.rename(file_path, new_filepath)  # 파일 이름 변경
-                relative_file_path = os.path.relpath(file_path, os.getcwd())  # 상대 파일 경로 계산
-                return True, None, f"\n 작업 진행 상태: {file_index}/{total_files} ({percent_complete:.4f}%)\n 원본 파일 명 : \\{relative_file_path}\n 변경된 파일 명 : \\{new_filepath.replace(os.sep, '/')}"
-            except FileNotFoundError:  # 파일을 찾을 수 없을 경우
-                print(f" {file_path}을(를) 찾을 수 없습니다.")
-                return False, file_path, None
-            except FileExistsError:  # 파일이 이미 존재할 경우
-                print(f" {new_filepath} 파일이 이미 존재합니다.")
-                return False, file_path, None
-
-        # xxhash64로 해시 계산 후 파일 이름 변경 시도
-        hash_xxhash64 = self.calculate_xxhash64(file_path)  # xxhash64 해시 값 계산
-        hash_xxhash64_value = hash_xxhash64.hexdigest()  # xxhash64 해시 값을 16진수 문자열로 변환
-        if hash_xxhash64_value in self.hash_list:  # xxhash64 해시 값이 해시 목록에 있는지 확인
-            new_filename = self.hash_list[hash_xxhash64_value]  # 새 파일 이름을 해시 목록에서 가져옴
-            new_filepath = os.path.join(os.getcwd(), new_filename)  # 새 파일 경로 생성
-            if os.path.exists(new_filepath):  # 새 파일 경로가 이미 존재하는지 확인
-                new_filepath = self.get_unique_filename(new_filepath)  # 고유한 파일 이름 생성
-            try:
-                os.rename(file_path, new_filepath)  # 파일 이름 변경
-                relative_file_path = os.path.relpath(file_path, os.getcwd())  # 상대 파일 경로 계산
-                return True, None, f"\n 작업 진행 상태: {file_index}/{total_files} ({percent_complete:.4f}%)\n 원본 파일 명 : \\{relative_file_path}\n 변경된 파일 명 : \\{new_filepath.replace(os.sep, '/')}"
-            except FileNotFoundError:  # 파일을 찾을 수 없을 경우
-                print(f" {file_path}을(를) 찾을 수 없습니다.")
-                return False, file_path, None
-            except FileExistsError:  # 파일이 이미 존재할 경우
-                print(f" {new_filepath} 파일이 이미 존재합니다.")
-                return False, file_path, None
-
-        # 어느 해시 값으로도 일치하지 않을 경우
         return False, file_path, None
 
+    def rename_file(self, file_path, hash_value, file_index, total_files, percent_complete):
+        new_filename = self.hash_list[hash_value]
+        new_filepath = os.path.join(os.getcwd(), new_filename)
+        
+        os.makedirs(os.path.dirname(new_filepath), exist_ok=True)
+        
+        if os.path.exists(new_filepath):
+            new_filepath = self.get_unique_filename(new_filepath)
+            
+        try:
+            os.rename(file_path, new_filepath)
+            relative_file_path = os.path.relpath(file_path, os.getcwd())
+            log_message = (
+                f"작업 진행 상태: {file_index}/{total_files} ({percent_complete:.2f}%)\n"
+                f"  - 원본 파일 명 : \\{relative_file_path}\n"
+                f"  - 변경된 파일 명 : \\{new_filepath.replace(os.sep, '/')}"
+            )
+            return True, None, log_message
+        except (FileNotFoundError, FileExistsError) as e:
+            self.log(f"파일 이름 변경 오류: {e}")
+            return False, file_path, None
 
-
-    # 파일의 MD5 해시 값 계산
     def calculate_md5(self, file_path):
-        """
-        주어진 파일의 MD5 해시 계산
+        md5_hash = hashlib.md5()
+        with open(file_path, "rb") as file:
+            for chunk in iter(lambda: file.read(4096), b""):
+                md5_hash.update(chunk)
+        return md5_hash
 
-        Attributes:
-            None
-
-        Parameters:
-            - file_path (str): MD5 해시를 계산할 파일의 경로
-
-        Returns:
-            - md5_hash (hashlib.md5 객체): 주어진 파일의 MD5 해시
-        """
-        md5_hash = hashlib.md5()  # MD5 해시 객체 생성
-        with open(file_path, "rb") as file:  # 파일을 바이너리 모드로 엶
-            for chunk in iter(lambda: file.read(4096), b""):  # 파일을 4096바이트씩 읽음
-                md5_hash.update(chunk)  # 해시 객체에 데이터 업데이트
-        return md5_hash  # MD5 해시 객체 반환
-
-
-
-    # 파일의 xxhash64 해시 값 계산
     def calculate_xxhash64(self, file_path):
-        """
-        이 메소드는 주어진 파일의 xxhash64 해시를 계산
+        xxhash64_hash = xxhash.xxh64()
+        with open(file_path, "rb") as file:
+            for chunk in iter(lambda: file.read(4096), b""):
+                xxhash64_hash.update(chunk)
+        return xxhash64_hash
 
-        Attributes:
-            None
-
-        Parameters:
-            - file_path (str): xxhash64 해시를 계산할 파일의 경로
-
-        Returns:
-            - xxhash64_hash (xxhash.xxh64 객체): 주어진 파일의 xxhash64 해시
-        """
-        xxhash64_hash = xxhash.xxh64()  # xxhash64 해시 객체 생성
-        with open(file_path, "rb") as file:  # 파일을 바이너리 모드로 엶
-            for chunk in iter(lambda: file.read(4096), b""):  # 파일을 4096바이트씩 읽음
-                xxhash64_hash.update(chunk)  # 해시 객체에 데이터 업데이트
-        return xxhash64_hash  # xxhash64 해시 객체 반환
-
-
-
-    # 대상 폴더 내의 모든 파일 가져오기
     def get_all_files_in_folders(self, target_folders):
-        """
-        이 메소드는 주어진 대상 폴더에서 모든 파일을 찾아내어 반환
+        all_files = []
+        for folder in target_folders:
+            folder_path = os.path.join(os.getcwd(), folder)
+            if os.path.exists(folder_path) and os.path.isdir(folder_path):
+                for root, _, files in os.walk(folder_path):
+                    for file_name in files:
+                        if self.is_sha1(file_name):
+                            all_files.append(os.path.join(root, file_name))
+        return all_files
 
-        Attributes:
-            None
-
-        Parameters:
-            - target_folders (list of str): 파일을 찾을 대상 폴더의 이름 목록
-
-        Returns:
-            - all_files (list of str): 대상 폴더에서 찾은 모든 파일의 경로 목록
-        """
-        all_files = []  # 모든 파일 목록 초기화
-        for folder in target_folders:  # 각 대상 폴더에 대해
-            folder_path = os.path.join(os.getcwd(), folder)  # 대상 폴더의 전체 경로 생성
-            if os.path.exists(folder_path) and os.path.isdir(folder_path):  # 폴더가 존재하고 디렉토리인지 확인
-                for root, _, files in os.walk(folder_path):  # 폴더 내 모든 파일에 대해
-                    for file_name in files:  # 각 파일 이름에 대해
-                        if self.is_sha1(file_name):  # 파일 이름이 SHA1 형식인지 확인
-                            all_files.append(os.path.join(root, file_name))  # 파일 경로를 전체 파일 목록에 추가
-        return all_files  # 모든 파일 목록 반환
-
-
-
-    # 문자열이 SHA1 해시 값 형식인지 확인
     def is_sha1(self, s):
-        """
-        주어진 문자열이 SHA1 형식인지 확인
+        return len(s) == 40 and all(c in "0123456789abcdefABCDEF" for c in s)
 
-        Attributes:
-            None
-
-        Parameters:
-            - s (str): 확인할 문자열
-
-        Returns:
-            - bool: 주어진 문자열이 SHA1 형식이면 True, 그렇지 않으면 False를 반환합니다.
-        """
-        return len(s) == 40 and all(c in "0123456789abcdefABCDEF" for c in s)  # 문자열 길이가 40이고, 모든 문자가 16진수인지 확인
-
-
-
-    # 중복된 파일 이름이 있을 경우 고유한 파일 이름 생성
     def get_unique_filename(self, file_path):
-        """
-        중복되지 않는 파일 이름 생성
-
-        Attributes:
-            None
-
-        Parameters:
-            - file_path (str): 중복되는 파일 이름을 생성할 파일의 경로
-
-        Returns:
-            - new_file_path (str): 중복되지 않는 새로운 파일 경로
-        """
-        base, extension = os.path.splitext(file_path)  # 파일 경로를 기본 이름(base)과 확장자(extension)로 분리
-        counter = 1  # 중복된 파일 이름이 있을 경우 추가할 숫자(counter) 초기화
-        new_file_path = f"{base}{extension}"  # 숫자를 붙인 새로운 파일 경로(new_file_path) 생성
-        while os.path.exists(new_file_path):  # 새로운 파일 경로가 이미 존재하는지 확인
-            counter += 1  # 존재할 경우 숫자 1 증가
-            new_file_path = f"{base}_(Duplicate_{counter}){extension}"  # 증가된 숫자 붙인 새로운 파일 경로 생성
-        return new_file_path  # 중복되지 않는 새로운 파일 경로 반환
+        base, extension = os.path.splitext(file_path)
+        counter = 1
+        new_file_path = file_path
+        while os.path.exists(new_file_path):
+            new_file_path = f"{base}_(Duplicate_{counter}){extension}"
+            counter += 1
+        return new_file_path
 
 
-
-# RenameHashedFile 클래스 인스턴스 생성 및 작업 시작
-rename_hashed_file = RenameHashedFile()  # 클래스 인스턴스 생성
-rename_hashed_file.start_processing()  # 작업 시작
+# --- 프로그램 실행 부분 ---
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = FileRenamerGUI(root)
+    root.mainloop()
