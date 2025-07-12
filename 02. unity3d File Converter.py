@@ -1,13 +1,10 @@
 # ==============================================================================
-# Unity 에셋 추출기 (Unity Asset Extractor) - 전문가 버전
+# Unity 에셋 추출기 (Unity Asset Extractor)
 # ------------------------------------------------------------------------------
 # 이 스크립트는 Unity3D의 에셋 파일에서 내부 리소스를 추출하는 GUI 애플리케이션입니다.
 #
-# 주요 개선 사항:
-# - 기능별 모듈화: AssetProcessor 클래스를 도입하여 GUI와 로직 분리.
-# - 고급 메시 처리: Sub-Mesh, Material(.mtl), Vertex Color 지원.
-# - 코드 가독성 및 확장성 향상.
-# - 원본 폴더 구조 유지 기능 추가.
+# v4.5 주요 변경 사항:
+# - 처리 대상 제한: .unity3d 파일만 처리하도록 파일 선택 다이얼로그 및 폴더 검색 로직 수정.
 # ==============================================================================
 
 # --- 모듈 임포트 ---
@@ -25,12 +22,239 @@ import concurrent.futures
 import json
 from multiprocessing import Manager, cpu_count
 import threading
+from enum import Enum
+from struct import unpack
+import base64
 
 # --- UnityPy 라이브러리 전역 설정 ---
 UnityPy.config.FALLBACK_UNITY_VERSION = "2021.3.20f1"
 
 # --- 상수 정의 ---
-SUPPORTED_EXTENSIONS = ('.unity3d', '.assets', '.bundle')
+SUPPORTED_EXTENSIONS = ('.unity3d',)
+
+# ==============================================================================
+# StoryData 정밀 역직렬화 클래스 (Advanced StoryData Deserializer Class)
+# ==============================================================================
+class StoryDataDeserializer:
+    """
+    참고 코드를 기반으로 StoryData(.bin) 파일을 정밀하게 역직렬화하여
+    구조화된 Python 딕셔너리로 변환합니다.
+    """
+    class CommandId(Enum):
+        NONE = -1
+        TITLE = 0
+        OUTLINE = 1
+        VISIBLE = 2
+        FACE = 3
+        FOCUS = 4
+        BACKGROUND = 5
+        PRINT = 6
+        TAG = 7
+        GOTO = 8
+        BGM = 9
+        TOUCH = 10
+        CHOICE = 11
+        VO = 12
+        WAIT = 13
+        IN_L = 14
+        IN_R = 15
+        OUT_L = 16
+        OUT_R = 17
+        FADEIN = 18
+        FADEOUT = 19
+        IN_FLOAT = 20
+        OUT_FLOAT = 21
+        JUMP = 22
+        SHAKE = 23
+        POP = 24
+        NOD = 25
+        SE = 26
+        BLACK_OUT = 27
+        BLACK_IN = 28
+        WHITE_OUT = 29
+        WHITE_IN = 30
+        TRANSITION = 31
+        SITUATION = 32
+        COLOR_FADEIN = 33
+        FLASH = 34
+        SHAKE_TEXT = 35
+        TEXT_SIZE = 36
+        SHAKE_SCREEN = 37
+        DOUBLE = 38
+        SCALE = 39
+        TITLE_TELOP = 40
+        WINDOW_VISIBLE = 41
+        LOG = 42
+        NOVOICE = 43
+        CHANGE = 44
+        FADEOUT_ALL = 45
+        MOVIE = 46
+        MOVIE_STAY = 47
+        BATTLE = 48
+        STILL = 49
+        BUSTUP = 50
+        ENV = 51
+        TUTORIAL_REWARD = 52
+        NAME_EDIT = 53
+        EFFECT = 54
+        EFFECT_DELETE = 55
+        EYE_OPEN = 56
+        MOUTH_OPEN = 57
+        AUTO_END = 58
+        EMOTION = 59
+        EMOTION_END = 60
+        ENV_STOP = 61
+        BGM_PAUSE = 62
+        BGM_RESUME = 63
+        BGM_VOLUME_CHANGE = 64
+        ENV_RESUME = 65
+        ENV_VOLUME = 66
+        SE_PAUSE = 67
+        CHARA_FULL = 68
+        SWAY = 69
+        BACKGROUND_COLOR = 70
+        PAN = 71
+        STILL_UNIT = 72
+        SLIDE_CHARA = 73
+        SHAKE_SCREEN_ONCE = 74
+        TRANSITION_RESUME = 75
+        SHAKE_LOOP = 76
+        SHAKE_DELETE = 77
+        UNFACE = 78
+        WAIT_TOKEN = 79
+        EFFECT_ENV = 80
+        BRIGHT_CHANGE = 81
+        CHARA_SHADOW = 82
+        UI_VISIBLE = 83
+        FADEIN_ALL = 84
+        CHANGE_WINDOW = 85
+        BG_PAN = 86
+        STILL_MOVE = 87
+        STILL_NORMALIZE = 88
+        VOICE_EFFECT = 89
+        TRIAL_END = 90
+        SE_EFFECT = 91
+        CHARACTER_UP_DOWN = 92
+        BG_CAMERA_ZOOM = 93
+        BACKGROUND_SPLIT = 94
+        CAMERA_ZOOM = 95
+        SPLIT_SLIDE = 96
+        BGM_TRANSITION = 97
+        SHAKE_ANIME = 98
+        INSERT_STORY = 99
+        PLACE = 100
+        IGNORE_BGM = 101
+        MULTI_LIPSYNC = 102
+        JINGLE = 103
+        TOUCH_TO_START = 104
+        EVENT_ADV_MOVE_HORIZONTAL = 105
+        BG_PAN_X = 106
+        BACKGROUND_BLUR = 107
+        SEASONAL_REWARD = 108
+        MINI_GAME = 109
+        MAX = 110
+        UNKNOWN = 112
+
+    @staticmethod
+    def _deserialize_command(data) -> tuple['StoryDataDeserializer.CommandId', list[str]]:
+        index = data[0]
+        args = data[1:] if len(data) > 1 else []
+        array = []
+        for arg in args:
+            array2 = bytearray()
+            for byte in arg:
+                array2.append(255 - byte if byte > 127 else byte)
+            str_ = base64.b64decode(array2)
+            array.append(str_.decode('utf-8', 'surrogateescape'))
+        
+        try:
+            cmd_id = StoryDataDeserializer.CommandId(index)
+        except ValueError:
+            cmd_id = StoryDataDeserializer.CommandId.UNKNOWN
+        return (cmd_id, array)
+
+    @staticmethod
+    def _deserialize_story_raw(bytes_: bytes) -> list[tuple['StoryDataDeserializer.CommandId', list[str]]]:
+        commands = []
+        fs = 0
+        raw_commands = []
+        i = 2
+        while i < len(bytes_):
+            args: list[bytes | int] = []
+            try:
+                index = int(unpack(">H", bytes_[fs : fs + 2])[0])
+            except Exception:
+                break 
+            fs += 2
+            args.append(index)
+            num = i
+            while True:
+                try:
+                    length = int(unpack(">l", bytes_[fs : fs + 4])[0])
+                except Exception:
+                    length = 0
+                fs += 4
+                if length == 0:
+                    break
+                array = bytes_[fs : fs + length]
+                fs += length
+                args.append(array)
+                num += 4 + length
+            i = num + 4
+            raw_commands.append(args)
+            i += 2
+        for raw_command in raw_commands:
+            if len(raw_command) > 1:
+                commands.append(StoryDataDeserializer._deserialize_command(raw_command))
+        return commands
+    
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        replace_pairs = (
+            ("\\n", "\n"),
+            ("{0}", "{player_name}"),
+            ('\\"', '"'),
+        )
+        for pair in replace_pairs:
+            text = text.replace(*pair)
+        return text
+
+    @staticmethod
+    def deserialize(bytes_: bytes) -> dict:
+        if not isinstance(bytes_, (bytes, bytearray)):
+            bytes_ = str(bytes_).encode('utf-8', 'surrogateescape')
+        
+        commands = StoryDataDeserializer._deserialize_story_raw(bytes_)
+        story: dict[int, dict] = {}
+        num = 0
+        story[num] = {}
+        block: dict[str, str | tuple | dict] = story[num]
+
+        for command_id, args in commands:
+            match command_id:
+                case StoryDataDeserializer.CommandId.PRINT:
+                    cmd = block.setdefault(command_id.name.lower(), {})
+                    cmd.setdefault("name", args[0])
+                    cmd["text"] = (cmd.get("text") or "") + StoryDataDeserializer._clean_text(args[1])
+                case StoryDataDeserializer.CommandId.CHOICE:
+                    choices = block.setdefault(command_id.name.lower(), [])
+                    if isinstance(choices, list):
+                        choices.append({"text": args[0], "tag": args[1]})
+                case StoryDataDeserializer.CommandId.BUSTUP:
+                    num += 1
+                    block = story.setdefault(num, {})
+                case StoryDataDeserializer.CommandId.TAG:
+                    story.setdefault(num + 1, {})
+                    story[num + 1][command_id.name.lower()] = args[0]
+                case StoryDataDeserializer.CommandId.TITLE | StoryDataDeserializer.CommandId.SITUATION | StoryDataDeserializer.CommandId.OUTLINE | StoryDataDeserializer.CommandId.VO | StoryDataDeserializer.CommandId.GOTO:
+                    block[command_id.name.lower()] = args[0] if len(args) == 1 else args
+                case _:
+                    # Ensure the value is a list before appending
+                    if command_id.name.lower() not in block or not isinstance(block[command_id.name.lower()], list):
+                        block[command_id.name.lower()] = []
+                    block[command_id.name.lower()].append(args[0] if len(args) == 1 else args)
+
+        return story
 
 # ==============================================================================
 # 압축 해제 헬퍼 함수 (Decompression Helper Function)
@@ -92,7 +316,7 @@ class AssetProcessor:
 
         self.env = None
         self.mesh_to_materials_map = {}
-        self.fallback_count = 0 # [추가] 오류로 인해 .bin으로 저장된 파일 수 카운터
+        self.fallback_count = 0 
 
     def log(self, message, level='INFO'):
         timestamp = datetime.now().strftime("[%H:%M:%S] ")
@@ -159,7 +383,6 @@ class AssetProcessor:
             if self._dispatch_asset(obj):
                 extracted_count += 1
         
-        # [수정] 최종 로그 메시지에 .bin 저장 정보 포함
         success_log = f"추출 완료: 총 {num_assets}개 중 {extracted_count}개 저장 성공."
         if self.fallback_count > 0:
             success_log += f" (오류로 인해 {self.fallback_count}개는 .bin으로 저장)"
@@ -172,7 +395,12 @@ class AssetProcessor:
             if obj_type in ["Texture2D", "Sprite"]:
                 return self._export_texture(obj)
             elif obj_type == "TextAsset":
-                return self._export_textasset(obj)
+                data = obj.read()
+                asset_name = getattr(data, 'name', '') or getattr(data, 'm_Name', '')
+                if asset_name.startswith('storydata_'):
+                    return self._export_storydata_as_json(obj)
+                else:
+                    return self._export_textasset(obj, data)
             elif obj_type == "AudioClip":
                 return self._export_audioclip(obj)
             elif obj_type == "Mesh":
@@ -186,7 +414,6 @@ class AssetProcessor:
             self.log(f"에셋(PathID:{obj.path_id}, Type:{obj_type}) 처리 중 오류 발생: {e}", "ERROR")
             if obj_type == "Mesh":
                 self.log(f"메시 처리 실패. 원본 데이터를 .bin 파일로 저장합니다.", "WARNING")
-                # [수정] .bin 저장 성공 시 카운트 증가 및 성공으로 간주
                 if self._export_raw_data(obj):
                     self.fallback_count += 1
                     return True
@@ -218,13 +445,59 @@ class AssetProcessor:
             return True
         return False
 
-    def _export_textasset(self, obj):
+    def _export_storydata_as_json(self, obj):
+        """StoryData를 .bin으로 항상 저장하고, 추가로 JSON 역직렬화를 시도합니다."""
         data = obj.read()
+        asset_name = getattr(data, 'name', '') or getattr(data, 'm_Name', '')
+        
+        # 1. 원본 보존을 위해 .bin 파일을 항상 먼저 저장합니다.
+        bin_saved = self._export_textasset(obj, data)
+
+        # 2. JSON 역직렬화 및 저장을 시도합니다.
+        try:
+            # TextAsset에서 원시 데이터를 다시 가져옵니다.
+            script_data = getattr(data, 'script', None) or getattr(data, 'm_Script', None)
+
+            # 가져온 데이터를 바이트 형식으로 변환합니다.
+            script_bytes = None
+            if isinstance(script_data, (bytes, bytearray)):
+                script_bytes = script_data
+            elif isinstance(script_data, str):
+                script_bytes = script_data.encode('utf-8', 'surrogateescape')
+            elif script_data is not None:
+                script_bytes = str(script_data).encode('utf-8', 'surrogateescape')
+
+            if not script_bytes:
+                raise ValueError("Story_data가 비어있거나 바이트 형식으로 변환할 수 없습니다.")
+
+            # 새로운 역직렬화 클래스를 사용하여 데이터를 변환합니다.
+            deserialized_data = StoryDataDeserializer.deserialize(script_bytes)
+            
+            # .json 파일 경로를 가져옵니다. (sub_folder 인자 제거)
+            path = self._get_export_path(obj, ".json")
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(deserialized_data, f, indent=4, ensure_ascii=False)
+            self.log(f"StoryData '{asset_name}'를 JSON으로 성공적으로 변환했습니다.", "SUCCESS")
+        
+        except Exception as e:
+            # JSON 변환 실패는 오류로 로그에 남기지만, 전체 처리를 실패로 간주하지는 않습니다.
+            self.log(f"StoryData '{asset_name}' JSON 변환 실패: {e}.", "ERROR")
+        
+        # .bin 파일 저장 여부에 따라 최종 성공 여부를 반환합니다.
+        return bin_saved
+
+
+    def _export_textasset(self, obj, data=None):
+        if data is None:
+            data = obj.read()
         content = getattr(data, 'script', None) or getattr(data, 'm_Script', None)
         if content is not None:
             path = self._get_export_path(obj, ".bin")
             if isinstance(content, str):
                 content = content.encode('utf-8', 'surrogateescape')
+            elif not isinstance(content, (bytes, bytearray)):
+                content = str(content).encode('utf-8', 'surrogateescape')
+
             with open(path, "wb",) as f:
                 f.write(content)
             return True
@@ -382,7 +655,7 @@ class AssetProcessor:
                 mtl_file.write(mtl_content.strip())
         
         with open(obj_path, "w", encoding="utf-8") as f:
-            f.write(f"# Extracted by Unity Asset Extractor - Professional\n")
+            f.write(f"# Extracted by Unity Asset Extractor\n")
             if mtl_path:
                 f.write(f"mtllib {os.path.basename(mtl_path)}\n")
 
@@ -427,12 +700,13 @@ def process_single_file(file_path, output_path, base_input_path, log_queue, comp
 class AssetExtractorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Unity 에셋 추출기 (전문가 버전)")
+        self.root.title("Unity 에셋 추출기 (전문가 버전 v4.5)")
         self.file_paths = []
         self.output_path = ""
         self.is_running = False
         self.processed_files_count = 0
         self.base_input_path = None
+
         self.manager = Manager()
         self.log_queue = self.manager.Queue()
         self.completion_queue = self.manager.Queue()
@@ -567,11 +841,8 @@ class AssetExtractorApp:
     def _select_files(self):
         if self.is_running: return
         paths = filedialog.askopenfilenames(
-            title="Unity3d, assets, AssetBundle 파일을 선택하세요",
-            filetypes=(("모든 지원 파일", f"*{' *'.join(SUPPORTED_EXTENSIONS)}"),
-                       ("Unity3D 파일", "*.unity3d"),
-                       ("Assets 파일", "*.assets"),
-                       ("AssetBundle 파일", "*.*"))
+            title="Unity3D 파일을 선택하세요",
+            filetypes=(("Unity3D 파일", "*.unity3d"),)
         )
         if paths:
             self.base_input_path = None
@@ -579,14 +850,14 @@ class AssetExtractorApp:
         
     def _select_folder(self):
         if self.is_running: return
-        folder_path = filedialog.askdirectory(title="에셋이 포함된 폴더를 선택하세요")
+        folder_path = filedialog.askdirectory(title="Unity3D 파일이 포함된 폴더를 선택하세요")
         if folder_path:
             self.base_input_path = folder_path
             found_paths = [os.path.join(r, f) for r, _, fs in os.walk(folder_path) for f in fs if f.lower().endswith(SUPPORTED_EXTENSIONS)]
             if found_paths:
                 self._add_files_to_list(found_paths)
             else:
-                self._log("폴더에서 지원하는 파일을 찾지 못했습니다.", "WARNING")
+                self._log("폴더에서 Unity3D 파일을 찾지 못했습니다.", "WARNING")
             
     def _add_files_to_list(self, new_paths):
         current_paths_set = set(self.file_paths)
@@ -658,15 +929,23 @@ class AssetExtractorApp:
     def _run_process_pool(self):
         num_workers = min(cpu_count(), len(self.file_paths))
         self._log(f"병렬 처리를 시작합니다. (최대 {num_workers}개 프로세스 사용)")
-        
+        self._log("StoryData 자동 변환이 기본 활성화되었습니다.")
+
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
             for file_path in self.file_paths:
                 executor.submit(process_single_file, file_path, self.output_path, self.base_input_path, self.log_queue, self.completion_queue)
         
+        executor.shutdown(wait=True)
+
+        self.root.after(0, self._on_extraction_complete)
+
+    def _on_extraction_complete(self):
+        """추출 완료 후 UI를 업데이트하는 메서드."""
         self.is_running = False
-        self.root.after(0, self._toggle_controls, True)
+        self._toggle_controls(True)
         self._log("========================================", "INFO")
         self._log("모든 파일 처리가 완료되었습니다.", "SUCCESS")
+
 
 class TextRedirector:
     def __init__(self, queue_instance, tag="INFO"):
@@ -682,6 +961,9 @@ class TextRedirector:
 # 애플리케이션 실행 진입점 (Entry Point)
 # ==============================================================================
 if __name__ == "__main__":
+    from multiprocessing import freeze_support
+    freeze_support()
+
     root = tk.Tk()
     app = AssetExtractorApp(root)
     root.mainloop()
