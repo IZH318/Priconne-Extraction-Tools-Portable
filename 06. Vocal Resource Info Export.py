@@ -76,7 +76,7 @@ def find_string_in_json_files(search_query):
                                 character_dialogue = " 다음 라인이 없습니다."
                             character_name = line.strip()[9:-2]  # 캐릭터 이름 추출
                             found_files.append((file_path, character_name, i+1, vo_data, character_dialogue))  # 결과 추가
-                            break
+
     pbar.close()  # tqdm 진행 바 종료
     return found_files
 

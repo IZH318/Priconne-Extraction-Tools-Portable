@@ -55,9 +55,9 @@ SUPPORTED_EXTENSIONS = ('.unity3d',)
 # ==============================================================================
 LANGUAGES = {
     'ko': {
-        'window_title': "Unity 에셋 추출기 (전문가 버전 v5.4)",
-        'menu_file': "메뉴",
-        'menu_lang': "언어",
+        'window_title': "Unity 에셋 추출기",
+        'menu_file': "메뉴(Menu)",
+        'menu_lang': "언어(Language)",
         'file_open': "파일 열기",
         'folder_open': "폴더 열기",
         'exit': "종료",
@@ -162,8 +162,8 @@ LANGUAGES = {
     },
     'ja': {
         'window_title': "Unityアセット抽出機 (専門家版 v5.4)",
-        'menu_file': "メニュー",
-        'menu_lang': "言語",
+        'menu_file': "メニュー(Menu)",
+        'menu_lang': "言語(Language)",
         'file_open': "ファイルを開く",
         'folder_open': "フォルダを開く",
         'exit': "終了",
