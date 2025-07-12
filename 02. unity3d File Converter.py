@@ -7,6 +7,7 @@
 # - 기능별 모듈화: AssetProcessor 클래스를 도입하여 GUI와 로직 분리.
 # - 고급 메시 처리: Sub-Mesh, Material(.mtl), Vertex Color 지원.
 # - 코드 가독성 및 확장성 향상.
+# - 원본 폴더 구조 유지 기능 추가.
 # ==============================================================================
 
 # --- 모듈 임포트 ---
@@ -75,14 +76,23 @@ class AssetProcessor:
         "VideoClip": "Videos", "MovieTexture": "Videos", "Material": "Materials"
     }
 
-    def __init__(self, file_path, output_path, log_queue):
+    def __init__(self, file_path, output_path, base_input_path, log_queue):
         self.file_path = file_path
         self.output_path = output_path
         self.log_queue = log_queue
         self.base_name = os.path.basename(file_path)
-        self.output_dir = os.path.join(self.output_path, f"{self.base_name}_extracted")
+        
+        if base_input_path:
+            relative_path = os.path.relpath(file_path, base_input_path)
+            folder_path_without_ext, _ = os.path.splitext(relative_path)
+            self.output_dir = os.path.join(self.output_path, folder_path_without_ext)
+        else:
+            folder_name_without_ext, _ = os.path.splitext(self.base_name)
+            self.output_dir = os.path.join(self.output_path, folder_name_without_ext)
+
         self.env = None
         self.mesh_to_materials_map = {}
+        self.fallback_count = 0 # [추가] 오류로 인해 .bin으로 저장된 파일 수 카운터
 
     def log(self, message, level='INFO'):
         timestamp = datetime.now().strftime("[%H:%M:%S] ")
@@ -149,12 +159,16 @@ class AssetProcessor:
             if self._dispatch_asset(obj):
                 extracted_count += 1
         
-        self.log(f"추출 완료: 총 {num_assets}개 중 {extracted_count}개 성공.", "SUCCESS")
+        # [수정] 최종 로그 메시지에 .bin 저장 정보 포함
+        success_log = f"추출 완료: 총 {num_assets}개 중 {extracted_count}개 저장 성공."
+        if self.fallback_count > 0:
+            success_log += f" (오류로 인해 {self.fallback_count}개는 .bin으로 저장)"
+        self.log(success_log, "SUCCESS")
 
     def _dispatch_asset(self, obj):
         """에셋 타입에 따라 적절한 추출 메서드를 호출."""
+        obj_type = obj.type.name
         try:
-            obj_type = obj.type.name
             if obj_type in ["Texture2D", "Sprite"]:
                 return self._export_texture(obj)
             elif obj_type == "TextAsset":
@@ -166,16 +180,35 @@ class AssetProcessor:
             elif obj_type == "Font":
                 return self._export_font(obj)
             else:
-                # Material은 Mesh 처리 시 함께 처리되므로 여기서는 JSON으로 저장하지 않음
                 if obj_type != "Material":
                     return self._export_generic_json(obj)
         except Exception as e:
-            self.log(f"에셋(PathID:{obj.path_id}, Type:{obj.type.name}) 처리 중 오류 발생: {e}", "ERROR")
-            try:
-                return self._export_generic_json(obj, error_info=str(e))
-            except Exception as e2:
-                self.log(f"에셋(PathID:{obj.path_id}, Type:{obj.type.name}) JSON 저장 실패: {e2}", "ERROR")
+            self.log(f"에셋(PathID:{obj.path_id}, Type:{obj_type}) 처리 중 오류 발생: {e}", "ERROR")
+            if obj_type == "Mesh":
+                self.log(f"메시 처리 실패. 원본 데이터를 .bin 파일로 저장합니다.", "WARNING")
+                # [수정] .bin 저장 성공 시 카운트 증가 및 성공으로 간주
+                if self._export_raw_data(obj):
+                    self.fallback_count += 1
+                    return True
+                return False
+            else:
+                try:
+                    return self._export_generic_json(obj, error_info=str(e))
+                except Exception as e2:
+                    self.log(f"에셋(PathID:{obj.path_id}, Type:{obj.type.name}) JSON 저장 실패: {e2}", "ERROR")
         return False
+
+    def _export_raw_data(self, obj):
+        """에셋의 원본 바이트 데이터를 .bin 파일로 저장합니다."""
+        try:
+            path = self._get_export_path(obj, ".bin")
+            raw_data = obj.get_raw_data()
+            with open(path, "wb") as f:
+                f.write(raw_data)
+            return True
+        except Exception as e:
+            self.log(f"원본 데이터(PathID:{obj.path_id}) 저장 실패: {e}", "ERROR")
+            return False
 
     def _export_texture(self, obj):
         data = obj.read()
@@ -248,40 +281,63 @@ class AssetProcessor:
         """압축된 메시를 처리하여 .obj와 .mtl 파일을 생성합니다."""
         cm = data.m_CompressedMesh
         
-        # 1. 정점 데이터 압축 해제
         vertices = [unpack_packed_bit_vector(cm.m_Vertices)[i:i+3] for i in range(0, cm.m_Vertices.m_NumItems, 3)]
         uvs = [unpack_packed_bit_vector(cm.m_UV)[i:i+2] for i in range(0, cm.m_UV.m_NumItems, 2)]
         colors = [unpack_packed_bit_vector(cm.m_FloatColors)[i:i+4] for i in range(0, cm.m_FloatColors.m_NumItems, 4)]
         
-        # 2. 법선 벡터 계산
         triangles_unpacked = unpack_packed_bit_vector(cm.m_Triangles, is_int=True)
-        triangles = [triangles_unpacked[i:i+3] for i in range(0, len(triangles_unpacked), 3)]
-        normals = [[0.0, 0.0, 0.0] for _ in range(len(vertices))]
-        for face in triangles:
-            if len(face) < 3: continue
-            idx1, idx2, idx3 = face[0], face[1], face[2]
-            if not all(i < len(vertices) for i in [idx1, idx2, idx3]): continue
-            p1, p2, p3 = vertices[idx1], vertices[idx2], vertices[idx3]
-            edge1 = [p2[j] - p1[j] for j in range(3)]
-            edge2 = [p3[j] - p1[j] for j in range(3)]
-            face_normal = [
-                edge1[1] * edge2[2] - edge1[2] * edge2[1],
-                edge1[2] * edge2[0] - edge1[0] * edge2[2],
-                edge1[0] * edge2[1] - edge1[1] * edge2[0]
-            ]
-            for j in range(3):
-                normals[idx1][j] += face_normal[j]
-                normals[idx2][j] += face_normal[j]
-                normals[idx3][j] += face_normal[j]
         
-        for i in range(len(normals)):
-            normal = normals[i]
-            length_sq = sum(comp**2 for comp in normal)
-            if length_sq > 1e-12:
-                length = math.sqrt(length_sq)
-                normals[i] = [comp / length for comp in normal]
+        normals = [[0.0, 0.0, 0.0] for _ in range(len(vertices))]
+        vertex_count = len(vertices)
 
-        # 3. 재질(.mtl) 파일 생성
+        submesh_faces_map = {}
+        if vertex_count > 0:
+            for i, submesh in enumerate(data.m_SubMeshes):
+                submesh_faces_map[i] = []
+                index_size = 2 if data.m_IndexFormat == 0 else 4
+                start_index = submesh.firstByte // index_size
+                
+                if start_index + submesh.indexCount > len(triangles_unpacked):
+                    self.log(f"Submesh {i}의 인덱스 범위({start_index}-{start_index+submesh.indexCount})가 버퍼({len(triangles_unpacked)})를 초과합니다. 건너뜁니다.", "WARNING")
+                    continue
+                
+                submesh_indices = triangles_unpacked[start_index : start_index + submesh.indexCount]
+                base_vertex = submesh.baseVertex
+                
+                for j in range(0, len(submesh_indices), 3):
+                    relative_face = submesh_indices[j:j+3]
+                    if len(relative_face) < 3: continue
+                    
+                    absolute_face = [idx + base_vertex for idx in relative_face]
+                    
+                    if all(0 <= idx < vertex_count for idx in absolute_face):
+                        submesh_faces_map[i].append(absolute_face)
+                    else:
+                        self.log(f"Submesh {i}에서 잘못된 최종 정점 인덱스 {absolute_face}를 가진 면 발견. 건너뜁니다.", "WARNING")
+
+            for submesh_idx in submesh_faces_map:
+                for face in submesh_faces_map[submesh_idx]:
+                    idx1, idx2, idx3 = face
+                    p1, p2, p3 = vertices[idx1], vertices[idx2], vertices[idx3]
+                    edge1 = [p2[k] - p1[k] for k in range(3)]
+                    edge2 = [p3[k] - p1[k] for k in range(3)]
+                    face_normal = [
+                        edge1[1] * edge2[2] - edge1[2] * edge2[1],
+                        edge1[2] * edge2[0] - edge1[0] * edge2[2],
+                        edge1[0] * edge2[1] - edge1[1] * edge2[0]
+                    ]
+                    for k in range(3):
+                        normals[idx1][k] += face_normal[k]
+                        normals[idx2][k] += face_normal[k]
+                        normals[idx3][k] += face_normal[k]
+            
+            for i in range(len(normals)):
+                normal = normals[i]
+                length_sq = sum(comp**2 for comp in normal)
+                if length_sq > 1e-12:
+                    length = math.sqrt(length_sq)
+                    normals[i] = [comp / length for comp in normal]
+
         materials = self.mesh_to_materials_map.get(obj.path_id, [])
         material_names = []
         mtl_content = ""
@@ -293,35 +349,37 @@ class AssetProcessor:
                     mat_name = self._sanitize_filename(mat_obj.name or f"mat_{i}")
                     material_names.append(mat_name)
                     
-                    mtl_content += f"newmtl {mat_name}\n"
-                    
+                    mat_lines = []
                     props = getattr(mat_obj, 'm_SavedProperties', None)
-                    if not props: continue
+                    if props:
+                        colors_dict = getattr(props, 'm_Colors', {})
+                        for name, color in colors_dict.items():
+                            if name == "_Color":
+                                mat_lines.append(f"Kd {color.get('r', 1)} {color.get('g', 1)} {color.get('b', 1)}")
+                                mat_lines.append(f"d {color.get('a', 1)}")
 
-                    colors_dict = getattr(props, 'm_Colors', {})
-                    for name, color in colors_dict.items():
-                        if name == "_Color":
-                            mtl_content += f"Kd {color.get('r', 1)} {color.get('g', 1)} {color.get('b', 1)}\n"
-                            mtl_content += f"d {color.get('a', 1)}\n"
+                        tex_envs_dict = getattr(props, 'm_TexEnvs', {})
+                        for name, tex_env in tex_envs_dict.items():
+                            texture_pptr = getattr(tex_env, 'm_Texture', None)
+                            if name == "_MainTex" and texture_pptr and texture_pptr.path_id != 0:
+                                tex_obj = texture_pptr.read()
+                                tex_name = self._sanitize_filename(getattr(tex_obj, 'name', 'texture'))
+                                mat_lines.append(f"map_Kd ../Textures/{tex_name}.png")
+                    
+                    if mat_lines:
+                        mtl_content += f"newmtl {mat_name}\n"
+                        mtl_content += "\n".join(f"  {line}" for line in mat_lines) + "\n\n"
 
-                    tex_envs_dict = getattr(props, 'm_TexEnvs', {})
-                    for name, tex_env in tex_envs_dict.items():
-                        texture_pptr = getattr(tex_env, 'm_Texture', None)
-                        if name == "_MainTex" and texture_pptr and texture_pptr.path_id != 0:
-                            tex_obj = texture_pptr.read()
-                            tex_name = self._sanitize_filename(getattr(tex_obj, 'name', 'texture'))
-                            mtl_content += f"map_Kd ../Textures/{tex_name}.png\n"
                 except Exception as e:
                     self.log(f"재질(PathID:{mat_pptr.path_id}) 처리 실패: {e}", "WARNING")
         
-        # 4. OBJ 및 MTL 파일 최종 저장
         obj_path = self._get_export_path(obj, ".obj")
         mtl_path = None
         
         if mtl_content:
             mtl_path = self._get_export_path(obj, ".mtl", sub_folder="Meshes")
             with open(mtl_path, "w", encoding="utf-8") as mtl_file:
-                mtl_file.write(mtl_content)
+                mtl_file.write(mtl_content.strip())
         
         with open(obj_path, "w", encoding="utf-8") as f:
             f.write(f"# Extracted by Unity Asset Extractor - Professional\n")
@@ -341,13 +399,9 @@ class AssetProcessor:
                 if i < len(material_names):
                     f.write(f"usemtl {material_names[i]}\n")
                 
-                first_index = submesh.firstByte // 2
-                end_index = first_index + submesh.indexCount
-                submesh_triangles = triangles[first_index // 3 : end_index // 3]
-
-                for face in submesh_triangles:
-                    if len(face) < 3: continue
-                    f1, f2, f3 = face[0]+1, face[1]+1, face[2]+1
+                faces_for_submesh = submesh_faces_map.get(i, [])
+                for face in faces_for_submesh:
+                    f1, f2, f3 = face[0] + 1, face[1] + 1, face[2] + 1
                     f.write(f"f {f1}/{f1}/{f1} {f2}/{f2}/{f2} {f3}/{f3}/{f3}\n")
         
         return True
@@ -355,10 +409,10 @@ class AssetProcessor:
 # ==============================================================================
 # 병렬 처리 워커 함수 (Worker Function for Parallel Processing)
 # ==============================================================================
-def process_single_file(file_path, output_path, log_queue, completion_queue):
+def process_single_file(file_path, output_path, base_input_path, log_queue, completion_queue):
     """단일 에셋 파일을 처리하는 독립적인 워커 함수."""
     try:
-        processor = AssetProcessor(file_path, output_path, log_queue)
+        processor = AssetProcessor(file_path, output_path, base_input_path, log_queue)
         processor.process_all_assets()
     except Exception as e:
         base_name = os.path.basename(file_path)
@@ -378,6 +432,7 @@ class AssetExtractorApp:
         self.output_path = ""
         self.is_running = False
         self.processed_files_count = 0
+        self.base_input_path = None
         self.manager = Manager()
         self.log_queue = self.manager.Queue()
         self.completion_queue = self.manager.Queue()
@@ -438,10 +493,11 @@ class AssetExtractorApp:
         self.log_text = Text(log_text_frame, wrap=tk.WORD, yscrollcommand=log_scrollbar.set, state='disabled', padx=5, pady=5)
         self.log_text.grid(row=0, column=0, sticky='nsew')
         log_scrollbar.config(command=self.log_text.yview)
+        
         self.log_text.tag_config("INFO", foreground="black")
-        self.log_text.tag_config("WARNING", foreground="orange")
-        self.log_text.tag_config("ERROR", foreground="red")
-        self.log_text.tag_config("SUCCESS", foreground="green")
+        self.log_text.tag_config("WARNING", background="#FFF3CD", foreground="#856404")
+        self.log_text.tag_config("ERROR", background="#F8D7DA", foreground="#721C24")
+        self.log_text.tag_config("SUCCESS", background="#D4EDDA", foreground="#155724")
 
         progress_info_frame = ttk.Frame(log_frame)
         progress_info_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(0, 5))
@@ -517,12 +573,15 @@ class AssetExtractorApp:
                        ("Assets 파일", "*.assets"),
                        ("AssetBundle 파일", "*.*"))
         )
-        if paths: self._add_files_to_list(paths)
+        if paths:
+            self.base_input_path = None
+            self._add_files_to_list(paths)
         
     def _select_folder(self):
         if self.is_running: return
         folder_path = filedialog.askdirectory(title="에셋이 포함된 폴더를 선택하세요")
         if folder_path:
+            self.base_input_path = folder_path
             found_paths = [os.path.join(r, f) for r, _, fs in os.walk(folder_path) for f in fs if f.lower().endswith(SUPPORTED_EXTENSIONS)]
             if found_paths:
                 self._add_files_to_list(found_paths)
@@ -560,6 +619,7 @@ class AssetExtractorApp:
         total_count = len(self.file_paths)
         self.file_paths.clear()
         self.file_listbox.delete(0, tk.END)
+        self.base_input_path = None
         self._log(f"모든 파일({total_count}개)을 목록에서 제거했습니다.")
         
     def _show_listbox_menu(self, event):
@@ -601,7 +661,7 @@ class AssetExtractorApp:
         
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
             for file_path in self.file_paths:
-                executor.submit(process_single_file, file_path, self.output_path, self.log_queue, self.completion_queue)
+                executor.submit(process_single_file, file_path, self.output_path, self.base_input_path, self.log_queue, self.completion_queue)
         
         self.is_running = False
         self.root.after(0, self._toggle_controls, True)
