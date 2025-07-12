@@ -10,13 +10,77 @@ from tkinter import scrolledtext, messagebox, ttk
 import threading
 import queue
 
+# 중앙 언어 관리 시스템 (변경 없음)
+LANGUAGES = {
+    'ko': {
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "언어(Language)", 'start_button': "작업 시작",
+        'status_waiting': "상태: 대기 중", 'status_searching': "파일 검색 중...", 'status_processing': "처리: {current} / {total}",
+        'status_complete': "상태: 완료", 'status_complete_count': "완료: {count} / {count}",
+        'initial_info_db': "[ 주의 ] 현재 디렉터리에 'manifest.db' 파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.",
+        'initial_info_start': "[ 안내 ] '작업 시작' 버튼을 눌러주세요.", 'error_title': "오류",
+        'error_db_not_found': "'manifest.db' 파일을 찾을 수 없습니다。", 'log_new_job_start': "[ 작업 시작 ] 새로운 작업을 시작합니다.",
+        'log_warning_db_not_found': "[ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다.",
+        'log_info_long_time': "[ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.",
+        'log_info_auto_rename': "          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.",
+        'log_searching_files': "[ 진행 ] 대상 폴더에서 파일 목록을 검색 중입니다...", 'log_no_files_found': "대상 폴더에서 처리 할 파일을 찾을 수 없습니다.",
+        'log_found_files': "[ 완료 ] 총 {count}개의 처리 대상 파일을 찾았습니다. 이름 변경을 시작합니다.", 'log_rename_success': "\n  - 작업 상태: 파일 이름 변경 완료",
+        'log_rename_exception': "\n  - 작업 상태: 예외 처리된 파일 이름 변경 완료", 'log_rename_original': "  - 원본: \\{path}",
+        'log_rename_changed': "  - 변경: \\{path}", 'log_rename_error': "오류: {error}",
+        'log_unprocessed_header': "\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.",
+        'log_unprocessed_error': " 오류 발생: 알 수 없는 오류가 발생했습니다. ({error})", 'log_file_process_fail': "파일 처리 실패 {path}: {error}",
+        'log_job_summary': "\n\n\n--- 작업 완료 ---\n총 {count}개의 파일이 처리되었습니다.", 'log_unprocessed_summary': "{count}개의 파일은 처리되지 않았습니다.",
+        'log_job_complete': "\n작업이 모두 완료되었습니다.",
+    },
+    'en': {
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "Language", 'start_button': "Start Job",
+        'status_waiting': "Status: Waiting", 'status_searching': "Searching files...", 'status_processing': "Processing: {current} / {total}",
+        'status_complete': "Status: Complete", 'status_complete_count': "Complete: {count} / {count}",
+        'initial_info_db': "[ WARNING ] 'manifest.db' and the target files must be in the current directory with their original structure.",
+        'initial_info_start': "[ INFO ] Please press the 'Start Job' button.", 'error_title': "Error",
+        'error_db_not_found': "'manifest.db' file not found.", 'log_new_job_start': "[ JOB START ] Starting a new job.",
+        'log_warning_db_not_found': "[ WARNING ] 'manifest.db' does not exist in the current directory.",
+        'log_info_long_time': "[ INFO ] This may take a long time if there are many files or the storage device is slow.",
+        'log_info_auto_rename': "          All files will be renamed automatically after being loaded.",
+        'log_searching_files': "[ PROGRESS ] Searching for files in target folders...", 'log_no_files_found': "No files to process were found in the target folders.",
+        'log_found_files': "[ COMPLETE ] Found a total of {count} files to process. Starting rename.", 'log_rename_success': "\n  - Status: File renamed successfully",
+        'log_rename_exception': "\n  - Status: Renamed file via exception handling", 'log_rename_original': "  - Original: \\{path}",
+        'log_rename_changed': "  - New: \\{path}", 'log_rename_error': "Error: {error}",
+        'log_unprocessed_header': "\n\n\n [ INFO ] Files not recognized by manifest.db were handled or skipped as follows.",
+        'log_unprocessed_error': " An unknown error occurred. ({error})", 'log_file_process_fail': "Failed to process file {path}: {error}",
+        'log_job_summary': "\n\n\n--- JOB COMPLETE ---\nA total of {count} files have been processed.", 'log_unprocessed_summary': "{count} files were not processed.",
+        'log_job_complete': "\nThe job has been completed.",
+    },
+    'ja': {
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "言語(Language)", 'start_button': "作業開始",
+        'status_waiting': "状態: 待機中", 'status_searching': "ファイルを検索中...", 'status_processing': "処理中: {current} / {total}",
+        'status_complete': "状態: 完了", 'status_complete_count': "完了: {count} / {count}",
+        'initial_info_db': "[ 注意 ] 現在のディレクトリに 'manifest.db' ファイルと対象ファイルを元の構造のまま配置してください。",
+        'initial_info_start': "[ 案内 ] 「作業開始」ボタンを押してください。", 'error_title': "エラー",
+        'error_db_not_found': "'manifest.db' ファイルが見つかりません。", 'log_new_job_start': "[ 作業開始 ] 新しい作業を開始します。",
+        'log_warning_db_not_found': "[ 警告 ] 現在のディレクトリに 'manifest.db' が存在しません。",
+        'log_info_long_time': "[ 案内 ] ファイル数が多い、またはストレージの速度が遅い場合、時間がかかることがあります。",
+        'log_info_auto_rename': "          すべてのファイルが読み込まれた後、自動的にリネームされます。",
+        'log_searching_files': "[ 進行 ] 対象フォルダ内のファイルを検索しています...", 'log_no_files_found': "対象フォルダに処理するファイルが見つかりませんでした。",
+        'log_found_files': "[ 完了 ] 合計{count}個の処理対象ファイルを見つけました。名前の変更を開始します。", 'log_rename_success': "\n  - 状態: ファイル名の変更が完了しました",
+        'log_rename_exception': "\n  - 状態: 例外処理によりファイル名を変更しました", 'log_rename_original': "  - 元の名前: \\{path}",
+        'log_rename_changed': "  - 新しい名前: \\{path}", 'log_rename_error': "エラー: {error}",
+        'log_unprocessed_header': "\n\n\n [ 案内 ] manifest.dbで認識できなかったファイルは、次のように例外処理またはスキップされました。",
+        'log_unprocessed_error': " 不明なエラーが発生しました。({error})", 'log_file_process_fail': "ファイル処理失敗 {path}: {error}",
+        'log_job_summary': "\n\n\n--- 作業完了 ---\n合計{count}個のファイルが処理されました。", 'log_unprocessed_summary': "{count}個のファイルは処理されませんでした。",
+        'log_job_complete': "\nすべての作業が完了しました。",
+    }
+}
+
+
 class FileRenamerGUI:
-    """
-    파일 리네임 프로그램의 메인 GUI 창을 생성하고 관리하는 클래스
-    """
     def __init__(self, master):
         self.master = master
-        self.master.title("Manifest File Renamer (GUI Version)")
+        self.current_lang = 'ko'
+        self.lang_var = tk.StringVar(value=self.current_lang)
+        self.lang_var.trace_add("write", self.on_language_change)
+        
+        self.last_progress_info = {'current': 0, 'total': 0}
+        self.is_processing = False
 
         window_width = 800
         window_height = 600
@@ -30,35 +94,80 @@ class FileRenamerGUI:
         self.progress_queue = queue.Queue()
         self.file_processor = RenameHashedFile(self.log_queue, self.progress_queue)
         
-        self.MAX_LOGS_PER_CYCLE = 1
-        self.GUI_UPDATE_INTERVAL_MS = 1
+        self.MAX_LOGS_PER_CYCLE = 5
+        self.GUI_UPDATE_INTERVAL_MS = 10
         
         self.progress_label_var = tk.StringVar()
         self.total_files_count = 0
 
         self.create_widgets()
+        self.update_ui_language()
+
+    def get_string(self, key, **kwargs):
+        return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
+
+    def set_language(self, lang_code):
+        if self.current_lang != lang_code:
+            self.current_lang = lang_code
+            self.update_ui_language()
+
+    def on_language_change(self, *args):
+        new_lang = self.lang_var.get()
+        self.set_language(new_lang)
+
+    def update_ui_language(self):
+        self.master.title(self.get_string('window_title'))
+        
+        # --- [결정적인 수정] 메뉴바를 아예 새로 만듭니다. ---
+        self.create_menubar()
+        
+        self.start_button.config(text=self.get_string('start_button'))
+        
+        if not self.is_processing:
+            if self.total_files_count > 0 and self.progress_bar['value'] == 100:
+                self.progress_label_var.set(self.get_string('status_complete_count', count=self.total_files_count))
+            else:
+                 self.progress_label_var.set(self.get_string('status_waiting'))
+        else:
+            if self.last_progress_info['total'] == 0:
+                 self.progress_label_var.set(self.get_string('status_searching'))
+            else:
+                self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
+
+        self.show_initial_message()
+
+    # --- [결정적인 수정] 메뉴바 생성 로직을 별도 함수로 분리 ---
+    def create_menubar(self):
+        menubar = tk.Menu(self.master)
+        language_menu = tk.Menu(menubar, tearoff=0)
+        
+        language_menu.add_radiobutton(label="한국어", variable=self.lang_var, value='ko')
+        language_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
+        language_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
+        
+        # 현재 언어에 맞는 라벨로 메뉴바에 추가
+        menubar.add_cascade(label=self.get_string('menu_language'), menu=language_menu)
+        
+        # master 창의 메뉴를 새로 만든 메뉴바 객체로 교체
+        self.master.config(menu=menubar)
 
     def create_widgets(self):
+        # 메뉴바 생성 호출
+        self.create_menubar()
+
+        # 이하 위젯 생성 코드는 동일
         top_frame = tk.Frame(self.master)
         top_frame.pack(padx=10, pady=10, fill=tk.X)
-
         control_frame = tk.Frame(top_frame)
         control_frame.pack(fill=tk.X)
-
-        self.start_button = tk.Button(control_frame, text="작업 시작", command=self.start_processing_thread)
+        self.start_button = tk.Button(control_frame, command=self.start_processing_thread)
         self.start_button.pack(side=tk.LEFT, padx=(0, 10))
-        
         self.progress_label = tk.Label(control_frame, textvariable=self.progress_label_var, width=25)
         self.progress_label.pack(side=tk.LEFT, padx=(0, 5))
-        self.progress_label_var.set("상태: 대기 중")
-
         self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
         self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X)
-
         self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9))
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
-        
-        self.show_initial_message()
 
     def show_initial_message(self):
         self.log_area.configure(state='normal')
@@ -71,12 +180,13 @@ class FileRenamerGUI:
         """
         self.log_area.insert(tk.END, ascii_art + '\n')
         self.log_area.insert(tk.END, "-"*100 + "\n")
-        self.log_area.insert(tk.END, "[ 주의 ] 현재 디렉터리에 'manifest.db' 파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n")
-        self.log_area.insert(tk.END, "[ 안내 ] '작업 시작' 버튼을 눌러주세요.\n")
+        self.log_area.insert(tk.END, self.get_string('initial_info_db') + '\n')
+        self.log_area.insert(tk.END, self.get_string('initial_info_start') + '\n')
         self.log_area.insert(tk.END, "-"*100 + "\n")
         self.log_area.configure(state='disabled')
 
-    def add_log(self, message):
+    def add_log(self, key, **kwargs):
+        message = self.get_string(key, **kwargs)
         self.log_area.configure(state='normal')
         self.log_area.insert(tk.END, str(message) + '\n')
         self.log_area.configure(state='disabled')
@@ -84,14 +194,15 @@ class FileRenamerGUI:
 
     def start_processing_thread(self):
         if not os.path.exists(os.path.join(os.getcwd(), "manifest.db")):
-            messagebox.showerror("오류", "'manifest.db' 파일을 찾을 수 없습니다.")
+            messagebox.showerror(self.get_string('error_title'), self.get_string('error_db_not_found'))
             return
 
+        self.is_processing = True
         self.start_button.config(state=tk.DISABLED)
-        self.add_log("\n" + "="*100 + "\n[ 작업 시작 ] 새로운 작업을 시작합니다.\n")
+        self.add_log('log_new_job_start')
         self.progress_bar['value'] = 0
-        self.progress_label_var.set("파일 검색 중...")
-
+        self.progress_label_var.set(self.get_string('status_searching'))
+        self.last_progress_info = {'current': 0, 'total': 0}
         processing_thread = threading.Thread(target=self.file_processor.process_files, daemon=True)
         processing_thread.start()
         self.monitor_queue(processing_thread)
@@ -99,35 +210,38 @@ class FileRenamerGUI:
     def monitor_queue(self, thread):
         try:
             for _ in range(self.MAX_LOGS_PER_CYCLE):
-                self.add_log(self.log_queue.get_nowait())
+                log_id, kwargs = self.log_queue.get_nowait()
+                self.add_log(log_id, **kwargs)
         except queue.Empty:
             pass
-
         try:
             while not self.progress_queue.empty():
                 progress_val, current, total = self.progress_queue.get_nowait()
                 self.progress_bar['value'] = progress_val
-                self.progress_label_var.set(f"처리: {current} / {total}")
+                self.last_progress_info = {'current': current, 'total': total}
+                self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
                 self.total_files_count = total
         except queue.Empty:
             pass
-
         if thread.is_alive():
             self.master.after(self.GUI_UPDATE_INTERVAL_MS, lambda: self.monitor_queue(thread))
         else:
+            self.is_processing = False
             try:
-                while True: self.add_log(self.log_queue.get_nowait())
+                while True: 
+                    log_id, kwargs = self.log_queue.get_nowait()
+                    self.add_log(log_id, **kwargs)
             except queue.Empty: pass
-            
             self.progress_bar['value'] = 100
             if self.total_files_count > 0:
-                self.progress_label_var.set(f"완료: {self.total_files_count} / {self.total_files_count}")
+                self.progress_label_var.set(self.get_string('status_complete_count', count=self.total_files_count))
             else:
-                self.progress_label_var.set("상태: 완료")
+                self.progress_label_var.set(self.get_string('status_complete'))
             self.start_button.config(state=tk.NORMAL)
-            self.add_log(f"\n작업이 모두 완료되었습니다.")
+            self.add_log('log_job_complete')
 
 
+# RenameHashedFile 클래스는 변경 없이 이전과 동일하게 유지합니다.
 class RenameHashedFile:
     def __init__(self, log_queue, progress_queue):
         self.target_folders = ['a', 'b', 'm', 'manifest', 's', 'v']
@@ -136,8 +250,8 @@ class RenameHashedFile:
         self.log_queue = log_queue
         self.progress_queue = progress_queue
 
-    def log(self, message):
-        self.log_queue.put(message)
+    def log(self, key, **kwargs):
+        self.log_queue.put((key, kwargs))
 
     def update_progress(self, value, current, total):
         self.progress_queue.put((value, current, total))
@@ -145,24 +259,18 @@ class RenameHashedFile:
     def process_files(self):
         manifest_db_path = os.path.join(os.getcwd(), "manifest.db")
         if not os.path.exists(manifest_db_path):
-            self.log("[ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다.")
+            self.log('log_warning_db_not_found')
             return
-            
-        self.log(" [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.")
-        self.log("          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n")
-        self.log("[ 진행 ] 대상 폴더에서 파일 목록을 검색 중입니다...")
-        
+        self.log('log_info_long_time')
+        self.log('log_info_auto_rename')
+        self.log('log_searching_files')
         files = self.get_all_files_in_folders(self.target_folders)
         total_files = len(files)
-        
         self.update_progress(0, 0, total_files)
-
         if not files:
-            self.log("대상 폴더에서 처리 할 파일을 찾을 수 없습니다.")
+            self.log('log_no_files_found')
             return
-            
-        self.log(f"[ 완료 ] 총 {total_files}개의 처리 대상 파일을 찾았습니다. 이름 변경을 시작합니다.")
-
+        self.log('log_found_files', count=total_files)
         with sqlite3.connect(manifest_db_path) as connection:
             cursor = connection.cursor()
             cursor.execute("SELECT * FROM t")
@@ -170,85 +278,66 @@ class RenameHashedFile:
             for row in rows:
                 filename, hash_value = row
                 self.hash_list[hash_value] = filename
-        
         processed_count_rename = 0
         processed_count_check = 0
         final_unprocessed_files = []
         self.unprocessed_files.clear()
-
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = {executor.submit(self.process, file): file for file in files}
-            
             processed_futures = 0
             for future in concurrent.futures.as_completed(futures):
                 processed_futures += 1
                 progress = (processed_futures / total_files) * 100.0
                 self.update_progress(progress, processed_futures, total_files)
-                
                 try:
-                    was_successful, data, log_msg = future.result()
+                    was_successful, data, log_id, log_kwargs = future.result()
                     if was_successful:
-                        if log_msg: self.log(log_msg)
+                        if log_id: self.log(log_id, **log_kwargs)
                         processed_count_rename += 1
                     else:
                         self.unprocessed_files.append(data)
                 except Exception as exc:
                     file_path = futures[future]
-                    self.log(f"파일 처리 실패 {file_path}: {exc}")
-
-        self.log("\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.")
-        
-        num_exception_files = len(self.unprocessed_files)
-        if num_exception_files > 0:
-            for idx, file_path in enumerate(self.unprocessed_files):
+                    self.log('log_file_process_fail', path=file_path, error=exc)
+        self.log('log_unprocessed_header')
+        if self.unprocessed_files:
+            for file_path in self.unprocessed_files:
                 renamed_by_content = False
                 try:
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
                         first_line = file.readline().strip()
-                    
                     new_filename = None
                     if 'a/bdl' in first_line: new_filename = os.path.join("manifest", "bdl_assetmanifest")
                     elif 'manifest/' in first_line: new_filename = os.path.join("manifest", "manifest_assetmanifest")
                     elif 'm/' in first_line: new_filename = os.path.join("manifest", "movie2manifest")
                     elif 'b/' in first_line: new_filename = os.path.join("manifest", "soundmanifest")
-                    
                     if new_filename:
                         new_filepath = self.get_unique_filename(new_filename)
                         os.rename(file_path, new_filepath)
                         processed_count_check += 1
                         relative_file_path = os.path.relpath(file_path, os.getcwd())
-
-                        # --- [수정 1] 경로 구분자 통일 ---
                         consistent_new_filename = new_filename.replace(os.sep, '\\').replace('/', '\\')
-                        
-                        log_msg = (
-                            f"\n  - 작업 상태: 예외 처리된 파일 이름 변경 완료\n"
-                            f"  - 원본: \\{relative_file_path}\n"
-                            f"  - 변경: \\{consistent_new_filename}"
-                        )
-                        self.log(log_msg)
+                        self.log('log_rename_exception')
+                        self.log('log_rename_original', path=relative_file_path)
+                        self.log('log_rename_changed', path=consistent_new_filename)
                         renamed_by_content = True
                 except Exception as e:
-                    self.log(f" 오류 발생: 알 수 없는 오류가 발생했습니다. ({e})")
-                
+                    self.log('log_unprocessed_error', error=e)
                 if not renamed_by_content:
                     final_unprocessed_files.append(file_path)
-
         total_processed = processed_count_rename + processed_count_check
-        self.log(f"\n\n\n--- 작업 완료 ---\n총 {total_processed}개의 파일이 처리되었습니다.")
+        self.log('log_job_summary', count=total_processed)
         if final_unprocessed_files:
-            self.log(f"{len(final_unprocessed_files)}개의 파일은 처리되지 않았습니다.")
+            self.log('log_unprocessed_summary', count=len(final_unprocessed_files))
 
     def process(self, file_path):
         hash_md5_value = self.calculate_md5(file_path).hexdigest()
         if hash_md5_value in self.hash_list:
             return self.rename_file(file_path, self.hash_list[hash_md5_value])
-
         hash_xxhash64_value = self.calculate_xxhash64(file_path).hexdigest()
         if hash_xxhash64_value in self.hash_list:
             return self.rename_file(file_path, self.hash_list[hash_xxhash64_value])
-
-        return False, file_path, None
+        return False, file_path, None, None
 
     def rename_file(self, file_path, new_filename):
         new_filepath = os.path.join(os.getcwd(), new_filename)
@@ -258,19 +347,13 @@ class RenameHashedFile:
         try:
             os.rename(file_path, new_filepath)
             relative_file_path = os.path.relpath(file_path, os.getcwd())
-            
-            # --- [수정 2] 경로 구분자 통일 ---
-            # DB에 / 또는 \ 어떤 형식으로 저장되어 있든 \로 통일하여 표시
             consistent_new_filename = new_filename.replace('/', '\\').replace(os.sep, '\\')
-            
-            log_msg = (
-                f"\n  - 작업 상태: 파일 이름 변경 완료\n"
-                f"  - 원본: \\{relative_file_path}\n"
-                f"  - 변경: \\{consistent_new_filename}"
-            )
-            return True, new_filepath, log_msg
+            self.log('log_rename_success')
+            self.log('log_rename_original', path=relative_file_path)
+            self.log('log_rename_changed', path=consistent_new_filename)
+            return True, new_filepath, None, None
         except Exception as e:
-            return False, file_path, f"오류: {e}"
+            return False, file_path, 'log_rename_error', {'error': e}
 
     def calculate_md5(self, file_path):
         md5_hash = hashlib.md5()
