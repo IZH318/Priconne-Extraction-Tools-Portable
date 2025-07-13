@@ -262,14 +262,23 @@ class FileRenamerGUI:
         # 메뉴바 생성은 update_ui_language에서 처리하므로 여기서 호출하지 않음
         top_frame = tk.Frame(self.master)
         top_frame.pack(padx=10, pady=10, fill=tk.X)
+        
         control_frame = tk.Frame(top_frame)
         control_frame.pack(fill=tk.X)
+
+        # 1. 시작 버튼을 생성하고 오른쪽에 배치합니다. (side=tk.RIGHT)
         self.start_button = tk.Button(control_frame, command=self.start_processing_thread)
-        self.start_button.pack(side=tk.LEFT, padx=(0, 10))
+        self.start_button.pack(side=tk.RIGHT, padx=(10, 0))
+
+        # 2. 상태 레이블을 왼쪽에 배치합니다.
         self.progress_label = tk.Label(control_frame, textvariable=self.progress_label_var, width=25)
         self.progress_label.pack(side=tk.LEFT, padx=(0, 5))
+
+        # 3. 프로그레스 바를 레이블 옆, 남은 공간을 모두 채우도록 왼쪽에 배치합니다.
         self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
         self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X)
+        
+        # 로그 영역은 변경 없이 그대로 둡니다.
         self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9))
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
