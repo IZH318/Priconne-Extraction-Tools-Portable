@@ -13,9 +13,10 @@ import queue
 # 중앙 언어 관리 시스템
 LANGUAGES = {
     'ko': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "언어(Language)", 'start_button': "작업 시작",
-        'status_waiting': "상태: 대기 중", 'status_searching': "파일 검색 중...", 'status_processing': "처리: {current} / {total}",
-        'status_complete': "상태: 완료", 'status_complete_count': "완료: {count} / {count}",
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "언어(Language)", 'menu_about': "정보(About)",
+        'start_button': "작업 시작", 'status_waiting': "상태: 대기 중", 'status_searching': "파일 검색 중...",
+        'status_processing': "처리: {current} / {total}", 'status_complete': "상태: 완료",
+        'status_complete_count': "완료: {count} / {count}",
         'initial_info_db': "[ 주의 ] 현재 디렉터리에 'manifest.db' 파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n\n"
                            "         [ 예시 ]\n"
                            "         C:\\MyRenamer\\\n"
@@ -28,7 +29,6 @@ LANGUAGES = {
         'error_title': "오류", 'error_db_not_found': "'manifest.db' 파일을 찾을 수 없습니다。",
         'job_start_log': "\n" + "="*100 + "\n[ 작업 시작 ] 새로운 작업을 시작합니다.\n",
         'job_complete_log': "\n작업이 모두 완료되었습니다.",
-        # --- 백엔드에서 사용할 텍스트 포맷 ---
         'backend_warning_db_not_found': "[ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다.",
         'backend_info_long_time': " [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.",
         'backend_info_auto_rename': "          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n",
@@ -45,11 +45,19 @@ LANGUAGES = {
         'backend_rename_original': "    - 원본: \\{path}",
         'backend_rename_changed': "    - 변경: \\{path}",
         'backend_rename_error': "오류: {error}",
+        'about_header': "[ 프로그램 정보 ]",
+        'about_label_program': "프로그램 이름",
+        'about_label_version': "버전",
+        'about_label_updated': "최종 업데이트",
+        'about_label_license': "라이선스",
+        'about_label_developer': "개발자",
+        'about_label_website': "웹 사이트",
     },
     'en': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "Language", 'start_button': "Start Job",
-        'status_waiting': "Status: Waiting", 'status_searching': "Searching files...", 'status_processing': "Processing: {current} / {total}",
-        'status_complete': "Status: Complete", 'status_complete_count': "Complete: {count} / {count}",
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "Language", 'menu_about': "About",
+        'start_button': "Start Job", 'status_waiting': "Status: Waiting", 'status_searching': "Searching files...",
+        'status_processing': "Processing: {current} / {total}", 'status_complete': "Status: Complete",
+        'status_complete_count': "Complete: {count} / {count}",
         'initial_info_db': "[ WARNING ] 'manifest.db' and the target files must be in the current directory with their original structure.\n\n"
                            "         [ Example ]\n"
                            "         C:\\MyRenamer\\\n"
@@ -78,11 +86,19 @@ LANGUAGES = {
         'backend_rename_original': "    - Original: \\{path}",
         'backend_rename_changed': "    - New: \\{path}",
         'backend_rename_error': "Error: {error}",
+        'about_header': "[ Program Information ]",
+        'about_label_program': "Program",
+        'about_label_version': "Version",
+        'about_label_updated': "Updated",
+        'about_label_license': "License",
+        'about_label_developer': "Developer",
+        'about_label_website': "Website",
     },
     'ja': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "言語(Language)", 'start_button': "作業開始",
-        'status_waiting': "状態: 待機中", 'status_searching': "ファイルを検索中...", 'status_processing': "処理中: {current} / {total}",
-        'status_complete': "状態: 完了", 'status_complete_count': "完了: {count} / {count}",
+        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "言語(Language)", 'menu_about': "情報(About)",
+        'start_button': "作業開始", 'status_waiting': "状態: 待機中", 'status_searching': "ファイルを検索中...",
+        'status_processing': "処理中: {current} / {total}", 'status_complete': "状態: 完了",
+        'status_complete_count': "完了: {count} / {count}",
         'initial_info_db': "[ 注意 ] 現在のディレクトリに 'manifest.db' ファイルと対象ファイルを元の構造のまま配置してください。\n\n"
                            "         [ 例 ]\n"
                            "         C:\\MyRenamer\\\n"
@@ -111,6 +127,13 @@ LANGUAGES = {
         'backend_rename_original': "    - 元の名前: \\{path}",
         'backend_rename_changed': "    - 新しい名前: \\{path}",
         'backend_rename_error': "エラー: {error}",
+        'about_header': "[ プログラム情報 ]",
+        'about_label_program': "プログラム名",
+        'about_label_version': "バージョン",
+        'about_label_updated': "最終更新",
+        'about_label_license': "ライセンス",
+        'about_label_developer': "開発者",
+        'about_label_website': "ウェブサイト",
     }
 }
 ASCII_ART = r"""
@@ -126,13 +149,21 @@ ASCII_ART = r"""
 SEPARATOR = "-" * 100
 
 class FileRenamerGUI:
+    ABOUT_INFO = {
+        'program': "Manifest File Renamer (GUI Version)",
+        'version': "2.0",
+        'updated': "2025-07-13",
+        'license': "MIT License",
+        'developer': "(Github) IZH318",
+        'website': "https://github.com/IZH318",
+    }
+
     def __init__(self, master):
         self.master = master
         self.current_lang = 'ko'
         self.lang_var = tk.StringVar(value=self.current_lang)
         self.lang_var.trace_add("write", self.on_language_change)
         
-        # [수정] 로그 기록 방식을 변경. (key, kwargs) 튜플 또는 raw string을 저장.
         self.log_data = []
         
         self.last_progress_info = {'current': 0, 'total': 0}
@@ -155,6 +186,9 @@ class FileRenamerGUI:
         self.progress_label_var = tk.StringVar()
         self.total_files_count = 0
 
+        self.menubar = None
+        self.language_menu = None
+
         self.create_widgets()
         self.update_ui_language(is_initial_setup=True)
 
@@ -173,7 +207,10 @@ class FileRenamerGUI:
 
     def update_ui_language(self, is_initial_setup=False):
         self.master.title(self.get_string('window_title'))
+        
+        # 메뉴바를 현재 언어로 다시 그림
         self.create_menubar()
+        
         self.start_button.config(text=self.get_string('start_button'))
         
         if not self.is_processing:
@@ -187,23 +224,42 @@ class FileRenamerGUI:
             else:
                 self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
         
-        # [수정] 초기 메시지는 is_initial_setup과 상관없이 언어 변경 시마다 다시 생성되어야 함
         if is_initial_setup:
             self.show_initial_message()
         
         self.re_render_logs()
         
     def create_menubar(self):
-        menubar = tk.Menu(self.master)
-        language_menu = tk.Menu(menubar, tearoff=0)
-        language_menu.add_radiobutton(label="한국어", variable=self.lang_var, value='ko')
-        language_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
-        language_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
-        menubar.add_cascade(label=self.get_string('menu_language'), menu=language_menu)
-        self.master.config(menu=menubar)
+        """
+        메뉴바를 생성하거나, 이미 있다면 내용을 모두 지우고 현재 언어로 다시 만듭니다.
+        이것이 가장 안정적인 방법입니다.
+        """
+        if self.menubar is None:
+            # 프로그램 시작 시 한 번만 메뉴바 객체를 생성
+            self.menubar = tk.Menu(self.master)
+            self.master.config(menu=self.menubar)
+        else:
+            # 언어 변경 시, 기존 메뉴 항목들을 모두 삭제
+            self.menubar.delete(0, tk.END)
+
+        # 언어 메뉴 (드롭다운) 생성
+        self.language_menu = tk.Menu(self.menubar, tearoff=0)
+        self.language_menu.add_radiobutton(label="한국어", variable=self.lang_var, value='ko')
+        self.language_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
+        self.language_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
+        
+        # 현재 언어에 맞는 텍스트로 메뉴바에 항목들을 다시 추가
+        self.menubar.add_cascade(label=self.get_string('menu_language'), menu=self.language_menu)
+        self.menubar.add_command(label=self.get_string('menu_about'), command=self.show_about_info)
+
+    def show_about_info(self):
+        self.log_data.append(SEPARATOR)
+        self.log_data.append('SHOW_ABOUT_INFO')
+        self.log_data.append(SEPARATOR)
+        self.re_render_logs()
 
     def create_widgets(self):
-        self.create_menubar()
+        # 메뉴바 생성은 update_ui_language에서 처리하므로 여기서 호출하지 않음
         top_frame = tk.Frame(self.master)
         top_frame.pack(padx=10, pady=10, fill=tk.X)
         control_frame = tk.Frame(top_frame)
@@ -218,8 +274,6 @@ class FileRenamerGUI:
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
     def show_initial_message(self):
-        # [수정] 초기 메시지는 항상 self.log_data의 첫번째 항목으로 존재하도록 함.
-        # 작업 시작 시에는 클리어 후 다시 추가됨.
         self.log_data.clear()
         
         folder_lines = []
@@ -228,7 +282,6 @@ class FileRenamerGUI:
             prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
             folder_lines.append((prefix_key, {'folder_name': folder}))
 
-        # [신규] 초기 메시지를 구성하는 데이터 구조. raw string과 튜플을 혼합.
         initial_log_structure = [
             ASCII_ART,
             SEPARATOR,
@@ -240,17 +293,25 @@ class FileRenamerGUI:
         self.re_render_logs()
         
     def re_render_logs(self):
-        # [수정] 로그 데이터를 실시간으로 번역하여 렌더링
         self.log_area.configure(state='normal')
         self.log_area.delete('1.0', tk.END)
         
         rendered_logs = []
         for item in self.log_data:
-            if isinstance(item, str):  # Raw string (ASCII_ART 등)
-                rendered_logs.append(item)
-            elif isinstance(item, tuple):  # (key, kwargs) 튜플
-                key, kwargs = item
-                # initial_info_db의 folder_structure는 렌더링 시점에 다시 생성해야 함.
+            if isinstance(item, str):
+                if item == 'SHOW_ABOUT_INFO':
+                    about_lines = [self.get_string('about_header'), ""]
+                    for key, value in self.ABOUT_INFO.items():
+                        label_key = f'about_label_{key}'
+                        label_text = self.get_string(label_key)
+                        about_lines.append(f"  - {label_text}\t: {value}")
+                    rendered_logs.append("\n".join(about_lines))
+                else:
+                    rendered_logs.append(item)
+            elif isinstance(item, tuple):
+                key, original_kwargs = item
+                kwargs = original_kwargs.copy()
+                
                 if key == 'initial_info_db':
                     folder_lines = []
                     folders = self.file_processor.target_folders
@@ -266,7 +327,6 @@ class FileRenamerGUI:
         self.log_area.see(tk.END)
 
     def add_log_data(self, log_item):
-        # [신규] 로그 "데이터"를 추가하고 다시 렌더링하는 함수
         self.log_data.append(log_item)
         self.re_render_logs()
 
@@ -275,7 +335,6 @@ class FileRenamerGUI:
             messagebox.showerror(self.get_string('error_title'), self.get_string('error_db_not_found'))
             return
         
-        # [수정] 작업 시작 시 기존 로그 초기화하고 시작 메시지 추가
         self.show_initial_message()
         self.add_log_data(('job_start_log', {}))
         
@@ -294,7 +353,6 @@ class FileRenamerGUI:
     def monitor_queue(self, thread):
         new_log_data = []
         try:
-            # [수정] 하드코딩된 숫자 100 대신 정의된 속성을 사용합니다.
             for _ in range(self.MAX_LOGS_PER_CYCLE):
                 new_log_data.append(self.log_queue.get_nowait())
         except queue.Empty:
@@ -305,7 +363,6 @@ class FileRenamerGUI:
             self.re_render_logs()
 
         try:
-            # 진행률 큐는 한 번에 모두 처리해도 UI에 큰 부담이 없으므로 그대로 둡니다.
             while not self.progress_queue.empty():
                 progress_val, current, total = self.progress_queue.get_nowait()
                 self.progress_bar['value'] = progress_val
@@ -316,10 +373,8 @@ class FileRenamerGUI:
             pass
 
         if thread.is_alive():
-            # 작업 스레드가 아직 실행 중이면, 일정 시간 후 이 함수를 다시 호출합니다.
             self.master.after(self.GUI_UPDATE_INTERVAL_MS, lambda: self.monitor_queue(thread))
         else:
-            # 작업이 완료된 후 큐에 남아있을 수 있는 모든 로그를 처리합니다.
             final_logs = []
             try:
                 while True: 
@@ -329,11 +384,9 @@ class FileRenamerGUI:
             if final_logs:
                 self.log_data.extend(final_logs)
             
-            # 작업 완료 로그를 추가하고 최종적으로 화면을 다시 렌더링합니다.
             self.add_log_data(('job_complete_log', {}))
             self.re_render_logs()
 
-            # UI 상태를 '완료'로 업데이트하고 버튼을 다시 활성화합니다.
             self.is_processing = False
             self.progress_bar['value'] = 100
             if self.total_files_count > 0:
@@ -356,7 +409,6 @@ class RenameHashedFile:
         self.get_string = get_string_func
 
     def log(self, key, **kwargs):
-        # [수정] 큐에 (key, kwargs) 튜플을 넣음
         self.log_queue.put((key, kwargs))
 
     def update_progress(self, value, current, total):
@@ -406,7 +458,6 @@ class RenameHashedFile:
                 self.update_progress(progress, processed_futures, total_files)
                 
                 try:
-                    # [수정] 반환값에서 log_msg 제거
                     was_successful, data = future.result()
                     if was_successful:
                         processed_count_rename += 1
@@ -437,7 +488,6 @@ class RenameHashedFile:
                         processed_count_check += 1
                         relative_file_path = os.path.relpath(file_path, os.getcwd())
                         
-                        # [수정] 여러 줄 로그를 개별 log 호출로 분리
                         self.log('backend_rename_exception_success')
                         self.log('backend_rename_original', path=relative_file_path)
                         self.log('backend_rename_changed', path=new_filename.replace(os.sep, '\\'))
@@ -454,7 +504,6 @@ class RenameHashedFile:
             self.log('backend_unprocessed_summary', count=len(final_unprocessed_files))
 
     def process(self, file_path):
-        # [수정] 반환값에서 log_msg 제거
         hash_md5_value = self.calculate_md5(file_path).hexdigest()
         if hash_md5_value in self.hash_list:
             return self.rename_file(file_path, self.hash_list[hash_md5_value])
@@ -474,12 +523,10 @@ class RenameHashedFile:
             os.rename(file_path, new_filepath)
             relative_file_path = os.path.relpath(file_path, os.getcwd())
             
-            # [수정] 로그 메시지를 직접 생성하지 않고, self.log를 통해 key와 kwargs를 전달
             self.log('backend_rename_success')
             self.log('backend_rename_original', path=relative_file_path)
             self.log('backend_rename_changed', path=new_filename.replace(os.sep, '\\').replace('/', '\\'))
             
-            # [수정] 반환값에서 log_msg 제거
             return True, new_filepath
         except Exception as e:
             self.log('backend_rename_error', error=str(e))
