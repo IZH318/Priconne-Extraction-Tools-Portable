@@ -1,5 +1,5 @@
 # ==============================================================================
-# Unity 에셋 추출기 (Unity Asset Extractor)
+# Unity 에셋 추출기 (unity3d File Converter)
 # ------------------------------------------------------------------------------
 # 이 스크립트는 Unity3D의 에셋 파일에서 내부 리소스를 추출하는 GUI 애플리케이션입니다.
 # ==============================================================================
@@ -55,9 +55,10 @@ SUPPORTED_EXTENSIONS = ('.unity3d',)
 # ==============================================================================
 LANGUAGES = {
     'ko': {
-        'window_title': "Unity 에셋 추출기",
+        'window_title': "unity3d File Converter",
         'menu_file': "메뉴(Menu)",
         'menu_lang': "언어(Language)",
+        'menu_about': "정보(About)",
         'file_open': "파일 열기",
         'folder_open': "폴더 열기",
         'exit': "종료",
@@ -106,11 +107,19 @@ LANGUAGES = {
         'invalid_vertex_index': "Submesh {submesh_idx}에서 잘못된 최종 정점 인덱스 {face}를 가진 면 발견. 건너뜁니다.",
         'material_process_fail': "재질(PathID:{path_id}) 처리 실패: {error}",
         'worker_process_error': "파일 처리 중 심각한 오류 발생: {error}",
+        'about_header': "[ 프로그램 정보 ]",
+        'about_label_program': "프로그램 이름",
+        'about_label_version': "버전",
+        'about_label_updated': "최종 업데이트",
+        'about_label_license': "라이선스",
+        'about_label_developer': "개발자",
+        'about_label_website': "웹 사이트",
     },
     'en': {
-        'window_title': "Unity Asset Extractor",
+        'window_title': "unity3d File Converter",
         'menu_file': "Menu",
         'menu_lang': "Language",
+        'menu_about': "About",
         'file_open': "Open Files",
         'folder_open': "Open Folder",
         'exit': "Exit",
@@ -159,11 +168,19 @@ LANGUAGES = {
         'invalid_vertex_index': "Found a face with an invalid final vertex index {face} in Submesh {submesh_idx}. Skipping.",
         'material_process_fail': "Failed to process material (PathID:{path_id}): {error}",
         'worker_process_error': "A critical error occurred while processing the file: {error}",
+        'about_header': "[ Program Information ]",
+        'about_label_program': "Program",
+        'about_label_version': "Version",
+        'about_label_updated': "Updated",
+        'about_label_license': "License",
+        'about_label_developer': "Developer",
+        'about_label_website': "Website",
     },
     'ja': {
-        'window_title': "Unityアセット抽出機 (専門家版 v5.4)",
+        'window_title': "unity3d File Converter",
         'menu_file': "メニュー(Menu)",
         'menu_lang': "言語(Language)",
+        'menu_about': "情報(About)",
         'file_open': "ファイルを開く",
         'folder_open': "フォルダを開く",
         'exit': "終了",
@@ -212,6 +229,13 @@ LANGUAGES = {
         'invalid_vertex_index': "サブメッシュ{submesh_idx}で無効な最終頂点インデックス{face}を持つ面が見つかりました。スキップします。",
         'material_process_fail': "マテリアル(PathID:{path_id})の処理に失敗しました: {error}",
         'worker_process_error': "ファイルの処理中に重大なエラーが発生しました: {error}",
+        'about_header': "[ プログラム情報 ]",
+        'about_label_program': "プログラム名",
+        'about_label_version': "バージョン",
+        'about_label_updated': "最終更新",
+        'about_label_license': "ライセンス",
+        'about_label_developer': "開発者",
+        'about_label_website': "ウェブサイト",
     }
 }
 
@@ -759,6 +783,16 @@ def process_single_file(file_path, output_path, base_input_path, log_queue, comp
 # GUI 애플리케이션 클래스 (GUI Application Class)
 # ==============================================================================
 class AssetExtractorApp:
+    # 정보(About) 데이터
+    ABOUT_INFO = {
+        'program': "unity3d File Converter",
+        'version': "2.0",
+        'updated': "2025-07-14",
+        'license': "MIT License",
+        'developer': "(Github) IZH318",
+        'website': "https://github.com/IZH318",
+    }
+
     def __init__(self, root):
         self.root = root
         self.file_paths = []
@@ -797,6 +831,7 @@ class AssetExtractorApp:
 
         self.menu_bar.add_cascade(label="", menu=self.file_menu, underline=0)
         self.menu_bar.add_cascade(label="", menu=self.lang_menu, underline=0)
+        self.menu_bar.add_command(label="", command=self._show_about_info)
         
         self.file_menu.add_command(label="", command=self._select_files)
         self.file_menu.add_command(label="", command=self._select_folder)
@@ -840,6 +875,8 @@ class AssetExtractorApp:
         self.log_text.tag_config("WARNING", background="#FFF3CD", foreground="#856404")
         self.log_text.tag_config("ERROR", background="#F8D7DA", foreground="#721C24")
         self.log_text.tag_config("SUCCESS", background="#D4EDDA", foreground="#155724")
+        self.log_text.tag_config("ABOUT_HEADER", foreground="#00008B", font=('TkDefaultFont', 9, 'bold'))
+        self.log_text.tag_config("ABOUT_CONTENT", foreground="#00008B")
 
         progress_info_frame = ttk.Frame(self.log_frame)
         progress_info_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(0, 5))
@@ -883,6 +920,7 @@ class AssetExtractorApp:
         self.root.title(d['window_title'])
         self.menu_bar.entryconfig(1, label=d['menu_file'])
         self.menu_bar.entryconfig(2, label=d['menu_lang'])
+        self.menu_bar.entryconfig(3, label=d['menu_about'])
         self.file_menu.entryconfig(0, label=d['file_open'])
         self.file_menu.entryconfig(1, label=d['folder_open'])
         self.file_menu.entryconfig(3, label=d['exit'])
@@ -901,18 +939,35 @@ class AssetExtractorApp:
         self.log_text.config(state='normal')
         self.log_text.delete('1.0', tk.END)
         lang = self.lang.get()
+        
         for event in self.log_events:
-            timestamp, prefix, message_key, level, format_args = event
-            
-            message_template = LANGUAGES[lang].get(message_key, message_key)
-            if message_key == 'raw_text':
-                message = format_args['text']
-            else:
-                message = message_template.format(**format_args) if format_args else message_template
+            try:
+                timestamp, prefix, message_key, level, format_args = event
+                
+                if message_key == 'show_about_info':
+                    self._display_about_info_in_log()
+                    continue
+                
+                message_template = LANGUAGES[lang].get(message_key, message_key)
+                if message_key == 'raw_text':
+                    # 'raw_text'는 번역 대상이 아니므로 그대로 사용
+                    message = format_args['text']
+                else:
+                    # 번역이 필요한 메시지는 format을 사용하여 새 언어로 문자열 생성
+                    message = message_template.format(**format_args) if format_args else message_template
 
-            log_prefix = f"[{prefix}] " if prefix else ""
-            full_message = f"[{timestamp}] {log_prefix}{message}\n"
-            self.log_text.insert(tk.END, full_message, level)
+                log_prefix = f"[{prefix}] " if prefix else ""
+                full_message = f"[{timestamp}] {log_prefix}{message}\n"
+                self.log_text.insert(tk.END, full_message, level)
+            except Exception as e:
+                # 개별 로그 라인을 다시 그리다 오류가 발생해도 전체 작업이 중단되지 않도록 방지
+                # 문제가 된 로그와 오류 내용을 화면에 직접 출력하여 디버깅을 도움
+                try:
+                    error_log = f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [INTERNAL_ERROR] FAILED TO REDISPLAY LOG: {event} -> {e}\n"
+                    self.log_text.insert(tk.END, error_log, "ERROR")
+                except Exception:
+                    pass # 오류 로그를 표시하는 것마저 실패할 경우를 대비
+            
         self.log_text.config(state='disabled')
         self.log_text.see(tk.END)
 
@@ -921,6 +976,10 @@ class AssetExtractorApp:
         event = (timestamp, prefix, message_key, level, format_args)
         self.log_events.append(event)
         
+        if message_key == 'show_about_info':
+            self._display_about_info_in_log()
+            return
+            
         # Format and display immediately
         lang = self.lang.get()
         message_template = LANGUAGES[lang].get(message_key, message_key)
@@ -934,6 +993,34 @@ class AssetExtractorApp:
         
         self.log_text.config(state='normal')
         self.log_text.insert(tk.END, full_message, level)
+        self.log_text.config(state='disabled')
+        self.log_text.see(tk.END)
+
+    def _show_about_info(self):
+        # 로그 이벤트 리스트에 '정보 표시' 이벤트를 추가
+        self._log('show_about_info', level='ABOUT_CONTENT')
+
+    def _display_about_info_in_log(self):
+        lang = self.lang.get()
+        d = LANGUAGES[lang]
+        
+        separator = "-" * 70 + "\n"
+        
+        self.log_text.config(state='normal')
+        self.log_text.insert(tk.END, separator, "INFO")
+        
+        header_text = f"{d['about_header']}\n"
+        self.log_text.insert(tk.END, header_text, "ABOUT_HEADER")
+        
+        about_lines = []
+        for key, value in self.ABOUT_INFO.items():
+            label_key = f'about_label_{key}'
+            label_text = d.get(label_key, key.capitalize())
+            about_lines.append(f"  - {label_text} : {value}")
+        
+        self.log_text.insert(tk.END, "\n".join(about_lines) + "\n", "ABOUT_CONTENT")
+        self.log_text.insert(tk.END, separator, "INFO")
+        
         self.log_text.config(state='disabled')
         self.log_text.see(tk.END)
 
@@ -972,8 +1059,9 @@ class AssetExtractorApp:
         self.start_button.config(state=state)
         self.output_button.config(state=state)
         try:
-            self.menu_bar.entryconfig(1, state=state)
-            self.menu_bar.entryconfig(2, state=state)
+            self.menu_bar.entryconfig(1, state=state) # 파일 메뉴
+            self.menu_bar.entryconfig(2, state=state) # 언어 메뉴
+            self.menu_bar.entryconfig(3, state=state) # 정보 메뉴
         except tk.TclError:
             pass
     
@@ -1085,6 +1173,10 @@ class AssetExtractorApp:
 
     def _on_extraction_complete(self):
         """추출 완료 후 UI를 업데이트하는 메서드."""
+        # 큐에 남은 메시지가 모두 처리되도록 잠시 대기
+        self.root.after(200, self._finalize_completion)
+
+    def _finalize_completion(self):
         self._log("raw_text", format_args={'text': "========================================"})
         self._log('all_tasks_completed', "SUCCESS")
         self.is_running = False
