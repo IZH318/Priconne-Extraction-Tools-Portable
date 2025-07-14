@@ -786,8 +786,8 @@ class AssetExtractorApp:
     # 정보(About) 데이터
     ABOUT_INFO = {
         'program': "unity3d File Converter",
-        'version': "2.0",
-        'updated': "2025-07-14",
+        'version': "2.0.0",
+        'updated': "2025-07-15",
         'license': "MIT License",
         'developer': "(Github) IZH318",
         'website': "https://github.com/IZH318",
@@ -829,8 +829,8 @@ class AssetExtractorApp:
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.lang_menu = tk.Menu(self.menu_bar, tearoff=0)
 
-        self.menu_bar.add_cascade(label="", menu=self.file_menu, underline=0)
-        self.menu_bar.add_cascade(label="", menu=self.lang_menu, underline=0)
+        self.menu_bar.add_cascade(label="", menu=self.file_menu)
+        self.menu_bar.add_cascade(label="", menu=self.lang_menu)
         self.menu_bar.add_command(label="", command=self._show_about_info)
         
         self.file_menu.add_command(label="", command=self._select_files)
@@ -875,8 +875,9 @@ class AssetExtractorApp:
         self.log_text.tag_config("WARNING", background="#FFF3CD", foreground="#856404")
         self.log_text.tag_config("ERROR", background="#F8D7DA", foreground="#721C24")
         self.log_text.tag_config("SUCCESS", background="#D4EDDA", foreground="#155724")
-        self.log_text.tag_config("ABOUT_HEADER", foreground="#00008B", font=('TkDefaultFont', 9, 'bold'))
-        self.log_text.tag_config("ABOUT_CONTENT", foreground="#00008B")
+        # [MODIFIED] Removed special tags for 'About' info to use default styles.
+        # self.log_text.tag_config("ABOUT_HEADER", foreground="#00008B", font=('TkDefaultFont', 9, 'bold'))
+        # self.log_text.tag_config("ABOUT_CONTENT", foreground="#00008B")
 
         progress_info_frame = ttk.Frame(self.log_frame)
         progress_info_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(0, 5))
@@ -911,7 +912,8 @@ class AssetExtractorApp:
     def _on_language_change(self, *args):
         self._update_ui_text()
         d = LANGUAGES[self.lang.get()]
-        self._log('language_changed', format_args={'lang': d[f'lang_{self.lang.get()}']})
+        lang_name = d.get(f'lang_{self.lang.get()}', self.lang.get())
+        self._log('language_changed', format_args={'lang': lang_name})
         self._redisplay_logs()
 
     def _update_ui_text(self):
@@ -938,53 +940,33 @@ class AssetExtractorApp:
         """Clear and redisplay all logs in the current language."""
         self.log_text.config(state='normal')
         self.log_text.delete('1.0', tk.END)
-        lang = self.lang.get()
-        
         for event in self.log_events:
-            try:
-                timestamp, prefix, message_key, level, format_args = event
-                
-                if message_key == 'show_about_info':
-                    self._display_about_info_in_log()
-                    continue
-                
-                message_template = LANGUAGES[lang].get(message_key, message_key)
-                if message_key == 'raw_text':
-                    # 'raw_text'는 번역 대상이 아니므로 그대로 사용
-                    message = format_args['text']
-                else:
-                    # 번역이 필요한 메시지는 format을 사용하여 새 언어로 문자열 생성
-                    message = message_template.format(**format_args) if format_args else message_template
-
-                log_prefix = f"[{prefix}] " if prefix else ""
-                full_message = f"[{timestamp}] {log_prefix}{message}\n"
-                self.log_text.insert(tk.END, full_message, level)
-            except Exception as e:
-                # 개별 로그 라인을 다시 그리다 오류가 발생해도 전체 작업이 중단되지 않도록 방지
-                # 문제가 된 로그와 오류 내용을 화면에 직접 출력하여 디버깅을 도움
-                try:
-                    error_log = f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] [INTERNAL_ERROR] FAILED TO REDISPLAY LOG: {event} -> {e}\n"
-                    self.log_text.insert(tk.END, error_log, "ERROR")
-                except Exception:
-                    pass # 오류 로그를 표시하는 것마저 실패할 경우를 대비
-            
+            self._render_log_event(event) # Re-render each stored event
         self.log_text.config(state='disabled')
         self.log_text.see(tk.END)
 
-    def _log(self, message_key, level='INFO', format_args=None, prefix=None):
+    def _add_log_event(self, message_key, level='INFO', format_args=None, prefix=None):
+        """Adds a structured log event to the internal list (the 'Model')."""
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         event = (timestamp, prefix, message_key, level, format_args)
         self.log_events.append(event)
+        return event
+
+    def _render_log_event(self, event):
+        """Renders a single log event to the text widget (the 'View')."""
+        timestamp, prefix, message_key, level, format_args = event
         
+        # Special case: 'show_about_info' triggers a specific display function
         if message_key == 'show_about_info':
             self._display_about_info_in_log()
             return
-            
-        # Format and display immediately
+
         lang = self.lang.get()
         message_template = LANGUAGES[lang].get(message_key, message_key)
+        
+        # Handle different message types
         if message_key == 'raw_text':
-            message = format_args['text']
+            message = format_args.get('text', '') if format_args else ''
         else:
             message = message_template.format(**format_args) if format_args else message_template
         
@@ -996,11 +978,17 @@ class AssetExtractorApp:
         self.log_text.config(state='disabled')
         self.log_text.see(tk.END)
 
+    def _log(self, message_key, level='INFO', format_args=None, prefix=None):
+        """Main logging function. Stores the event and then renders it."""
+        event = self._add_log_event(message_key, level, format_args, prefix)
+        self._render_log_event(event)
+
     def _show_about_info(self):
-        # 로그 이벤트 리스트에 '정보 표시' 이벤트를 추가
-        self._log('show_about_info', level='ABOUT_CONTENT')
+        """[MODIFIED] Logs the intention to show 'About' info with INFO level."""
+        self._log('show_about_info', level='INFO')
 
     def _display_about_info_in_log(self):
+        """[MODIFIED] Renders the 'About' information using the default INFO style."""
         lang = self.lang.get()
         d = LANGUAGES[lang]
         
@@ -1010,7 +998,7 @@ class AssetExtractorApp:
         self.log_text.insert(tk.END, separator, "INFO")
         
         header_text = f"{d['about_header']}\n"
-        self.log_text.insert(tk.END, header_text, "ABOUT_HEADER")
+        self.log_text.insert(tk.END, header_text, "INFO") # Use INFO tag
         
         about_lines = []
         for key, value in self.ABOUT_INFO.items():
@@ -1018,7 +1006,7 @@ class AssetExtractorApp:
             label_text = d.get(label_key, key.capitalize())
             about_lines.append(f"  - {label_text} : {value}")
         
-        self.log_text.insert(tk.END, "\n".join(about_lines) + "\n", "ABOUT_CONTENT")
+        self.log_text.insert(tk.END, "\n".join(about_lines) + "\n", "INFO") # Use INFO tag
         self.log_text.insert(tk.END, separator, "INFO")
         
         self.log_text.config(state='disabled')
