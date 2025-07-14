@@ -1,3 +1,5 @@
+# --- START OF FILE 0304.py ---
+
 import os
 import sys
 import subprocess
@@ -29,6 +31,7 @@ LANGUAGES = {
         'overwrite_option': "기존 파일 덮어쓰기",
         'log_section': "처리 내역",
         # 메뉴 및 정보
+        'menu_language': "언어",
         'menu_info': "정보",
         'about_header': "[ 프로그램 정보 ]",
         'about_label_program': "프로그램 이름",
@@ -79,6 +82,142 @@ LANGUAGES = {
         'ffmpeg_zip_structure_error': "FFmpeg ZIP 파일 내부에 예상되는 폴더 구조를 찾을 수 없습니다.",
         'ffmpeg_exe_not_found_in_zip': "압축 해제 후 '{path}'를 찾을 수 없습니다. ZIP 파일 구조를 확인해주세요.",
         'ffmpeg_downloading': "FFmpeg 다운로드 중... (진행: {progress:.1f}%)",
+    },
+    'en': {
+        'window_title': "Audio/Video Converter",
+        'video_tab': "Video Converter (.usm → .mp4)",
+        'audio_tab': "Audio Converter (.awb → .wav)",
+        'input_section': "1. Select Source Files/Folders",
+        'add_files': "Add Files",
+        'add_folder': "Add Folder",
+        'file_list_section': "File List",
+        'output_section': "2. Select Output Path",
+        'browse': "Browse",
+        'action_section': "3. Run Conversion",
+        'start_conversion': "Start Conversion",
+        'cancel_conversion': "Cancel Conversion",
+        'overwrite_option': "Overwrite existing files",
+        'log_section': "Processing Log",
+        # Menus and Info
+        'menu_language': "Language",
+        'menu_info': "Info",
+        'about_header': "[ Program Information ]",
+        'about_label_program': "Program Name",
+        'about_label_version': "Version",
+        'about_label_updated': "Last Updated",
+        'about_label_license': "License",
+        'about_label_developer': "Developer",
+        'about_label_website': "Website",
+        # Listbox Menu
+        'remove_selected': "Remove Selected",
+        'remove_all': "Remove All",
+        # Messages and Errors
+        'alert_files_exist': "[Alert] The selected files already exist in the list.",
+        'log_files_added': "{count} new files have been added.",
+        'log_total_files': "Total files: {total}",
+        'log_files_removed': "{count} files have been removed from the list.",
+        'log_all_files_removed': "The entire file list has been cleared. ({count} files)",
+        'log_conversion_cancelled': "The conversion task was cancelled by the user.",
+        'error_no_files': "[Error] Please add files to convert first.",
+        'error_no_output_video': "[Error] Please specify a path to save the videos.",
+        'error_no_output_audio': "[Error] Please specify a path to save the audios.",
+        # Status Label Text
+        'status_idle': "Status: Idle",
+        'status_starting': "Starting... (Total {total})",
+        'status_processing': "Processing: {current} / {total}",
+        'status_complete': "Completed: {current} / {total}",
+        'status_cancelled': "Cancelled: {current} / {total}",
+        # Initial Status Log
+        'env_check_header': "--- Program Environment Check ---",
+        'env_success': "  [Success] {tool_name} found",
+        'env_path': "    > Path: {path}",
+        'env_error': "  [Error] Could not find {tool_name}",
+        'env_error_desc_video': "    > The video conversion tab may not function correctly.",
+        'env_error_desc_audio': "    > The audio conversion tab may not function correctly.",
+        'env_error_desc_ffmpeg_auto_download': "    > FFmpeg will be downloaded automatically when video conversion starts.",
+        'env_check_footer': "-----------------------------",
+        # FFmpeg related messages
+        'ffmpeg_not_found': "[Alert] FFmpeg (ffmpeg.exe) not found. Attempting to download and install to {path}.",
+        'ffmpeg_already_exists': "[Alert] FFmpeg (ffmpeg.exe) already exists at {path}. (Skipping)",
+        'ffmpeg_download_start': "  > Starting FFmpeg download: {url}",
+        'ffmpeg_download_complete': "  > FFmpeg download complete.",
+        'ffmpeg_download_fail': "[Error] FFmpeg download failed: {error}",
+        'ffmpeg_extract_start': "  > Starting FFmpeg extraction...",
+        'ffmpeg_extract_complete': "  > FFmpeg extraction and installation complete: {path}",
+        'ffmpeg_extract_fail': "[Error] FFmpeg extraction and installation failed: {error}",
+        'ffmpeg_prepare_fail': "[Error] Cannot start video conversion because FFmpeg is not ready.",
+        'ffmpeg_no_usm_path': "[Error] Cannot determine where to download FFmpeg because UsmToolkit.exe path is unknown. Aborting.",
+        'ffmpeg_zip_structure_error': "Could not find the expected folder structure within the FFmpeg ZIP file.",
+        'ffmpeg_exe_not_found_in_zip': "Could not find '{path}' after extraction. Please check the ZIP file structure.",
+        'ffmpeg_downloading': "Downloading FFmpeg... (Progress: {progress:.1f}%)",
+    },
+    'ja': {
+        'window_title': "オーディオ/ビデオコンバーター",
+        'video_tab': "ビデオコンバーター (.usm → .mp4)",
+        'audio_tab': "オーディオコンバーター (.awb → .wav)",
+        'input_section': "1. 元ファイル/フォルダを選択",
+        'add_files': "ファイル追加",
+        'add_folder': "フォルダ追加",
+        'file_list_section': "ファイル一覧",
+        'output_section': "2. 保存先を選択",
+        'browse': "参照",
+        'action_section': "3. 変換実行",
+        'start_conversion': "変換開始",
+        'cancel_conversion': "変換中止",
+        'overwrite_option': "既存のファイルを上書き",
+        'log_section': "処理履歴",
+        # メニューと情報
+        'menu_language': "言語",
+        'menu_info': "情報",
+        'about_header': "[ プログラム情報 ]",
+        'about_label_program': "プログラム名",
+        'about_label_version': "バージョン",
+        'about_label_updated': "最終更新日",
+        'about_label_license': "ライセンス",
+        'about_label_developer': "開発者",
+        'about_label_website': "ウェブサイト",
+        # リストボックスメニュー
+        'remove_selected': "選択項目を削除",
+        'remove_all': "すべての項目を削除",
+        # メッセージとエラー
+        'alert_files_exist': "[通知] 選択したファイルは既にリストに存在します。",
+        'log_files_added': "{count}個の新しいファイルが追加されました。",
+        'log_total_files': "総ファイル数: {total}個",
+        'log_files_removed': "{count}個のファイルがリストから削除されました。",
+        'log_all_files_removed': "ファイルリスト全体が削除されました。({count}個)",
+        'log_conversion_cancelled': "ユーザーによって変換作業が中止されました。",
+        'error_no_files': "[エラー] 変換するファイルを追加してください。",
+        'error_no_output_video': "[エラー] ビデオを保存するパスを指定してください。",
+        'error_no_output_audio': "[エラー] オーディオを保存するパスを指定してください。",
+        # ステータスラベルテキスト
+        'status_idle': "状態: 待機中",
+        'status_starting': "処理開始... (総 {total}個)",
+        'status_processing': "処理中: {current} / {total}",
+        'status_complete': "完了: {current} / {total}",
+        'status_cancelled': "中止: {current} / {total}",
+        # 初期ステータスログ
+        'env_check_header': "--- プログラム環境チェック ---",
+        'env_success': "  [成功] {tool_name} を発見",
+        'env_path': "    > パス: {path}",
+        'env_error': "  [エラー] {tool_name} が見つかりません",
+        'env_error_desc_video': "    > ビデオ変換タブが正常に動作しない可能性があります。",
+        'env_error_desc_audio': "    > オーディオ変換タブが正常に動作しない可能性があります。",
+        'env_error_desc_ffmpeg_auto_download': "    > ビデオ変換開始時にFFmpegを自動的にダウンロードします。",
+        'env_check_footer': "--------------------------",
+        # FFmpeg関連のメッセージ
+        'ffmpeg_not_found': "[通知] FFmpeg (ffmpeg.exe) が見つかりません。{path} へダウンロードとインストールを試みます。",
+        'ffmpeg_already_exists': "[通知] FFmpeg (ffmpeg.exe) は {path} に既に存在します。(スキップ)",
+        'ffmpeg_download_start': "  > FFmpegダウンロード開始: {url}",
+        'ffmpeg_download_complete': "  > FFmpegダウンロード完了。",
+        'ffmpeg_download_fail': "[エラー] FFmpegダウンロード失敗: {error}",
+        'ffmpeg_extract_start': "  > FFmpeg展開開始...",
+        'ffmpeg_extract_complete': "  > FFmpeg展開とインストール完了: {path}",
+        'ffmpeg_extract_fail': "[エラー] FFmpeg展開とインストール失敗: {error}",
+        'ffmpeg_prepare_fail': "[エラー] FFmpegの準備ができていないため、ビデオ変換を開始できません。",
+        'ffmpeg_no_usm_path': "[エラー] UsmToolkit.exeのパスが不明なため、FFmpegのダウンロード先を決定できません。変換を中止します。",
+        'ffmpeg_zip_structure_error': "FFmpegのZIPファイル内に予期されるフォルダ構造が見つかりません。",
+        'ffmpeg_exe_not_found_in_zip': "展開後、'{path}'が見つかりませんでした。ZIPファイルの構造を確認してください。",
+        'ffmpeg_downloading': "FFmpegダウンロード中... (進捗: {progress:.1f}%)",
     }
 }
 
@@ -87,9 +226,10 @@ class ConversionLogic:
     cpu_threads = os.cpu_count() or 1
     MAX_WORKERS = max(1, cpu_threads // 2)
 
-    def __init__(self, log_queue, base_path):
+    def __init__(self, log_queue, base_path, get_lang_data_func):
         self.log_queue = log_queue
         self.base_path = base_path
+        self.get_lang_data = get_lang_data_func  # 언어 데이터를 동적으로 가져오기 위한 함수
         self._log(f"[시스템] 시스템 부하를 고려하여 최대 {self.MAX_WORKERS}개의 파일을 동시에 변환합니다.", 'video')
         self._log(f"[시스템] 시스템 부하를 고려하여 최대 {self.MAX_WORKERS}개의 파일을 동시에 변환합니다.", 'audio')
 
@@ -145,6 +285,7 @@ class ConversionLogic:
 
     def run_video_conversion(self, input_paths, output_dir, usmtoolkit_path, cancel_event):
         target_tab = 'video'
+        d = self.get_lang_data()
         self._log("\n--- 비디오 변환 작업을 시작합니다. ---", target_tab)
         self._log("[알림] 기존 파일은 항상 건너뜁니다.", target_tab)
         if not usmtoolkit_path:
@@ -171,7 +312,7 @@ class ConversionLogic:
                 finally:
                     completed_tasks += 1
                     self.log_queue.put(('progress_update', target_tab, completed_tasks))
-        if cancel_event.is_set(): self._log(f"\n{LANGUAGES['ko']['log_conversion_cancelled']}", target_tab)
+        if cancel_event.is_set(): self._log(f"\n{d['log_conversion_cancelled']}", target_tab)
         self._log("\n--- 비디오 변환 작업이 완료되었습니다. ---", target_tab)
         summary = f"총 {total_files}개 파일 중 {success_count}개 변환, {skipped_count}개 건너뜀, {error_count}개 오류.\n"
         self._log(summary, target_tab)
@@ -179,6 +320,7 @@ class ConversionLogic:
 
     def run_audio_conversion(self, input_paths, output_dir, vgmstream_path, overwrite, cancel_event):
         target_tab = 'audio'
+        d = self.get_lang_data()
         self._log("\n--- 오디오 변환 작업을 시작합니다. ---", target_tab)
         self._log("[옵션] 기존 파일을 덮어씁니다." if overwrite else "[옵션] 기존 파일은 건너뜠습니다.", target_tab)
 
@@ -207,7 +349,7 @@ class ConversionLogic:
                     completed_tasks += 1
                     self.log_queue.put(('progress_update', target_tab, completed_tasks))
                     
-        if cancel_event.is_set(): self._log(f"\n{LANGUAGES['ko']['log_conversion_cancelled']}", target_tab)
+        if cancel_event.is_set(): self._log(f"\n{d['log_conversion_cancelled']}", target_tab)
 
         self._log("\n--- 오디오 변환 작업이 완료되었습니다. ---", target_tab)
         self._log(f"총 {total_converted_tracks}개의 트랙이 WAV 파일로 변환되었습니다.\n", target_tab)
@@ -232,6 +374,7 @@ class ConversionLogic:
 
     def _convert_audio_container(self, item_path_str, output_dir, vgmstream_path, overwrite, cancel_event):
         item_path = Path(item_path_str)
+        d = self.get_lang_data()
         log_lines = ["\n" + "-" * 60, f"  [원본]\n    {self._get_relative_path(item_path)}", "\n  [결과]"]
         total_converted = 0
         
@@ -267,7 +410,7 @@ class ConversionLogic:
                     log_lines.append("\n    [상세 오류]")
                     log_lines.extend([f"      > {line}" for line in error_output.splitlines()])
 
-        if cancel_event.is_set(): log_lines.append(f"\n{LANGUAGES['ko']['log_conversion_cancelled']}")
+        if cancel_event.is_set(): log_lines.append(f"\n{d['log_conversion_cancelled']}")
         log_lines.append("-" * 60)
         return total_converted, log_lines
 
@@ -277,21 +420,22 @@ class FFmpegDownloader:
     FFMPEG_ZIP_FILENAME = "ffmpeg_temp.zip"
     FFMPEG_EXE_NAME = "ffmpeg.exe"
 
-    def __init__(self, log_queue, usmtoolkit_path_parent_dir: Path):
+    def __init__(self, log_queue, usmtoolkit_path_parent_dir: Path, get_lang_data_func):
         self.log_queue = log_queue
         self.download_dir = usmtoolkit_path_parent_dir
         self.ffmpeg_path = self.download_dir / self.FFMPEG_EXE_NAME
-        self.d = LANGUAGES['ko']
+        self.get_lang_data = get_lang_data_func
         os.makedirs(self.download_dir, exist_ok=True)
 
     def _log(self, message):
         self.log_queue.put(('log', 'video', message))
 
     def _update_progress_status(self, progress_value=None):
+        d = self.get_lang_data()
         if progress_value is not None:
-            self.log_queue.put(('progress_update_status', 'video', self.d['ffmpeg_downloading'].format(progress=progress_value), progress_value))
+            self.log_queue.put(('progress_update_status', 'video', d['ffmpeg_downloading'].format(progress=progress_value), progress_value))
         else:
-            self.log_queue.put(('progress_update_status', 'video', self.d['status_idle'], 0))
+            self.log_queue.put(('progress_update_status', 'video', d['status_idle'], 0))
 
     def ensure_ffmpeg_ready(self) -> concurrent.futures.Future:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -301,12 +445,13 @@ class FFmpegDownloader:
     def _actual_download_and_extract(self) -> bool:
         local_zip_path = self.download_dir / self.FFMPEG_ZIP_FILENAME
         temp_extract_dir = None
+        d = self.get_lang_data()
         if self.ffmpeg_path.exists():
-            self._log(self.d['ffmpeg_already_exists'].format(path=self.download_dir))
+            self._log(d['ffmpeg_already_exists'].format(path=self.download_dir))
             return True
-        self._log(self.d['ffmpeg_not_found'].format(path=self.download_dir))
+        self._log(d['ffmpeg_not_found'].format(path=self.download_dir))
         try:
-            self._log(self.d['ffmpeg_download_start'].format(url=self.FFMPEG_URL))
+            self._log(d['ffmpeg_download_start'].format(url=self.FFMPEG_URL))
             self._update_progress_status(0)
             with urllib.request.urlopen(self.FFMPEG_URL) as response:
                 if response.status != 200:
@@ -323,9 +468,9 @@ class FFmpegDownloader:
                         if total_size > 0:
                             progress = (block_num * block_size / total_size) * 100
                             self._update_progress_status(progress)
-            self._log(self.d['ffmpeg_download_complete'])
+            self._log(d['ffmpeg_download_complete'])
             self._update_progress_status(100)
-            self._log(self.d['ffmpeg_extract_start'])
+            self._log(d['ffmpeg_extract_start'])
             temp_extract_dir = self.download_dir / "ffmpeg_extracted_temp"
             os.makedirs(temp_extract_dir, exist_ok=True)
             with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
@@ -335,14 +480,14 @@ class FFmpegDownloader:
                         ffmpeg_internal_path = name
                         break
                 if not ffmpeg_internal_path:
-                    raise Exception(self.d['ffmpeg_zip_structure_error'])
+                    raise Exception(d['ffmpeg_zip_structure_error'])
                 zip_ref.extract(ffmpeg_internal_path, temp_extract_dir)
                 extracted_exe_full_path = temp_extract_dir / ffmpeg_internal_path
                 shutil.move(extracted_exe_full_path, self.ffmpeg_path)
-            self._log(self.d['ffmpeg_extract_complete'].format(path=self.ffmpeg_path))
+            self._log(d['ffmpeg_extract_complete'].format(path=self.ffmpeg_path))
             return True
         except Exception as e:
-            self._log(self.d['ffmpeg_download_fail'].format(error=e))
+            self._log(d['ffmpeg_download_fail'].format(error=e))
             self._update_progress_status(0)
             return False
         finally:
@@ -377,13 +522,13 @@ class App(tk.Tk):
         
         self.base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
         self.log_queue = queue.Queue()
-        self.logic = ConversionLogic(self.log_queue, self.base_path)
+        self.logic = ConversionLogic(self.log_queue, self.base_path, lambda: self.lang_data)
 
         self._configure_window()
         self._find_tools()
         
         ffmpeg_parent_dir = self.usmtoolkit_path.parent if self.usmtoolkit_path else self.base_path
-        self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir)
+        self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir, lambda: self.lang_data)
 
         self._setup_ui()
         self._log_initial_status()
@@ -413,14 +558,82 @@ class App(tk.Tk):
         self.notebook.add(self.video_tab, text=self.lang_data['video_tab'])
         self.notebook.add(self.audio_tab, text=self.lang_data['audio_tab'])
         
-        self.video_widgets, self.video_log_text = self._build_conversion_tab_ui(self.video_tab, 'video')
-        self.audio_widgets, self.audio_log_text = self._build_conversion_tab_ui(self.audio_tab, 'audio')
+        self.video_widgets, self.video_log_text, self.video_ui_elements = self._build_conversion_tab_ui(self.video_tab, 'video')
+        self.audio_widgets, self.audio_log_text, self.audio_ui_elements = self._build_conversion_tab_ui(self.audio_tab, 'audio')
 
     def _create_main_menu(self):
-        menubar = Menu(self)
-        self.config(menu=menubar)
+        self.menubar = Menu(self)
+        self.config(menu=self.menubar)
         d = self.lang_data
-        menubar.add_command(label=d['menu_info'], command=self._show_about_info)
+
+        # 정보 메뉴
+        self.info_menu_label = d['menu_info']
+        self.menubar.add_command(label=self.info_menu_label, command=self._show_about_info)
+        
+        # 언어 메뉴
+        self.lang_menu_label = d['menu_language']
+        self.lang_menu = Menu(self.menubar, tearoff=0)
+        self.lang_menu.add_command(label="한국어", command=lambda: self.switch_language('ko'))
+        self.lang_menu.add_command(label="English", command=lambda: self.switch_language('en'))
+        self.lang_menu.add_command(label="日本語", command=lambda: self.switch_language('ja'))
+        self.menubar.add_cascade(label=self.lang_menu_label, menu=self.lang_menu)
+
+    def switch_language(self, lang_code):
+        if lang_code in LANGUAGES:
+            self.lang_data = LANGUAGES[lang_code]
+            self._update_ui_text()
+
+    def _update_ui_text(self):
+        d = self.lang_data
+        
+        # 윈도우 제목
+        self.title(d['window_title'])
+        
+        # 메인 메뉴
+        self.menubar.entryconfig(self.info_menu_label, label=d['menu_info'])
+        self.menubar.entryconfig(self.lang_menu_label, label=d['menu_language'])
+        self.info_menu_label = d['menu_info'] # 다음 업데이트를 위해 레이블 이름 자체를 갱신
+        self.lang_menu_label = d['menu_language']
+
+        # 노트북 탭
+        self.notebook.tab(self.video_tab, text=d['video_tab'])
+        self.notebook.tab(self.audio_tab, text=d['audio_tab'])
+
+        # 비디오 탭 UI
+        self.video_ui_elements['log_frame_container'].config(text=d['log_section'])
+        self.video_ui_elements['input_frame'].config(text=d['input_section'])
+        self.video_widgets['add_files_btn'].config(text=d['add_files'])
+        self.video_widgets['add_folder_btn'].config(text=d['add_folder'])
+        self.video_ui_elements['list_container'].config(text=d['file_list_section'])
+        self.video_ui_elements['output_frame'].config(text=d['output_section'])
+        self.video_ui_elements['browse_btn'].config(text=d['browse'])
+        self.video_ui_elements['action_frame'].config(text=d['action_section'])
+
+        is_video_converting = self.video_widgets['action_btn']['state'] == 'disabled'
+        self.video_widgets['action_btn'].config(text=d['cancel_conversion'] if is_video_converting else d['start_conversion'])
+        
+        if not is_video_converting:
+            self.video_widgets['status_label'].config(text=d['status_idle'])
+
+        # 오디오 탭 UI
+        self.audio_ui_elements['log_frame_container'].config(text=d['log_section'])
+        self.audio_ui_elements['input_frame'].config(text=d['input_section'])
+        self.audio_widgets['add_files_btn'].config(text=d['add_files'])
+        self.audio_widgets['add_folder_btn'].config(text=d['add_folder'])
+        self.audio_ui_elements['list_container'].config(text=d['file_list_section'])
+        self.audio_ui_elements['output_frame'].config(text=d['output_section'])
+        self.audio_ui_elements['browse_btn'].config(text=d['browse'])
+        self.audio_ui_elements['action_frame'].config(text=d['action_section'])
+        
+        is_audio_converting = self.audio_widgets['action_btn']['state'] == 'disabled'
+        self.audio_widgets['action_btn'].config(text=d['cancel_conversion'] if is_audio_converting else d['start_conversion'])
+        self.audio_widgets['overwrite_check'].config(text=d['overwrite_option'])
+        
+        if not is_audio_converting:
+            self.audio_widgets['status_label'].config(text=d['status_idle'])
+
+        # **중요**: 로그 창을 클리어하는 로직을 여기서 제거
+        # self._log_initial_status() # 이 줄을 호출하지 않음
         
     def _show_about_info(self):
         d = self.lang_data
@@ -493,7 +706,8 @@ class App(tk.Tk):
         output_frame.pack(fill='x', pady=5, padx=5)
         output_entry = ttk.Entry(output_frame, state='readonly')
         output_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
-        ttk.Button(output_frame, text=d['browse'], command=lambda: self._select_output_folder(output_entry)).pack(side='left', padx=5, pady=5)
+        browse_btn = ttk.Button(output_frame, text=d['browse'], command=lambda: self._select_output_folder(output_entry))
+        browse_btn.pack(side='left', padx=5, pady=5)
 
         action_frame = ttk.LabelFrame(controls_frame, text=d['action_section'])
         action_frame.pack(fill='x', pady=5, padx=5)
@@ -502,6 +716,11 @@ class App(tk.Tk):
         widgets_dict = {
             'action_btn': action_button, 'add_files_btn': add_files_btn, 'add_folder_btn': add_folder_btn,
             'output_entry': output_entry, 'progress': progress_bar, 'status_label': status_label
+        }
+
+        ui_elements_for_lang_update = {
+            'log_frame_container': log_frame_container, 'input_frame': input_frame, 'list_container': list_container,
+            'output_frame': output_frame, 'action_frame': action_frame, 'browse_btn': browse_btn
         }
         
         if is_audio_tab:
@@ -514,7 +733,7 @@ class App(tk.Tk):
             action_button.pack(fill='x', pady=5, padx=5)
             action_button.config(command=lambda: self.start_video_conversion(output_entry.get()))
 
-        return widgets_dict, log_text_widget
+        return widgets_dict, log_text_widget, ui_elements_for_lang_update
     
     def _log_initial_status(self):
         d = self.lang_data
@@ -540,15 +759,17 @@ class App(tk.Tk):
         self.log_to_gui('\n'.join(audio_log_lines), self.audio_log_text, clear_first=True)
 
     def _create_right_click_menu(self, listbox, full_paths, filenames_var, log_widget):
-        d = self.lang_data
         menu = Menu(listbox, tearoff=0)
         
-        menu.add_command(label=d['remove_selected'], command=lambda: self._remove_selected_from_list(listbox, full_paths, filenames_var, log_widget))
-        menu.add_command(label=d['remove_all'], command=lambda: self._clear_list(full_paths, filenames_var, log_widget))
+        # 메뉴 항목을 추가. 텍스트는 show_menu에서 동적으로 설정됨
+        menu.add_command(label="", command=lambda: self._remove_selected_from_list(listbox, full_paths, filenames_var, log_widget))
+        menu.add_command(label="", command=lambda: self._clear_list(full_paths, filenames_var, log_widget))
         
         def show_menu(event):
-            menu.entryconfig(d['remove_selected'], state="normal" if listbox.curselection() else "disabled")
-            menu.entryconfig(d['remove_all'], state="normal" if listbox.size() > 0 else "disabled")
+            # 메뉴를 보여주기 직전에 현재 언어로 텍스트를 업데이트
+            d = self.lang_data
+            menu.entryconfig(0, label=d['remove_selected'], state="normal" if listbox.curselection() else "disabled")
+            menu.entryconfig(1, label=d['remove_all'], state="normal" if listbox.size() > 0 else "disabled")
             menu.post(event.x_root, event.y_root)
 
         listbox.bind("<Button-3>", show_menu)
@@ -562,6 +783,7 @@ class App(tk.Tk):
 
     def _reset_video_ui_state(self):
         d = self.lang_data
+        self.video_cancel_event.clear()
         self._set_ui_state(self.video_widgets, 'normal')
         self.video_widgets['action_btn'].config(text=d['start_conversion'], state='normal', command=lambda: self.start_video_conversion(self.video_widgets['output_entry'].get()))
         self.video_widgets['status_label'].config(text=d['status_idle'])
@@ -569,6 +791,7 @@ class App(tk.Tk):
 
     def _reset_audio_ui_state(self):
         d = self.lang_data
+        self.audio_cancel_event.clear()
         self._set_ui_state(self.audio_widgets, 'normal')
         self.audio_widgets['action_btn'].config(text=d['start_conversion'], state='normal', command=lambda: self.start_audio_conversion(self.audio_widgets['output_entry'].get(), self.audio_overwrite_var.get()))
         self.audio_widgets['status_label'].config(text=d['status_idle'])
@@ -634,14 +857,16 @@ class App(tk.Tk):
         download_future = self.ffmpeg_downloader.ensure_ffmpeg_ready()
         
         def on_download_complete(future):
+            d_callback = self.lang_data
             ffmpeg_ready = future.result()
             if ffmpeg_ready:
-                self.video_widgets['status_label'].config(text=d['status_idle'])
+                self.video_widgets['status_label'].config(text=d_callback['status_idle'])
                 self.video_widgets['progress']['value'] = 0
+                self.video_cancel_event.clear()
                 threading.Thread(target=self.logic.run_video_conversion, daemon=True, args=(self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.video_cancel_event)).start()
-                self.video_widgets['action_btn'].config(text=d['cancel_conversion'], command=self.cancel_video_conversion, state='normal')
+                self.video_widgets['action_btn'].config(text=d_callback['cancel_conversion'], command=self.cancel_video_conversion, state='normal')
             else:
-                self.log_to_gui(f"\n{d['ffmpeg_prepare_fail']}\n", self.video_log_text)
+                self.log_to_gui(f"\n{d_callback['ffmpeg_prepare_fail']}\n", self.video_log_text)
                 self._reset_video_ui_state()
 
         download_future.add_done_callback(on_download_complete)
@@ -656,7 +881,7 @@ class App(tk.Tk):
 
         self.audio_cancel_event.clear()
         self._set_ui_state(self.audio_widgets, 'disabled')
-        self.audio_widgets['action_btn'].config(text=d['cancel_conversion'], command=self.cancel_audio_conversion)
+        self.audio_widgets['action_btn'].config(text=d['cancel_conversion'], command=self.cancel_audio_conversion, state='normal')
         threading.Thread(target=self.logic.run_audio_conversion, daemon=True, args=(self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.audio_cancel_event)).start()
 
     def cancel_audio_conversion(self):
@@ -675,10 +900,10 @@ class App(tk.Tk):
             for _ in range(MAX_MESSAGES_PER_CYCLE):
                 msg = self.log_queue.get_nowait()
                 msg_type, *args = msg
+                d = self.lang_data
                 
                 if msg_type.startswith('__'): 
                     was_cancelled = args[0]
-                    d = self.lang_data
                     if msg_type == '__VIDEO_DONE__':
                         widgets, total = self.video_widgets, self.video_total_files
                         current = widgets['progress']['value']
@@ -704,7 +929,7 @@ class App(tk.Tk):
                     else: self.audio_total_files = total
                     
                     widgets['progress'].config(maximum=total, value=0)
-                    widgets['status_label'].config(text=self.lang_data['status_starting'].format(total=total))
+                    widgets['status_label'].config(text=d['status_starting'].format(total=total))
                 
                 elif msg_type == 'progress_update':
                     target_tab, value = args
@@ -712,7 +937,7 @@ class App(tk.Tk):
                     total = self.video_total_files if target_tab == 'video' else self.audio_total_files
                     
                     widgets['progress']['value'] = value
-                    widgets['status_label'].config(text=self.lang_data['status_processing'].format(current=value, total=total))
+                    widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
                 
                 elif msg_type == 'progress_update_status':
                     target_tab, status_text, progress_value = args
