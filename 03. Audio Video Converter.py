@@ -1,7 +1,5 @@
 # --- START OF FILE 03. Audio Video Converter.py ---
 
-# --- START OF FILE 0304.py ---
-
 import os
 import sys
 import subprocess
@@ -15,7 +13,7 @@ import urllib.request
 import zipfile
 import shutil
 
-# --- 다국어 텍스트 데이터 (About 정보 관련 키 추가) ---
+# --- 다국어 텍스트 데이터 ---
 LANGUAGES = {
     'ko': {
         'window_title': "오디오/비디오 변환기",
@@ -99,6 +97,7 @@ LANGUAGES = {
         'conv_audio_stream_success': "    성공: {path}",
         'conv_audio_stream_fail': "    [오류] 스트림 #{index} 변환 실패 - {name}",
         # FFmpeg 관련 메시지
+        'ffmpeg_preparing': "FFmpeg 준비 중... (필요 시 다운로드)",
         'ffmpeg_not_found': "[알림] FFmpeg (ffmpeg.exe)이 발견되지 않았습니다. {path} 경로로 다운로드 및 설치를 시도합니다.",
         'ffmpeg_already_exists': "[알림] FFmpeg (ffmpeg.exe)이 {path} 경로에 이미 존재합니다. (패스)",
         'ffmpeg_download_start': "  > FFmpeg 다운로드 시작: {url}",
@@ -111,7 +110,6 @@ LANGUAGES = {
         'ffmpeg_no_usm_path': "[오류] UsmToolkit.exe 경로를 알 수 없어 FFmpeg을 다운로드할 위치를 결정할 수 없습니다. 변환을 중단합니다.",
         'ffmpeg_zip_structure_error': "FFmpeg ZIP 파일 내부에 예상되는 폴더 구조를 찾을 수 없습니다.",
         'ffmpeg_exe_not_found_in_zip': "압축 해제 후 '{path}'를 찾을 수 없습니다. ZIP 파일 구조를 확인해주세요.",
-        'ffmpeg_downloading': "FFmpeg 다운로드 중... (진행: {progress:.1f}%)",
     },
     'en': {
         'window_title': "Audio/Video Converter",
@@ -188,6 +186,7 @@ LANGUAGES = {
         'conv_audio_stream_skipped': "    Notice: Already converted file (skipped) - {filename}",
         'conv_audio_stream_success': "    Success: {path}",
         'conv_audio_stream_fail': "    [Error] Stream #{index} conversion failed - {name}",
+        'ffmpeg_preparing': "Preparing FFmpeg... (downloading if needed)",
         'ffmpeg_not_found': "[Alert] FFmpeg (ffmpeg.exe) not found. Attempting to download and install to {path}.",
         'ffmpeg_already_exists': "[Alert] FFmpeg (ffmpeg.exe) already exists at {path}. (Skipping)",
         'ffmpeg_download_start': "  > Starting FFmpeg download: {url}",
@@ -200,7 +199,6 @@ LANGUAGES = {
         'ffmpeg_no_usm_path': "[Error] Cannot determine where to download FFmpeg because UsmToolkit.exe path is unknown. Aborting.",
         'ffmpeg_zip_structure_error': "Could not find the expected folder structure within the FFmpeg ZIP file.",
         'ffmpeg_exe_not_found_in_zip': "Could not find '{path}' after extraction. Please check the ZIP file structure.",
-        'ffmpeg_downloading': "Downloading FFmpeg... (Progress: {progress:.1f}%)",
     },
     'ja': {
         'window_title': "オーディオ/ビデオコンバーター",
@@ -277,6 +275,7 @@ LANGUAGES = {
         'conv_audio_stream_skipped': "    通知: 変換済みのファイル（スキップ） - {filename}",
         'conv_audio_stream_success': "    成功: {path}",
         'conv_audio_stream_fail': "    [エラー] ストリーム#{index}の変換に失敗 - {name}",
+        'ffmpeg_preparing': "FFmpegを準備中... (必要に応じてダウンロード)",
         'ffmpeg_not_found': "[通知] FFmpeg (ffmpeg.exe) が見つかりません。{path} へダウンロードとインストールを試みます。",
         'ffmpeg_already_exists': "[通知] FFmpeg (ffmpeg.exe) は {path} に既に存在します。(スキップ)",
         'ffmpeg_download_start': "  > FFmpegダウンロード開始: {url}",
@@ -289,7 +288,6 @@ LANGUAGES = {
         'ffmpeg_no_usm_path': "[エラー] UsmToolkit.exeのパスが不明なため、FFmpegのダウンロード先を決定できません。変換を中止します。",
         'ffmpeg_zip_structure_error': "FFmpegのZIPファイル内に予期されるフォルダ構造が見つかりません。",
         'ffmpeg_exe_not_found_in_zip': "展開後、'{path}'が見つかりませんでした。ZIPファイルの構造を確認してください。",
-        'ffmpeg_downloading': "FFmpegダウンロード中... (進捗: {progress:.1f}%)",
     }
 }
 
@@ -492,7 +490,7 @@ class ConversionLogic:
         log_entries.append(('raw', {'text': "-" * 60}))
         return total_converted, log_entries
 
-# --- FFmpeg 다운로드 및 설치 클래스 ---
+# --- FFmpeg 다운로드 및 설치 클래스 (단순화 버전) ---
 class FFmpegDownloader:
     FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
     FFMPEG_ZIP_FILENAME = "ffmpeg_temp.zip"
@@ -508,16 +506,10 @@ class FFmpegDownloader:
     def _log_entry(self, log_key, **kwargs):
         self.log_queue.put(('log_entry', 'video', log_key, kwargs))
 
-    def _update_progress_status(self, progress_value=None):
-        d = self.get_lang_data()
-        if progress_value is not None:
-            self.log_queue.put(('progress_update_status', 'video', d['ffmpeg_downloading'].format(progress=progress_value), progress_value))
-        else:
-            self.log_queue.put(('progress_update_status', 'video', d['status_idle'], 0))
-
     def ensure_ffmpeg_ready(self) -> concurrent.futures.Future:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self._actual_download_and_extract)
+        executor.shutdown(wait=False)
         return future
 
     def _actual_download_and_extract(self) -> bool:
@@ -526,34 +518,17 @@ class FFmpegDownloader:
         
         if self.ffmpeg_path.exists():
             self._log_entry('ffmpeg_already_exists', path=self.download_dir)
-            # [수정됨] 이미 존재할 때도 100% 완료 신호를 보냄
-            self.log_queue.put(('__FFMPEG_DOWNLOAD_PROGRESS__', 100.0))
             return True
 
         self._log_entry('ffmpeg_not_found', path=self.download_dir)
         try:
             self._log_entry('ffmpeg_download_start', url=self.FFMPEG_URL)
-            self._update_progress_status(0)
-            with urllib.request.urlopen(self.FFMPEG_URL) as response:
+            with urllib.request.urlopen(self.FFMPEG_URL) as response, open(local_zip_path, 'wb') as out_file:
                 if response.status != 200:
                     raise Exception(f"HTTP Error: {response.status} {response.reason}")
-                total_size = int(response.info().get('Content-Length', -1))
-                block_size = 8192
-                downloaded_size = 0
-                with open(local_zip_path, 'wb') as out_file:
-                    while True:
-                        buffer = response.read(block_size)
-                        if not buffer: break
-                        out_file.write(buffer)
-                        downloaded_size += len(buffer)
-                        if total_size > 0:
-                            progress = (downloaded_size / total_size) * 100
-                            # [수정됨] 진행률을 새로운 메시지 타입으로 보냄
-                            self.log_queue.put(('__FFMPEG_DOWNLOAD_PROGRESS__', progress))
-
+                shutil.copyfileobj(response, out_file)
+            
             self._log_entry('ffmpeg_download_complete')
-            # 다운로드 완료 후 최종 100% 신호 전송
-            self.log_queue.put(('__FFMPEG_DOWNLOAD_PROGRESS__', 100.0))
 
             self._log_entry('ffmpeg_extract_start')
             temp_extract_dir = self.download_dir / "ffmpeg_extracted_temp"
@@ -574,7 +549,6 @@ class FFmpegDownloader:
             return True
         except Exception as e:
             self._log_entry('ffmpeg_download_fail', error=e)
-            self._update_progress_status(0)
             return False
         finally:
             if local_zip_path.exists():
@@ -585,9 +559,9 @@ class FFmpegDownloader:
 # --- GUI 애플리케이션 ---
 class App(tk.Tk):
     ABOUT_INFO = {
-        'program': "Manifest File Renamer",
-        'version': "2.0.0",
-        'updated': "2025-07-13",
+        'program': "Audio Video Converter",
+        'version': "2.2.0",
+        'updated': "2025-07-15",
         'license': "MIT License",
         'developer': "(Github) IZH318",
         'website': "https://github.com/IZH318",
@@ -606,9 +580,6 @@ class App(tk.Tk):
         self.video_cancel_event, self.audio_cancel_event = threading.Event(), threading.Event()
         self.video_total_files, self.audio_total_files = 0, 0
         
-        # [수정됨] FFmpeg 다운로드 상태 추적 변수 추가
-        self.ffmpeg_download_progress = 0
-
         self.video_log_history = []
         self.audio_log_history = []
 
@@ -678,7 +649,7 @@ class App(tk.Tk):
         self.notebook.tab(self.video_tab, text=d['video_tab'])
         self.notebook.tab(self.audio_tab, text=d['audio_tab'])
         
-        is_video_converting = self.video_widgets['action_btn']['state'] == 'disabled'
+        is_video_converting = self.video_widgets['action_btn']['text'] == d['cancel_conversion']
         self.video_ui_elements['log_frame_container'].config(text=d['log_section'])
         self.video_ui_elements['input_frame'].config(text=d['input_section'])
         self.video_widgets['add_files_btn'].config(text=d['add_files'])
@@ -691,7 +662,7 @@ class App(tk.Tk):
         if not is_video_converting:
             self.video_widgets['status_label'].config(text=d['status_idle'])
 
-        is_audio_converting = self.audio_widgets['action_btn']['state'] == 'disabled'
+        is_audio_converting = self.audio_widgets['action_btn']['text'] == d['cancel_conversion']
         self.audio_ui_elements['log_frame_container'].config(text=d['log_section'])
         self.audio_ui_elements['input_frame'].config(text=d['input_section'])
         self.audio_widgets['add_files_btn'].config(text=d['add_files'])
@@ -834,7 +805,7 @@ class App(tk.Tk):
 
     def _set_ui_state(self, widgets, state):
         for widget_name, widget in widgets.items():
-            if widget_name in ['action_btn', 'progress', 'status_label']: continue
+            if widget_name in ['progress', 'status_label']: continue
             if isinstance(widget, ttk.Entry) and state == 'disabled': widget.config(state='readonly')
             else: widget.config(state=state)
 
@@ -906,57 +877,56 @@ class App(tk.Tk):
     def start_video_conversion(self, output_dir):
         if not self.video_full_paths: self._add_log_entry('video', 'error_no_files'); return
         if not output_dir: self._add_log_entry('video', 'error_no_output_video'); return
-        self._start_ffmpeg_download_if_needed(output_dir)
+        self._start_ffmpeg_preparation(output_dir)
 
-    # [수정됨] FFmpeg 다운로드/준비 완료를 명확히 확인 후 변환을 시작하는 로직
-    def _start_ffmpeg_download_if_needed(self, output_dir):
+    def _start_ffmpeg_preparation(self, output_dir):
         if not self.usmtoolkit_path:
             self._add_log_entry('video', 'ffmpeg_no_usm_path')
             return
 
-        # FFmpeg 다운로드 상태를 추적하기 위한 변수 초기화
-        self.ffmpeg_download_progress = 0
-
         self._set_ui_state(self.video_widgets, 'disabled')
-        self.video_widgets['action_btn'].config(state='disabled')
-        self.video_widgets['status_label'].config(text=self.lang_data['status_starting'].format(total='FFmpeg'))
-        self.video_widgets['progress']['maximum'] = 100
-        self.video_widgets['progress']['value'] = 0
-
-        # FFmpeg 준비 작업을 백그라운드에서 시작
+        self._add_log_entry('video', 'raw', text="\n")
+        self._add_log_entry('video', 'ffmpeg_preparing')
+        
         download_future = self.ffmpeg_downloader.ensure_ffmpeg_ready()
 
-        def wait_for_ffmpeg_download():
-            # 큐를 통해 받은 진행률이 100인지 확인
-            if self.ffmpeg_download_progress >= 100:
-                # 100%가 되었으면, 이제 백그라운드 스레드의 최종 성공 여부를 확인
+        def check_ffmpeg_status():
+            if download_future.done():
                 try:
-                    if download_future.result(timeout=5): # 작업이 실제로 성공했는지 최종 확인
-                        # 성공! 이제 비디오 변환을 시작
-                        self.video_widgets['status_label'].config(text=self.lang_data['status_idle'])
-                        
-                        self.video_cancel_event.clear()
-                        threading.Thread(target=self.logic.run_video_conversion, daemon=True, args=(self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.video_cancel_event)).start()
-                        
-                        self.video_widgets['action_btn'].config(text=self.lang_data['cancel_conversion'], command=self.cancel_video_conversion, state='normal')
+                    is_ready = download_future.result()
+                    if is_ready:
+                        self._start_actual_video_conversion(output_dir)
                     else:
-                        # 100% 신호는 왔으나, 최종 결과가 실패인 경우
                         self._add_log_entry('video', 'ffmpeg_prepare_fail')
                         self._reset_video_ui_state()
                 except Exception as e:
-                    # 100% 신호 후 최종 결과를 기다리는 중 예외 발생
                     self._add_log_entry('video', 'ffmpeg_prepare_fail')
                     self._add_log_entry('video', 'conv_log_error_exception', error=e)
                     self._reset_video_ui_state()
             else:
-                # 아직 100%가 아니면 100ms 후에 다시 이 함수를 호출
-                self.after(100, wait_for_ffmpeg_download)
+                self.after(100, check_ffmpeg_status)
 
-        # 확인 시작
-        self.after(100, wait_for_ffmpeg_download)
+        self.after(100, check_ffmpeg_status)
 
+    def _start_actual_video_conversion(self, output_dir):
+        d = self.lang_data
+        self.video_cancel_event.clear()
 
-    def cancel_video_conversion(self): self.video_widgets['action_btn'].config(state='disabled'); self.video_cancel_event.set()
+        threading.Thread(
+            target=self.logic.run_video_conversion,
+            daemon=True,
+            args=(self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.video_cancel_event)
+        ).start()
+
+        self.video_widgets['action_btn'].config(
+            text=d['cancel_conversion'],
+            command=self.cancel_video_conversion,
+            state='normal'
+        )
+
+    def cancel_video_conversion(self): 
+        self.video_widgets['action_btn'].config(state='disabled')
+        self.video_cancel_event.set()
 
     def start_audio_conversion(self, output_dir, overwrite):
         if not self.audio_full_paths: self._add_log_entry('audio', 'error_no_files'); return
@@ -967,7 +937,9 @@ class App(tk.Tk):
         self.audio_widgets['action_btn'].config(text=self.lang_data['cancel_conversion'], command=self.cancel_audio_conversion, state='normal')
         threading.Thread(target=self.logic.run_audio_conversion, daemon=True, args=(self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.audio_cancel_event)).start()
 
-    def cancel_audio_conversion(self): self.audio_widgets['action_btn'].config(state='disabled'); self.audio_cancel_event.set()
+    def cancel_audio_conversion(self): 
+        self.audio_widgets['action_btn'].config(state='disabled')
+        self.audio_cancel_event.set()
 
     def _render_log_entry(self, key, kwargs):
         if key == 'raw': return kwargs.get('text', '')
@@ -1026,15 +998,7 @@ class App(tk.Tk):
                 msg_type, *args = msg
                 d = self.lang_data
 
-                # [수정됨] FFmpeg 진행률 메시지 처리 로직 추가
-                if msg_type == '__FFMPEG_DOWNLOAD_PROGRESS__':
-                    progress = args[0]
-                    self.ffmpeg_download_progress = progress # 진행률 상태 변수 업데이트
-                    widgets = self.video_widgets
-                    widgets['progress']['value'] = progress
-                    widgets['status_label'].config(text=d['ffmpeg_downloading'].format(progress=progress))
-                
-                elif msg_type.startswith('__'): 
+                if msg_type.startswith('__'): 
                     was_cancelled = args[0]
                     if msg_type == '__VIDEO_DONE__':
                         widgets, total = self.video_widgets, self.video_total_files
@@ -1069,13 +1033,6 @@ class App(tk.Tk):
                     total = self.video_total_files if target_tab == 'video' else self.audio_total_files
                     widgets['progress']['value'] = value
                     widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
-                
-                elif msg_type == 'progress_update_status':
-                    target_tab, status_text, progress_value = args
-                    widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
-                    widgets['status_label'].config(text=status_text)
-                    widgets['progress']['maximum'] = 100 
-                    widgets['progress']['value'] = progress_value
 
         except queue.Empty:
             pass
