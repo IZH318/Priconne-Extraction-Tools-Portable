@@ -76,6 +76,33 @@ LANGUAGES = {
         'about_developer': "개발자",
         'about_description': "설명",
         'about_desc_content': "CRIWARE의 USM/AWB 파일을 범용적인 MP4/WAV 파일로 변환하는 프로그램입니다.",
+        'log_max_workers': "[시스템] 시스템 부하를 고려하여 최대 {max_workers}개의 파일을 동시에 변환합니다.",
+        'log_video_conversion_start': "\n--- 비디오 변환 작업을 시작합니다. ---",
+        'log_video_always_skip': "[알림] 기존 파일은 항상 건너뜁니다.",
+        'log_error_usmtoolkit_not_found': "\n[오류] UsmToolkit.exe를 찾을 수 없습니다. 변환을 중단합니다.\n",
+        'log_video_conversion_complete': "\n--- 비디오 변환 작업이 완료되었습니다. ---",
+        'log_video_summary': "총 {total}개 파일 중 {success}개 변환, {skipped}개 건너뜀, {error}개 오류.\n",
+        'log_worker_exception': "  [오류] 작업자 실행 중 예외: {filename} - {error}",
+        'log_audio_conversion_start': "\n--- 오디오 변환 작업을 시작합니다. ---",
+        'log_option_overwrite': "[옵션] 기존 파일을 덮어씁니다.",
+        'log_option_skip': "[옵션] 기존 파일은 건너뜁니다.",
+        'log_error_vgmstream_not_found': "\n[오류] vgmstream 실행 파일(test.exe)을 찾을 수 없습니다. 변환을 중단합니다.\n",
+        'log_audio_conversion_complete': "\n--- 오디오 변환 작업이 완료되었습니다. ---",
+        'log_audio_summary': "총 {count}개의 트랙이 WAV 파일로 변환되었습니다.\n",
+        'log_info_already_converted': "    알림: 이미 변환된 파일 (건너뜀) - {filename}",
+        'log_error_stream_read': "    [오류] 파일의 스트림 정보를 읽을 수 없습니다.",
+        'log_error_stream_convert': "    [오류] 스트림 #{stream_num} 변환 실패 - {stream_name}",
+        'log_raw_separator': "\n" + "-" * 60,
+        'log_raw_source': "  [원본]\n    {path}",
+        'log_raw_result': "\n  [결과]",
+        'log_raw_skipped': "\n  [결과]\n    이미 변환된 파일입니다. (건너뜀)",
+        'log_raw_success': "\n  [결과]\n    변환 성공: {path}",
+        'log_raw_error_no_result': "\n  [결과]\n    [오류] 변환은 성공했으나 결과 파일이 없습니다.",
+        'log_raw_tool_output': "\n  [상세 로그]",
+        'log_raw_error_failed': "\n  [결과]\n    [오류] 변환 실패 - {filename}",
+        'log_raw_tool_error': "\n  [상세 오류]",
+        'log_raw_fatal_exception': "\n  [결과]\n    [오류] 치명적 예외 발생 - {error}",
+        'log_raw_success_wav': "    성공: {path}",
     },
     'en': {
         'window_title': "Audio/Video Converter",
@@ -138,6 +165,33 @@ LANGUAGES = {
         'about_developer': "Developer",
         'about_description': "Description",
         'about_desc_content': "A tool to convert CRIWARE USM/AWB files to standard MP4/WAV formats.",
+        'log_max_workers': "[System] Will convert up to {max_workers} files simultaneously based on system load.",
+        'log_video_conversion_start': "\n--- Starting video conversion ---",
+        'log_video_always_skip': "[Notice] Existing files will always be skipped.",
+        'log_error_usmtoolkit_not_found': "\n[Error] UsmToolkit.exe not found. Aborting conversion.\n",
+        'log_video_conversion_complete': "\n--- Video conversion complete ---",
+        'log_video_summary': "Summary: {success} converted, {skipped} skipped, {error} errors out of {total} files.\n",
+        'log_worker_exception': "  [Error] Exception in worker: {filename} - {error}",
+        'log_audio_conversion_start': "\n--- Starting audio conversion ---",
+        'log_option_overwrite': "[Option] Overwriting existing files.",
+        'log_option_skip': "[Option] Skipping existing files.",
+        'log_error_vgmstream_not_found': "\n[Error] vgmstream executable (test.exe) not found. Aborting conversion.\n",
+        'log_audio_conversion_complete': "\n--- Audio conversion complete ---",
+        'log_audio_summary': "A total of {count} tracks have been converted to WAV files.\n",
+        'log_info_already_converted': "    Notice: Already converted (skipped) - {filename}",
+        'log_error_stream_read': "    [Error] Could not read stream info from file.",
+        'log_error_stream_convert': "    [Error] Failed to convert stream #{stream_num} - {stream_name}",
+        'log_raw_separator': "\n" + "-" * 60,
+        'log_raw_source': "  [Source]\n    {path}",
+        'log_raw_result': "\n  [Result]",
+        'log_raw_skipped': "\n  [Result]\n    Already converted. (Skipped)",
+        'log_raw_success': "\n  [Result]\n    Conversion successful: {path}",
+        'log_raw_error_no_result': "\n  [Result]\n    [Error] Conversion succeeded, but the result file is missing.",
+        'log_raw_tool_output': "\n  [Detailed Log]",
+        'log_raw_error_failed': "\n  [Result]\n    [Error] Conversion failed - {filename}",
+        'log_raw_tool_error': "\n  [Detailed Error]",
+        'log_raw_fatal_exception': "\n  [Result]\n    [Error] Fatal exception occurred - {error}",
+        'log_raw_success_wav': "    Success: {path}",
     },
     'ja': {
         'window_title': "オーディオ/ビデオコンバーター",
@@ -200,24 +254,53 @@ LANGUAGES = {
         'about_developer': "開発者",
         'about_description': "説明",
         'about_desc_content': "CRIWAREのUSM/AWBファイルを汎用的なMP4/WAVファイルに変換するプログラムです。",
+        'log_max_workers': "[システム] システム負荷を考慮し、最大{max_workers}個のファイルを同時に変換します。",
+        'log_video_conversion_start': "\n--- ビデオ変換を開始します ---",
+        'log_video_always_skip': "[通知] 既存のファイルは常にスキップされます。",
+        'log_error_usmtoolkit_not_found': "\n[エラー] UsmToolkit.exeが見つかりません。変換を中止します。\n",
+        'log_video_conversion_complete': "\n--- ビデオ変換が完了しました ---",
+        'log_video_summary': "概要: 全{total}ファイル中、変換{success}個、スキップ{skipped}個、エラー{error}個。\n",
+        'log_worker_exception': "  [エラー] ワーカーでの例外: {filename} - {error}",
+        'log_audio_conversion_start': "\n--- オーディオ変換を開始します ---",
+        'log_option_overwrite': "[オプション] 既存のファイルを上書きします。",
+        'log_option_skip': "[オプション] 既存のファイルはスキップします。",
+        'log_error_vgmstream_not_found': "\n[エラー] vgmstream実行可能ファイル(test.exe)が見つかりません。変換を中止します。\n",
+        'log_audio_conversion_complete': "\n--- オーディオ変換が完了しました ---",
+        'log_audio_summary': "合計{count}個のトラックがWAVファイルに変換されました。\n",
+        'log_info_already_converted': "    通知: 変換済み(スキップ) - {filename}",
+        'log_error_stream_read': "    [エラー] ファイルのストリーム情報を読み込めませんでした。",
+        'log_error_stream_convert': "    [エラー] ストリーム#{stream_num}の変換に失敗 - {stream_name}",
+        'log_raw_separator': "\n" + "-" * 60,
+        'log_raw_source': "  [ソース]\n    {path}",
+        'log_raw_result': "\n  [結果]",
+        'log_raw_skipped': "\n  [結果]\n    変換済みです。(スキップ)",
+        'log_raw_success': "\n  [結果]\n    変換成功: {path}",
+        'log_raw_error_no_result': "\n  [結果]\n    [エラー] 変換には成功しましたが、結果ファイルがありません。",
+        'log_raw_tool_output': "\n  [詳細ログ]",
+        'log_raw_error_failed': "\n  [結果]\n    [エラー] 変換失敗 - {filename}",
+        'log_raw_tool_error': "\n  [詳細エラー]",
+        'log_raw_fatal_exception': "\n  [結果]\n    [エラー] 致命的な例外が発生 - {error}",
+        'log_raw_success_wav': "    成功: {path}",
     }
 }
 
 
-# --- 핵심 변환 로직 (변경 없음) ---
+# --- 핵심 변환 로직 ---
 class ConversionLogic:
     cpu_threads = os.cpu_count() or 1
     MAX_WORKERS = max(1, cpu_threads // 2)
 
-    def __init__(self, log_queue, base_path, lang_var):
+    def __init__(self, log_queue, base_path):
         self.log_queue = log_queue
         self.base_path = base_path
-        self.lang_var = lang_var
-        self._log(f"[시스템] 시스템 부하를 고려하여 최대 {self.MAX_WORKERS}개의 파일을 동시에 변환합니다。", 'video')
-        self._log(f"[시스템] 시스템 부하를 고려하여 최대 {self.MAX_WORKERS}개의 파일을 동시에 변환합니다。", 'audio')
+        self._log('log_max_workers', 'video', max_workers=self.MAX_WORKERS)
+        self._log('log_max_workers', 'audio', max_workers=self.MAX_WORKERS)
 
-    def _log(self, message, target_tab):
-        self.log_queue.put(('log', target_tab, message))
+    def _log(self, key, target_tab, **kwargs):
+        self.log_queue.put(('log', target_tab, (key, kwargs)))
+    
+    def _log_raw(self, message, target_tab):
+        self.log_queue.put(('log_raw', target_tab, message))
 
     def _get_relative_path(self, full_path):
         try: return os.path.relpath(full_path, self.base_path)
@@ -234,81 +317,95 @@ class ConversionLogic:
         usm_file = Path(usm_file_str)
         usmtoolkit_dir = usmtoolkit_path.parent
         extract_path = Path(output_dir) / (usm_file.stem + ".mp4")
-        log_lines = ["\n" + "-" * 60, f"  [원본]\n    {self._get_relative_path(usm_file)}"]
+        
+        log_events = []
+        log_events.append(('log', ('log_raw_separator', {})))
+        log_events.append(('log', ('log_raw_source', {'path': self._get_relative_path(usm_file)})))
         status = "unknown"
+        
         if extract_path.exists():
-            log_lines.append("\n  [결과]\n    이미 변환된 파일입니다. (건너뜀)")
+            log_events.append(('log', ('log_raw_skipped', {})))
             status = "skipped"
         else:
             command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(Path(output_dir).resolve())]
             try:
                 result = subprocess.run(command, cwd=usmtoolkit_dir, capture_output=True, text=True, encoding='utf-8', errors='ignore', check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
                 if extract_path.exists():
-                    log_lines.append(f"\n  [결과]\n    변환 성공: {self._get_relative_path(extract_path)}")
+                    log_events.append(('log', ('log_raw_success', {'path': self._get_relative_path(extract_path)})))
                     status = "success"
                 else:
-                    log_lines.append("\n  [결과]\n    [오류] 변환은 성공했으나 결과 파일이 없습니다.")
+                    log_events.append(('log', ('log_raw_error_no_result', {})))
                     status = "error"
                 tool_output = result.stdout.strip()
                 if tool_output:
-                    log_lines.append("\n  [상세 로그]")
-                    log_lines.extend([f"    > {line}" for line in tool_output.splitlines()])
+                    log_events.append(('log', ('log_raw_tool_output', {})))
+                    # <<< START OF CHANGE - SyntaxError 수정 >>>
+                    log_events.extend([('raw', f"    > {line}") for line in tool_output.splitlines()])
+                    # <<< END OF CHANGE >>>
             except subprocess.CalledProcessError as e:
-                log_lines.append(f"\n  [결과]\n    [오류] 변환 실패 - {usm_file.name}")
+                log_events.append(('log', ('log_raw_error_failed', {'filename': usm_file.name})))
                 status = "error"
                 error_output = (e.stderr or e.stdout or "No error output.").strip()
                 if error_output:
-                    log_lines.append("\n  [상세 오류]")
-                    log_lines.extend([f"    > {line}" for line in error_output.splitlines()])
+                    log_events.append(('log', ('log_raw_tool_error', {})))
+                    # <<< START OF CHANGE - SyntaxError 수정 >>>
+                    log_events.extend([('raw', f"    > {line}") for line in error_output.splitlines()])
+                    # <<< END OF CHANGE >>>
             except Exception as e:
-                log_lines.append(f"\n  [결과]\n    [오류] 치명적 예외 발생 - {e}")
+                log_events.append(('log', ('log_raw_fatal_exception', {'error': e})))
                 status = "error"
-        log_lines.append("-" * 60)
-        return status, log_lines
+        
+        log_events.append(('log', ('log_raw_separator', {})))
+        return status, log_events
 
     def run_video_conversion(self, input_paths, output_dir, usmtoolkit_path, cancel_event):
-        d = LANGUAGES[self.lang_var.get()]
         target_tab = 'video'
-        self._log("\n--- 비디오 변환 작업을 시작합니다. ---", target_tab)
-        self._log("[알림] 기존 파일은 항상 건너뜁니다.", target_tab)
+        self._log("log_video_conversion_start", target_tab)
+        self._log("log_video_always_skip", target_tab)
         if not usmtoolkit_path:
-            self._log("\n[오류] UsmToolkit.exe를 찾을 수 없습니다. 변환을 중단합니다.\n", target_tab)
+            self._log("log_error_usmtoolkit_not_found", target_tab)
             self.log_queue.put(('__VIDEO_DONE__', True))
             return
+            
         total_files = len(input_paths)
         success_count, skipped_count, error_count, completed_tasks = 0, 0, 0, 0
         self.log_queue.put(('progress_start', target_tab, total_files))
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             future_to_path = {executor.submit(self._convert_single_video_task, path, output_dir, usmtoolkit_path): path for path in input_paths}
             for future in concurrent.futures.as_completed(future_to_path):
                 if cancel_event.is_set(): break
                 try:
-                    status, log_lines = future.result()
-                    for line in log_lines: self._log(line, target_tab)
+                    status, log_events = future.result()
+                    for event_type, data in log_events:
+                        if event_type == 'log':
+                            self.log_queue.put(('log', target_tab, data))
+                        elif event_type == 'raw':
+                            self._log_raw(data, target_tab)
+
                     if status == "success": success_count += 1
                     elif status == "skipped": skipped_count += 1
                     else: error_count += 1
                 except Exception as e:
                     path = future_to_path[future]
-                    self._log(f"  [오류] 작업자 실행 중 예외: {Path(path).name} - {e}", target_tab)
+                    self._log("log_worker_exception", target_tab, filename=Path(path).name, error=e)
                     error_count += 1
                 finally:
                     completed_tasks += 1
                     self.log_queue.put(('progress_update', target_tab, completed_tasks))
-        if cancel_event.is_set(): self._log(f"\n{d['log_conversion_cancelled']}", target_tab)
-        self._log("\n--- 비디오 변환 작업이 완료되었습니다. ---", target_tab)
-        summary = f"총 {total_files}개 파일 중 {success_count}개 변환, {skipped_count}개 건너뜀, {error_count}개 오류.\n"
-        self._log(summary, target_tab)
+                    
+        if cancel_event.is_set(): self._log("log_conversion_cancelled", target_tab)
+        self._log("log_video_conversion_complete", target_tab)
+        self._log("log_video_summary", target_tab, total=total_files, success=success_count, skipped=skipped_count, error=error_count)
         self.log_queue.put(('__VIDEO_DONE__', cancel_event.is_set()))
 
     def run_audio_conversion(self, input_paths, output_dir, vgmstream_path, overwrite, cancel_event):
-        d = LANGUAGES[self.lang_var.get()]
         target_tab = 'audio'
-        self._log("\n--- 오디오 변환 작업을 시작합니다. ---", target_tab)
-        self._log("[옵션] 기존 파일을 덮어씁니다." if overwrite else "[옵션] 기존 파일은 건너뜠습니다.", target_tab)
+        self._log("log_audio_conversion_start", target_tab)
+        self._log("log_option_overwrite" if overwrite else "log_option_skip", target_tab)
 
         if not vgmstream_path:
-            self._log("\n[오류] vgmstream 실행 파일(test.exe)을 찾을 수 없습니다. 변환을 중단합니다.\n", target_tab)
+            self._log("log_error_vgmstream_not_found", target_tab)
             self.log_queue.put(('__AUDIO_DONE__', True))
             return
             
@@ -322,20 +419,24 @@ class ConversionLogic:
             for future in concurrent.futures.as_completed(future_to_path):
                 if cancel_event.is_set(): break
                 try:
-                    converted_count, log_lines = future.result()
-                    for line in log_lines: self._log(line, target_tab)
+                    converted_count, log_events = future.result()
+                    for event_type, data in log_events:
+                        if event_type == 'log':
+                            self.log_queue.put(('log', target_tab, data))
+                        elif event_type == 'raw':
+                            self._log_raw(data, target_tab)
                     total_converted_tracks += converted_count
                 except Exception as e:
                     path = future_to_path[future]
-                    self._log(f"  [오류] 작업자 실행 중 예외: {Path(path).name} - {e}", target_tab)
+                    self._log("log_worker_exception", target_tab, filename=Path(path).name, error=e)
                 finally:
                     completed_tasks += 1
                     self.log_queue.put(('progress_update', target_tab, completed_tasks))
                     
-        if cancel_event.is_set(): self._log(f"\n{d['log_conversion_cancelled']}", target_tab)
+        if cancel_event.is_set(): self._log("log_conversion_cancelled", target_tab)
 
-        self._log("\n--- 오디오 변환 작업이 완료되었습니다. ---", target_tab)
-        self._log(f"총 {total_converted_tracks}개의 트랙이 WAV 파일로 변환되었습니다.\n", target_tab)
+        self._log("log_audio_conversion_complete", target_tab)
+        self._log("log_audio_summary", target_tab, count=total_converted_tracks)
         self.log_queue.put(('__AUDIO_DONE__', cancel_event.is_set()))
 
     def _get_stream_count(self, file_path, vgmstream_path):
@@ -356,9 +457,12 @@ class ConversionLogic:
         return f"track_{stream_num}"
 
     def _convert_audio_container(self, item_path_str, output_dir, vgmstream_path, overwrite, cancel_event):
-        d = LANGUAGES[self.lang_var.get()]
         item_path = Path(item_path_str)
-        log_lines = ["\n" + "-" * 60, f"  [원본]\n    {self._get_relative_path(item_path)}", "\n  [결과]"]
+        log_events = [
+            ('log', ('log_raw_separator', {})),
+            ('log', ('log_raw_source', {'path': self._get_relative_path(item_path)})),
+            ('log', ('log_raw_result', {}))
+        ]
         total_converted = 0
         
         item_output_folder = Path(output_dir) / item_path.stem
@@ -366,9 +470,9 @@ class ConversionLogic:
 
         num_streams = self._get_stream_count(item_path, vgmstream_path)
         if num_streams == 0:
-            log_lines.append("    [오류] 파일의 스트림 정보를 읽을 수 없습니다.")
-            log_lines.append("-" * 60)
-            return 0, log_lines
+            log_events.append(('log', ('log_error_stream_read', {})))
+            log_events.append(('log', ('log_raw_separator', {})))
+            return 0, log_events
 
         for i in range(1, num_streams + 1):
             if cancel_event.is_set(): break
@@ -377,25 +481,27 @@ class ConversionLogic:
             output_file = item_output_folder / f"{stream_name}.wav"
 
             if not overwrite and output_file.exists():
-                log_lines.append(f"    알림: 이미 변환된 파일 (건너뜀) - {output_file.name}")
+                log_events.append(('log', ('log_info_already_converted', {'filename': output_file.name})))
                 continue
 
             command = [str(vgmstream_path), "-s", str(i), "-o", str(output_file), str(item_path)]
             result = self._run_subprocess(command)
 
             if result.returncode == 0 and output_file.exists():
-                log_lines.append(f"    성공: {self._get_relative_path(output_file)}")
+                log_events.append(('log', ('log_raw_success_wav', {'path': self._get_relative_path(output_file)})))
                 total_converted += 1
             else:
-                log_lines.append(f"    [오류] 스트림 #{i} 변환 실패 - {stream_name}")
+                log_events.append(('log', ('log_error_stream_convert', {'stream_num': i, 'stream_name': stream_name})))
                 error_output = (result.stderr or result.stdout or "No error output.").strip()
                 if error_output:
-                    log_lines.append("\n    [상세 오류]")
-                    log_lines.extend([f"      > {line}" for line in error_output.splitlines()])
+                    log_events.append(('log', ('log_raw_tool_error', {})))
+                    # <<< START OF CHANGE - SyntaxError 수정 >>>
+                    log_events.extend([('raw', f"      > {line}") for line in error_output.splitlines()])
+                    # <<< END OF CHANGE >>>
 
-        if cancel_event.is_set(): log_lines.append(f"\n{d['log_conversion_cancelled']}")
-        log_lines.append("-" * 60)
-        return total_converted, log_lines
+        if cancel_event.is_set(): log_events.append(('log', ('log_conversion_cancelled', {})))
+        log_events.append(('log', ('log_raw_separator', {})))
+        return total_converted, log_events
 
 # --- FFmpeg 다운로드 및 설치 클래스 ---
 class FFmpegDownloader:
@@ -403,42 +509,36 @@ class FFmpegDownloader:
     FFMPEG_ZIP_FILENAME = "ffmpeg_temp.zip"
     FFMPEG_EXE_NAME = "ffmpeg.exe"
 
-    def __init__(self, log_queue, usmtoolkit_path_parent_dir: Path, lang_var):
+    def __init__(self, log_queue, usmtoolkit_path_parent_dir: Path):
         self.log_queue = log_queue
-        self.lang_var = lang_var
         self.download_dir = usmtoolkit_path_parent_dir
         self.ffmpeg_path = self.download_dir / self.FFMPEG_EXE_NAME
         os.makedirs(self.download_dir, exist_ok=True)
 
-    def _log(self, message):
-        self.log_queue.put(('log', 'video', message))
+    def _log(self, key, **kwargs):
+        self.log_queue.put(('log', 'video', (key, kwargs)))
 
-    def _update_progress_status(self, progress_value=None):
-        d = LANGUAGES[self.lang_var.get()]
-        if progress_value is not None:
-            self.log_queue.put(('progress_update_status', 'video', d['ffmpeg_downloading'].format(progress=progress_value), progress_value))
-        else:
-            self.log_queue.put(('progress_update_status', 'video', d['status_idle'], 0))
-
+    def _update_progress_status(self, progress_key, progress_value=0.0):
+        self.log_queue.put(('progress_update_status', 'video', progress_key, progress_value))
+        
     def ensure_ffmpeg_ready(self) -> concurrent.futures.Future:
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self._actual_download_and_extract)
         return future
 
     def _actual_download_and_extract(self) -> bool:
-        d = LANGUAGES[self.lang_var.get()]
         local_zip_path = self.download_dir / self.FFMPEG_ZIP_FILENAME
         temp_extract_dir = None
 
         if self.ffmpeg_path.exists():
-            self._log(d['ffmpeg_already_exists'].format(path=self.download_dir))
+            self._log('ffmpeg_already_exists', path=self.download_dir)
             return True
 
-        self._log(d['ffmpeg_not_found'].format(path=self.download_dir))
+        self._log('ffmpeg_not_found', path=self.download_dir)
 
         try:
-            self._log(d['ffmpeg_download_start'].format(url=self.FFMPEG_URL))
-            self._update_progress_status(0)
+            self._log('ffmpeg_download_start', url=self.FFMPEG_URL)
+            self._update_progress_status('ffmpeg_downloading', 0)
 
             with urllib.request.urlopen(self.FFMPEG_URL) as response:
                 if response.status != 200:
@@ -456,12 +556,12 @@ class FFmpegDownloader:
                         block_num += 1
                         if total_size > 0:
                             progress = (block_num * block_size / total_size) * 100
-                            self._update_progress_status(progress)
+                            self._update_progress_status('ffmpeg_downloading', progress)
 
-            self._log(d['ffmpeg_download_complete'])
-            self._update_progress_status(100)
+            self._log('ffmpeg_download_complete')
+            self._update_progress_status('ffmpeg_downloading', 100)
 
-            self._log(d['ffmpeg_extract_start'])
+            self._log('ffmpeg_extract_start')
             temp_extract_dir = self.download_dir / "ffmpeg_extracted_temp"
             os.makedirs(temp_extract_dir, exist_ok=True)
 
@@ -472,18 +572,19 @@ class FFmpegDownloader:
                         ffmpeg_internal_path = name
                         break
                 if not ffmpeg_internal_path:
-                    raise Exception(d['ffmpeg_zip_structure_error'])
+                    # 'en'은 항상 존재하므로 안전한 폴백
+                    raise Exception(LANGUAGES['en']['ffmpeg_zip_structure_error'])
                 
                 zip_ref.extract(ffmpeg_internal_path, temp_extract_dir)
                 extracted_exe_full_path = temp_extract_dir / ffmpeg_internal_path
                 shutil.move(extracted_exe_full_path, self.ffmpeg_path)
                 
-            self._log(d['ffmpeg_extract_complete'].format(path=self.ffmpeg_path))
+            self._log('ffmpeg_extract_complete', path=self.ffmpeg_path)
             return True
 
         except Exception as e:
-            self._log(d['ffmpeg_download_fail'].format(error=e))
-            self._update_progress_status(0)
+            self._log('ffmpeg_download_fail', error=e)
+            self._update_progress_status('status_idle', 0)
             return False
         finally:
             if local_zip_path.exists():
@@ -494,17 +595,21 @@ class FFmpegDownloader:
 # --- GUI 애플리케이션 ---
 class App(tk.Tk):
     ABOUT_INFO = {
-        'version': "1.7",
-        'developer': "Generated by AI",
+        'version': "1.9", # 버전 업데이트
+        'developer': "Generated by AI & IZH318",
         'description_key': "about_desc_content"
     }
     
     def __init__(self):
         super().__init__()
         
-        self.lang = tk.StringVar(value='ko')
-        # trace를 제거하고, 라디오버튼에 command를 직접 할당하는 방식으로 변경
-        
+        self.current_lang = 'ko'
+        self.lang_var = tk.StringVar(value=self.current_lang)
+        self.lang_var.trace_add("write", self._on_language_change_debounce)
+
+        self.log_events_video = []
+        self.log_events_audio = []
+
         self.usmtoolkit_path, self.vgmstream_path = None, None
         
         self.video_full_paths, self.audio_full_paths = [], []
@@ -516,7 +621,7 @@ class App(tk.Tk):
         
         self.base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
         self.log_queue = queue.Queue()
-        self.logic = ConversionLogic(self.log_queue, self.base_path, self.lang)
+        self.logic = ConversionLogic(self.log_queue, self.base_path)
         
         self.menu_bar = None
 
@@ -524,9 +629,10 @@ class App(tk.Tk):
         self._find_tools()
         
         ffmpeg_parent_dir = self.usmtoolkit_path.parent if self.usmtoolkit_path else self.base_path
-        self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir, self.lang)
+        self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir)
 
         self._setup_ui()
+        self._update_ui_text()
         self._log_initial_status()
         self._process_log_queue()
 
@@ -550,126 +656,172 @@ class App(tk.Tk):
         
         self.video_tab, self.audio_tab = ttk.Frame(self.notebook), ttk.Frame(self.notebook)
         
-        self.notebook.add(self.video_tab)
-        self.notebook.add(self.audio_tab)
+        self.notebook.add(self.video_tab, text="Video")
+        self.notebook.add(self.audio_tab, text="Audio")
         
         self._create_tab_content(self.video_tab, 'video')
         self._create_tab_content(self.audio_tab, 'audio')
-        
-        self._update_ui_text()
 
     def _create_menus(self):
-        d = LANGUAGES[self.lang.get()]
-        
-        # 이전 메뉴바가 있다면 파괴
         if self.menu_bar:
             self.menu_bar.destroy()
 
         self.menu_bar = Menu(self)
         self.config(menu=self.menu_bar)
 
+        d = self.get_string
         file_menu = Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=d['menu_file'], menu=file_menu)
-        # lambda를 사용하여 command가 즉시 실행되는 것을 방지
-        file_menu.add_command(label=d['menu_exit'], command=self.quit)
+        self.menu_bar.add_cascade(label=d('menu_file'), menu=file_menu)
+        file_menu.add_command(label=d('menu_exit'), command=self.quit)
 
         lang_menu = Menu(self.menu_bar, tearoff=0)
-        self.menu_bar.add_cascade(label=d['menu_language'], menu=lang_menu)
+        self.menu_bar.add_cascade(label=d('menu_language'), menu=lang_menu)
         
-        # 라디오버튼에 command를 직접 할당
-        lang_menu.add_radiobutton(label="한국어", variable=self.lang, value='ko', command=self._on_language_change)
-        lang_menu.add_radiobutton(label="English", variable=self.lang, value='en', command=self._on_language_change)
-        lang_menu.add_radiobutton(label="日本語", variable=self.lang, value='ja', command=self._on_language_change)
+        lang_menu.add_radiobutton(label="한국어", variable=self.lang_var, value='ko')
+        lang_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
+        lang_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
         
-        self.menu_bar.add_command(label=d['menu_about'], command=self._show_about_info)
+        self.menu_bar.add_command(label=d('menu_about'), command=self._show_about_info)
+    
+    def _on_language_change_debounce(self, *args):
+        self.after(10, self._apply_language_change)
 
-    def _on_language_change(self):
-        # 이 함수는 이제 사용자가 라디오 버튼을 클릭할 때만 호출됨
-        self._create_menus()
-        self._update_ui_text()
+    def _apply_language_change(self):
+        new_lang = self.lang_var.get()
+        if self.current_lang != new_lang:
+            self.current_lang = new_lang
+            self._update_ui_text()
+            self._redisplay_logs('video')
+            self._redisplay_logs('audio')
+    
+    def get_string(self, key, **kwargs):
+        return LANGUAGES[self.current_lang].get(key, f"NO_KEY_{key}").format(**kwargs)
 
     def _update_ui_text(self):
-        d = LANGUAGES[self.lang.get()]
-        self.title(d['window_title'])
+        d = self.get_string
+        self.title(d('window_title'))
+        self._create_menus()
         
         if hasattr(self, 'notebook'):
-            self.notebook.tab(self.video_tab, text=d['video_tab'])
-            self.notebook.tab(self.audio_tab, text=d['audio_tab'])
+            self.notebook.tab(self.video_tab, text=d('video_tab'))
+            self.notebook.tab(self.audio_tab, text=d('audio_tab'))
 
         if hasattr(self, 'video_widgets'):
-            self.video_input_frame.config(text=d['input_section'])
-            self.video_widgets['add_files_btn'].config(text=d['add_files'])
-            self.video_widgets['add_folder_btn'].config(text=d['add_folder'])
-            self.video_list_container.config(text=d['file_list_section'])
-            self.video_output_frame.config(text=d['output_section'])
-            self.video_browse_btn.config(text=d['browse'])
-            self.video_action_frame.config(text=d['action_section'])
+            self.video_input_frame.config(text=d('input_section'))
+            self.video_widgets['add_files_btn'].config(text=d('add_files'))
+            self.video_widgets['add_folder_btn'].config(text=d('add_folder'))
+            self.video_list_container.config(text=d('file_list_section'))
+            self.video_output_frame.config(text=d('output_section'))
+            self.video_browse_btn.config(text=d('browse'))
+            self.video_action_frame.config(text=d('action_section'))
             if 'disabled' in str(self.video_widgets['action_btn'].cget('state')):
-                 self.video_widgets['action_btn'].config(text=d['cancel_conversion'])
+                 self.video_widgets['action_btn'].config(text=d('cancel_conversion'))
             else:
-                 self.video_widgets['action_btn'].config(text=d['start_conversion'])
-            self.video_log_container.config(text=d['log_section'])
+                 self.video_widgets['action_btn'].config(text=d('start_conversion'))
+            self.video_log_container.config(text=d('log_section'))
 
         if hasattr(self, 'audio_widgets'):
-            self.audio_input_frame.config(text=d['input_section'])
-            self.audio_widgets['add_files_btn'].config(text=d['add_files'])
-            self.audio_widgets['add_folder_btn'].config(text=d['add_folder'])
-            self.audio_list_container.config(text=d['file_list_section'])
-            self.audio_output_frame.config(text=d['output_section'])
-            self.audio_browse_btn.config(text=d['browse'])
-            self.audio_action_frame.config(text=d['action_section'])
+            self.audio_input_frame.config(text=d('input_section'))
+            self.audio_widgets['add_files_btn'].config(text=d('add_files'))
+            self.audio_widgets['add_folder_btn'].config(text=d('add_folder'))
+            self.audio_list_container.config(text=d('file_list_section'))
+            self.audio_output_frame.config(text=d('output_section'))
+            self.audio_browse_btn.config(text=d('browse'))
+            self.audio_action_frame.config(text=d('action_section'))
             if 'disabled' in str(self.audio_widgets['action_btn'].cget('state')):
-                 self.audio_widgets['action_btn'].config(text=d['cancel_conversion'])
+                 self.audio_widgets['action_btn'].config(text=d('cancel_conversion'))
             else:
-                 self.audio_widgets['action_btn'].config(text=d['start_conversion'])
-            self.audio_widgets['overwrite_check'].config(text=d['overwrite_option'])
-            self.audio_log_container.config(text=d['log_section'])
+                 self.audio_widgets['action_btn'].config(text=d('start_conversion'))
+            self.audio_widgets['overwrite_check'].config(text=d('overwrite_option'))
+            self.audio_log_container.config(text=d('log_section'))
         
         if hasattr(self, 'video_listbox_menu'):
-            self.video_listbox_menu.entryconfig(0, label=d['remove_selected'])
-            self.video_listbox_menu.entryconfig(1, label=d['remove_all'])
+            self.video_listbox_menu.entryconfig(0, label=d('remove_selected'))
+            self.video_listbox_menu.entryconfig(1, label=d('remove_all'))
         if hasattr(self, 'audio_listbox_menu'):
-            self.audio_listbox_menu.entryconfig(0, label=d['remove_selected'])
-            self.audio_listbox_menu.entryconfig(1, label=d['remove_all'])
+            self.audio_listbox_menu.entryconfig(0, label=d('remove_selected'))
+            self.audio_listbox_menu.entryconfig(1, label=d('remove_all'))
 
     def _log_initial_status(self):
-        d = LANGUAGES[self.lang.get()]
-        
-        video_log_lines = [d['env_check_header']]
+        self.log_events_video.clear()
+        self.log_events_video.append(('log', ('env_check_header', {})))
         if self.usmtoolkit_path:
-            video_log_lines.extend([d['env_success'].format(tool_name="UsmToolkit.exe"), d['env_path'].format(path=self.logic._get_relative_path(self.usmtoolkit_path))])
+            self.log_events_video.extend([
+                ('log', ('env_success', {'tool_name': "UsmToolkit.exe"})),
+                ('log', ('env_path', {'path': self.logic._get_relative_path(self.usmtoolkit_path)}))
+            ])
             if self.ffmpeg_downloader.ffmpeg_path.exists():
-                video_log_lines.extend([d['env_success'].format(tool_name="FFmpeg (ffmpeg.exe)"), d['env_path'].format(path=self.logic._get_relative_path(self.ffmpeg_downloader.ffmpeg_path))])
+                self.log_events_video.extend([
+                    ('log', ('env_success', {'tool_name': "FFmpeg (ffmpeg.exe)"})),
+                    ('log', ('env_path', {'path': self.logic._get_relative_path(self.ffmpeg_downloader.ffmpeg_path)}))
+                ])
             else:
-                video_log_lines.extend([d['env_error'].format(tool_name="FFmpeg (ffmpeg.exe)"), d['env_error_desc_ffmpeg_auto_download']])
+                self.log_events_video.extend([
+                    ('log', ('env_error', {'tool_name': "FFmpeg (ffmpeg.exe)"})),
+                    ('log', ('env_error_desc_ffmpeg_auto_download', {}))
+                ])
         else:
-            video_log_lines.extend([d['env_error'].format(tool_name="UsmToolkit.exe"), d['env_error_desc_video']])
-            video_log_lines.extend([d['env_error'].format(tool_name="FFmpeg (ffmpeg.exe)"), d['env_error_desc_ffmpeg_auto_download']])
-        video_log_lines.append(d['env_check_footer'] + "\n")
-        self.log_to_gui('\n'.join(video_log_lines), self.video_log_text, clear_first=True)
+            self.log_events_video.extend([
+                ('log', ('env_error', {'tool_name': "UsmToolkit.exe"})),
+                ('log', ('env_error_desc_video', {})),
+                ('log', ('env_error', {'tool_name': "FFmpeg (ffmpeg.exe)"})),
+                ('log', ('env_error_desc_ffmpeg_auto_download', {}))
+            ])
+        self.log_events_video.append(('log', ('env_check_footer', {})))
+        self.log_events_video.append(('raw', "\n"))
+        self._redisplay_logs('video')
 
-        audio_log_lines = [d['env_check_header']]
+        self.log_events_audio.clear()
+        self.log_events_audio.append(('log', ('env_check_header', {})))
         if self.vgmstream_path:
-            audio_log_lines.extend([d['env_success'].format(tool_name="vgmstream(test.exe)"), d['env_path'].format(path=self.logic._get_relative_path(self.vgmstream_path))])
+            self.log_events_audio.extend([
+                ('log', ('env_success', {'tool_name': "vgmstream(test.exe)"})),
+                ('log', ('env_path', {'path': self.logic._get_relative_path(self.vgmstream_path)}))
+            ])
         else:
-            audio_log_lines.extend([d['env_error'].format(tool_name="vgmstream(test.exe)"), d['env_error_desc_audio']])
-        audio_log_lines.append(d['env_check_footer'] + "\n")
-        self.log_to_gui('\n'.join(audio_log_lines), self.audio_log_text, clear_first=True)
+            self.log_events_audio.extend([
+                ('log', ('env_error', {'tool_name': "vgmstream(test.exe)"})),
+                ('log', ('env_error_desc_audio', {}))
+            ])
+        self.log_events_audio.append(('log', ('env_check_footer', {})))
+        self.log_events_audio.append(('raw', "\n"))
+        self._redisplay_logs('audio')
 
     def _show_about_info(self):
-        d = LANGUAGES[self.lang.get()]
-        separator = "-" * 50
-        info_lines = [
-            f"\n{separator}",
-            d['about_header'],
-            f"  - {d['about_version']}: {self.ABOUT_INFO['version']}",
-            f"  - {d['about_developer']}: {self.ABOUT_INFO['developer']}",
-            f"  - {d['about_description']}: {d[self.ABOUT_INFO['description_key']]}",
-            f"{separator}\n"
-        ]
-        info_text = "\n".join(info_lines)
-        self.log_to_gui(info_text, self.video_log_text)
-        self.log_to_gui(info_text, self.audio_log_text)
+        about_event = ('about', {})
+        self.log_events_video.extend([('raw', '\n'), about_event, ('raw', '\n')])
+        self.log_events_audio.extend([('raw', '\n'), about_event, ('raw', '\n')])
+        self._redisplay_logs('video')
+        self._redisplay_logs('audio')
+
+    def _redisplay_logs(self, tab_type):
+        log_widget = self.video_log_text if tab_type == 'video' else self.audio_log_text
+        events_list = self.log_events_video if tab_type == 'video' else self.log_events_audio
+
+        log_widget.config(state='normal')
+        log_widget.delete('1.0', tk.END)
+
+        for event_type, data in events_list:
+            if event_type == 'log':
+                key, kwargs = data
+                log_widget.insert(tk.END, self.get_string(key, **kwargs) + '\n')
+            elif event_type == 'raw':
+                log_widget.insert(tk.END, str(data) + '\n')
+            elif event_type == 'about':
+                d = self.get_string
+                separator = "-" * 50
+                info_lines = [
+                    f"\n{separator}",
+                    d('about_header'),
+                    f"  - {d('about_version')}: {self.ABOUT_INFO['version']}",
+                    f"  - {d('about_developer')}: {self.ABOUT_INFO['developer']}",
+                    f"  - {d('about_description')}: {d(self.ABOUT_INFO['description_key'])}",
+                    f"{separator}\n"
+                ]
+                log_widget.insert(tk.END, "\n".join(info_lines))
+
+        log_widget.config(state='disabled')
+        log_widget.see(tk.END)
 
     def _create_tab_content(self, parent_tab, tab_type):
         is_audio_tab = (tab_type == 'audio')
@@ -685,13 +837,17 @@ class App(tk.Tk):
         file_types = [("CRIWARE Audio", "*.awb")] if is_audio_tab else [("USM Video files", "*.usm")]
         full_paths = self.audio_full_paths if is_audio_tab else self.video_full_paths
         filenames_var = self.audio_filenames_var if is_audio_tab else self.video_filenames_var
-        add_files_btn = ttk.Button(input_frame, command=lambda: self._add_files(file_types, full_paths, filenames_var, log_text_widget)); add_files_btn.pack(side='left', padx=5, pady=5, expand=True, fill='x')
-        add_folder_btn = ttk.Button(input_frame, command=lambda: self._add_folder(file_types, full_paths, filenames_var, log_text_widget)); add_folder_btn.pack(side='left', padx=5, pady=5, expand=True, fill='x')
+        
+        add_files_btn = ttk.Button(input_frame, command=lambda t=tab_type: self._add_files(file_types, full_paths, filenames_var, t)); add_files_btn.pack(side='left', padx=5, pady=5, expand=True, fill='x')
+        add_folder_btn = ttk.Button(input_frame, command=lambda t=tab_type: self._add_folder(file_types, full_paths, filenames_var, t)); add_folder_btn.pack(side='left', padx=5, pady=5, expand=True, fill='x')
+
         list_container = ttk.LabelFrame(controls_frame); list_container.pack(fill='both', expand=True, pady=5, padx=5)
         list_frame = ttk.Frame(list_container); list_frame.pack(fill='both', expand=True, padx=5, pady=5)
         listbox = Listbox(list_frame, listvariable=filenames_var, selectmode=tk.EXTENDED, height=10); listbox.pack(side='left', fill='both', expand=True)
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=listbox.yview); scrollbar.pack(side='right', fill='y'); listbox.config(yscrollcommand=scrollbar.set)
-        listbox_menu = self._create_right_click_menu(listbox, full_paths, filenames_var, log_text_widget)
+        
+        listbox_menu = self._create_right_click_menu(listbox, full_paths, filenames_var, tab_type)
+
         output_frame = ttk.LabelFrame(controls_frame); output_frame.pack(fill='x', pady=5, padx=5)
         output_entry = ttk.Entry(output_frame, state='readonly'); output_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
         browse_btn = ttk.Button(output_frame, command=lambda: self._select_output_folder(output_entry)); browse_btn.pack(side='left', padx=5, pady=5)
@@ -714,19 +870,18 @@ class App(tk.Tk):
             action_button.config(command=lambda: self.start_video_conversion(output_entry.get()))
             self.video_widgets = widgets_dict; self.video_log_text = log_text_widget
 
-    def _create_right_click_menu(self, listbox, full_paths, filenames_var, log_widget):
+    def _create_right_click_menu(self, listbox, full_paths, filenames_var, tab_type):
         menu = Menu(listbox, tearoff=0)
-        menu.add_command(command=lambda: self._remove_selected_from_list(listbox, full_paths, filenames_var, log_widget))
-        menu.add_command(command=lambda: self._clear_list(full_paths, filenames_var, log_widget))
+        menu.add_command(command=lambda: self._remove_selected_from_list(listbox, full_paths, filenames_var, tab_type))
+        menu.add_command(command=lambda: self._clear_list(full_paths, filenames_var, tab_type))
         
         def show_menu(event):
-            d_current = LANGUAGES[self.lang.get()]
-            menu.entryconfig(0, label=d_current['remove_selected'], state="normal" if listbox.curselection() else "disabled")
-            menu.entryconfig(1, label=d_current['remove_all'], state="normal" if listbox.size() > 0 else "disabled")
+            menu.entryconfig(0, label=self.get_string('remove_selected'), state="normal" if listbox.curselection() else "disabled")
+            menu.entryconfig(1, label=self.get_string('remove_all'), state="normal" if listbox.size() > 0 else "disabled")
             menu.post(event.x_root, event.y_root)
 
         listbox.bind("<Button-3>", show_menu)
-        listbox.bind("<Delete>", lambda e: self._remove_selected_from_list(listbox, full_paths, filenames_var, log_widget))
+        listbox.bind("<Delete>", lambda e: self._remove_selected_from_list(listbox, full_paths, filenames_var, tab_type))
         return menu
 
     def _set_ui_state(self, widgets, state):
@@ -736,17 +891,17 @@ class App(tk.Tk):
             else: widget.config(state=state)
 
     def _reset_video_ui_state(self):
-        d = LANGUAGES[self.lang.get()]
+        d = self.get_string
         self._set_ui_state(self.video_widgets, 'normal')
-        self.video_widgets['action_btn'].config(text=d['start_conversion'], state='normal', command=lambda: self.start_video_conversion(self.video_widgets['output_entry'].get()))
-        self.video_widgets['status_label'].config(text=d['status_idle'])
+        self.video_widgets['action_btn'].config(text=d('start_conversion'), state='normal', command=lambda: self.start_video_conversion(self.video_widgets['output_entry'].get()))
+        self.video_widgets['status_label'].config(text=d('status_idle'))
         self.video_widgets['progress']['value'] = 0
 
     def _reset_audio_ui_state(self):
-        d = LANGUAGES[self.lang.get()]
+        d = self.get_string
         self._set_ui_state(self.audio_widgets, 'normal')
-        self.audio_widgets['action_btn'].config(text=d['start_conversion'], state='normal', command=lambda: self.start_audio_conversion(self.audio_widgets['output_entry'].get(), self.audio_overwrite_var.get()))
-        self.audio_widgets['status_label'].config(text=d['status_idle'])
+        self.audio_widgets['action_btn'].config(text=d('start_conversion'), state='normal', command=lambda: self.start_audio_conversion(self.audio_widgets['output_entry'].get(), self.audio_overwrite_var.get()))
+        self.audio_widgets['status_label'].config(text=d('status_idle'))
         self.audio_widgets['progress']['value'] = 0
 
     def _select_files(self, ft): return list(filedialog.askopenfilenames(title="파일을 선택하세요", filetypes=ft) or [])
@@ -763,65 +918,87 @@ class App(tk.Tk):
 
     def _update_listbox(self, fp, fv): fv.set([os.path.basename(p) for p in fp])
     
-    def _add_paths_to_list(self, new_paths, full_paths, filenames_var, log_widget):
+    def _add_paths_to_list(self, new_paths, full_paths, filenames_var, tab_type):
         if not new_paths: return
-        d = LANGUAGES[self.lang.get()]
+        events_list = self.log_events_video if tab_type == 'video' else self.log_events_audio
         unique_new_paths = [p for p in new_paths if p not in set(full_paths)]
-        if not unique_new_paths: self.log_to_gui(f"\n{d['alert_files_exist']}\n", log_widget); return
-        full_paths.extend(unique_new_paths)
-        self._update_listbox(full_paths, filenames_var)
-        self.log_to_gui(f"\n{d['log_files_added'].format(count=len(unique_new_paths))}\n{d['log_total_files'].format(total=len(full_paths))}\n", log_widget)
         
-    def _add_files(self, ft, fp, fv, lw): self._add_paths_to_list(self._select_files(ft), fp, fv, lw)
-    def _add_folder(self, ft, fp, fv, lw): self._add_paths_to_list(self._select_folder_and_search(ft), fp, fv, lw)
+        events_list.append(('raw', ''))
+        if not unique_new_paths:
+            events_list.append(('log', ('alert_files_exist', {})))
+        else:
+            full_paths.extend(unique_new_paths)
+            self._update_listbox(full_paths, filenames_var)
+            events_list.append(('log', ('log_files_added', {'count': len(unique_new_paths)})))
+            events_list.append(('log', ('log_total_files', {'total': len(full_paths)})))
+        events_list.append(('raw', ''))
+        self._redisplay_logs(tab_type)
+
+    def _add_files(self, ft, fp, fv, tt): self._add_paths_to_list(self._select_files(ft), fp, fv, tt)
+    def _add_folder(self, ft, fp, fv, tt): self._add_paths_to_list(self._select_folder_and_search(ft), fp, fv, tt)
         
-    def _remove_selected_from_list(self, lb, fp, fv, lw):
+    def _remove_selected_from_list(self, lb, fp, fv, tt):
         sel_idx = lb.curselection()
         if not sel_idx: return
         for i in sorted(sel_idx, reverse=True): del fp[i]
         self._update_listbox(fp, fv)
-        d = LANGUAGES[self.lang.get()]
-        self.log_to_gui(f"\n{d['log_files_removed'].format(count=len(sel_idx))}\n", lw)
         
-    def _clear_list(self, fp, fv, lw):
+        events_list = self.log_events_video if tt == 'video' else self.log_events_audio
+        events_list.extend([
+            ('raw', ''),
+            ('log', ('log_files_removed', {'count': len(sel_idx)})),
+            ('raw', '')
+        ])
+        self._redisplay_logs(tt)
+        
+    def _clear_list(self, fp, fv, tt):
         if not fp: return
         count = len(fp)
         fp.clear()
         self._update_listbox(fp, fv)
-        d = LANGUAGES[self.lang.get()]
-        self.log_to_gui(f"\n{d['log_all_files_removed'].format(count=count)}\n", lw)
+
+        events_list = self.log_events_video if tt == 'video' else self.log_events_audio
+        events_list.extend([
+            ('raw', ''),
+            ('log', ('log_all_files_removed', {'count': count})),
+            ('raw', '')
+        ])
+        self._redisplay_logs(tt)
+
+    def _log_to_tab(self, tab_type, key, **kwargs):
+        events_list = self.log_events_video if tab_type == 'video' else self.log_events_audio
+        events_list.extend([('raw', ''), ('log', (key, kwargs)), ('raw', '')])
+        self._redisplay_logs(tab_type)
 
     def start_video_conversion(self, output_dir):
-        d = LANGUAGES[self.lang.get()]
-        if not self.video_full_paths: self.log_to_gui(f"\n{d['error_no_files']}\n", self.video_log_text); return
-        if not output_dir: self.log_to_gui(f"\n{d['error_no_output_video']}\n", self.video_log_text); return
+        if not self.video_full_paths: self._log_to_tab('video', 'error_no_files'); return
+        if not output_dir: self._log_to_tab('video', 'error_no_output_video'); return
         self._start_ffmpeg_download_if_needed(output_dir)
 
     def _start_ffmpeg_download_if_needed(self, output_dir):
-        d = LANGUAGES[self.lang.get()]
         if not self.usmtoolkit_path:
-            self.log_to_gui(f"\n{d['ffmpeg_no_usm_path']}\n", self.video_log_text)
+            self._log_to_tab('video', 'ffmpeg_no_usm_path')
             self._reset_video_ui_state()
             return
             
         self._set_ui_state(self.video_widgets, 'disabled')
         self.video_widgets['action_btn'].config(state='disabled')
-        self.video_widgets['status_label'].config(text=d['ffmpeg_downloading'].format(progress=0.0))
+        self.video_widgets['status_label'].config(text=self.get_string('ffmpeg_downloading', progress=0.0))
         self.video_widgets['progress']['value'] = 0
 
         download_future = self.ffmpeg_downloader.ensure_ffmpeg_ready()
         
         def on_download_complete(future):
-            d_cb = LANGUAGES[self.lang.get()]
             ffmpeg_ready = future.result()
             if ffmpeg_ready:
-                self.video_widgets['status_label'].config(text=d_cb['status_idle'])
+                d_cb = self.get_string
+                self.video_widgets['status_label'].config(text=d_cb('status_idle'))
                 self.video_widgets['progress']['value'] = 0
                 self.video_cancel_event.clear()
                 threading.Thread(target=self.logic.run_video_conversion, daemon=True, args=(self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.video_cancel_event)).start()
-                self.video_widgets['action_btn'].config(text=d_cb['cancel_conversion'], command=self.cancel_video_conversion, state='normal')
+                self.video_widgets['action_btn'].config(text=d_cb('cancel_conversion'), command=self.cancel_video_conversion, state='normal')
             else:
-                self.log_to_gui(f"\n{d_cb['ffmpeg_prepare_fail']}\n", self.video_log_text)
+                self._log_to_tab('video', 'ffmpeg_prepare_fail')
                 self._reset_video_ui_state()
         download_future.add_done_callback(on_download_complete)
 
@@ -829,73 +1006,80 @@ class App(tk.Tk):
         self.video_widgets['action_btn'].config(state='disabled'); self.video_cancel_event.set()
 
     def start_audio_conversion(self, output_dir, overwrite):
-        d = LANGUAGES[self.lang.get()]
-        if not self.audio_full_paths: self.log_to_gui(f"\n{d['error_no_files']}\n", self.audio_log_text); return
-        if not output_dir: self.log_to_gui(f"\n{d['error_no_output_audio']}\n", self.audio_log_text); return
+        if not self.audio_full_paths: self._log_to_tab('audio', 'error_no_files'); return
+        if not output_dir: self._log_to_tab('audio', 'error_no_output_audio'); return
 
         self.audio_cancel_event.clear()
         self._set_ui_state(self.audio_widgets, 'disabled')
-        self.audio_widgets['action_btn'].config(text=d['cancel_conversion'], command=self.cancel_audio_conversion, state='normal')
+        self.audio_widgets['action_btn'].config(text=self.get_string('cancel_conversion'), command=self.cancel_audio_conversion, state='normal')
         threading.Thread(target=self.logic.run_audio_conversion, daemon=True, args=(self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.audio_cancel_event)).start()
 
     def cancel_audio_conversion(self):
         self.audio_widgets['action_btn'].config(state='disabled'); self.audio_cancel_event.set()
 
-    def log_to_gui(self, message, log_widget, clear_first=False):
-        log_widget.config(state='normal')
-        if clear_first: log_widget.delete('1.0', tk.END)
-        log_widget.insert(tk.END, message)
-        log_widget.config(state='disabled')
-        log_widget.see(tk.END)
-
     def _process_log_queue(self):
         MAX_MESSAGES_PER_CYCLE = 200
+        logs_processed = False
         try:
             for _ in range(MAX_MESSAGES_PER_CYCLE):
                 msg = self.log_queue.get_nowait()
                 msg_type, *args = msg
-                d = LANGUAGES[self.lang.get()]
                 
                 if msg_type.startswith('__'): 
                     was_cancelled = args[0]
+                    d = self.get_string
                     if msg_type == '__VIDEO_DONE__':
                         widgets, total = self.video_widgets, self.video_total_files
                         current = widgets['progress']['value']
                         status_key = 'status_cancelled' if was_cancelled else 'status_complete'
-                        widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
+                        widgets['status_label'].config(text=d(status_key, current=current, total=total))
                         self._reset_video_ui_state()
                     elif msg_type == '__AUDIO_DONE__':
                         widgets, total = self.audio_widgets, self.audio_total_files
                         current = widgets['progress']['value']
                         status_key = 'status_cancelled' if was_cancelled else 'status_complete'
-                        widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
+                        widgets['status_label'].config(text=d(status_key, current=current, total=total))
                         self._reset_audio_ui_state()
-                elif msg_type == 'log':
-                    target_tab, text = args
-                    log_widget = self.video_log_text if target_tab == 'video' else self.audio_log_text
-                    self.log_to_gui(text + '\n', log_widget)
+                
+                elif msg_type == 'log' or msg_type == 'log_raw':
+                    target_tab, data = args
+                    events_list = self.log_events_video if target_tab == 'video' else self.log_events_audio
+                    events_list.append((msg_type, data))
+                    logs_processed = True
+                
                 elif msg_type == 'progress_start':
                     target_tab, total = args
                     widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
                     if target_tab == 'video': self.video_total_files = total
                     else: self.audio_total_files = total
                     widgets['progress'].config(maximum=total, value=0)
-                    widgets['status_label'].config(text=d['status_starting'].format(total=total))
+                    widgets['status_label'].config(text=self.get_string('status_starting', total=total))
+                
                 elif msg_type == 'progress_update':
                     target_tab, value = args
                     widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
                     total = self.video_total_files if target_tab == 'video' else self.audio_total_files
                     widgets['progress']['value'] = value
-                    widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
+                    widgets['status_label'].config(text=self.get_string('status_processing', current=value, total=total))
+
                 elif msg_type == 'progress_update_status':
-                    target_tab, status_text, progress_value = args
+                    target_tab, status_key, progress_value = args
                     widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
-                    widgets['status_label'].config(text=status_text)
-                    widgets['progress']['value'] = progress_value
+                    # progress_value가 튜플로 올 수 있는 경우를 처리
+                    if isinstance(progress_value, tuple):
+                        widgets['status_label'].config(text=self.get_string(status_key, progress=progress_value[0]))
+                        widgets['progress']['value'] = progress_value[0]
+                    else:
+                        widgets['status_label'].config(text=self.get_string(status_key, progress=progress_value))
+                        widgets['progress']['value'] = progress_value
+
 
         except queue.Empty:
             pass
         finally:
+            if logs_processed:
+                self._redisplay_logs('video')
+                self._redisplay_logs('audio')
             self.after(100, self._process_log_queue)
 
 if __name__ == "__main__":
