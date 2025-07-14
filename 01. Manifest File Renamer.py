@@ -13,7 +13,7 @@ import queue
 # 중앙 언어 관리 시스템
 LANGUAGES = {
     'ko': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "언어(Language)", 'menu_about': "정보(About)",
+        'window_title': "Manifest File Renamer", 'menu_language': "언어(Language)", 'menu_about': "정보(About)",
         'start_button': "작업 시작", 'status_waiting': "상태: 대기 중", 'status_searching': "파일 검색 중...",
         'status_processing': "처리: {current} / {total}", 'status_complete': "상태: 완료",
         'status_complete_count': "완료: {count} / {count}",
@@ -54,7 +54,7 @@ LANGUAGES = {
         'about_label_website': "웹 사이트",
     },
     'en': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "Language", 'menu_about': "About",
+        'window_title': "Manifest File Renamer", 'menu_language': "Language", 'menu_about': "About",
         'start_button': "Start Job", 'status_waiting': "Status: Waiting", 'status_searching': "Searching files...",
         'status_processing': "Processing: {current} / {total}", 'status_complete': "Status: Complete",
         'status_complete_count': "Complete: {count} / {count}",
@@ -95,7 +95,7 @@ LANGUAGES = {
         'about_label_website': "Website",
     },
     'ja': {
-        'window_title': "Manifest File Renamer (GUI Version)", 'menu_language': "言語(Language)", 'menu_about': "情報(About)",
+        'window_title': "Manifest File Renamer", 'menu_language': "言語(Language)", 'menu_about': "情報(About)",
         'start_button': "作業開始", 'status_waiting': "状態: 待機中", 'status_searching': "ファイルを検索中...",
         'status_processing': "処理中: {current} / {total}", 'status_complete': "状態: 完了",
         'status_complete_count': "完了: {count} / {count}",
@@ -143,7 +143,7 @@ class FileRenamerGUI:
     ABOUT_INFO = {
         'program': "Manifest File Renamer",
         'version': "2.0.0",
-        'updated': "2025-07-13",
+        'updated': "2025-07-15",
         'license': "MIT License",
         'developer': "(Github) IZH318",
         'website': "https://github.com/IZH318",
@@ -153,70 +153,54 @@ class FileRenamerGUI:
         self.master = master
         self.current_lang = 'ko'
         self.lang_var = tk.StringVar(value=self.current_lang)
-        self.lang_var.trace_add("write", self._on_language_change)
+        self.lang_var.trace_add("write", self.on_language_change)
         
-        self.log_events = []
+        self.log_data = []
         
         self.last_progress_info = {'current': 0, 'total': 0}
         self.is_processing = False
-        
+        window_width = 800
+        window_height = 600
+        screen_width = self.master.winfo_screenwidth()
+        screen_height = self.master.winfo_screenheight()
+        center_x = int(screen_width / 2 - window_width / 2)
+        center_y = int(screen_height / 2 - window_height / 2)
+        self.master.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+
         self.log_queue = queue.Queue()
         self.progress_queue = queue.Queue()
         self.file_processor = RenameHashedFile(self.log_queue, self.progress_queue, self.get_string)
         
+        self.MAX_LOGS_PER_CYCLE = 1000
         self.GUI_UPDATE_INTERVAL_MS = 100
         
         self.progress_label_var = tk.StringVar()
         self.total_files_count = 0
 
-        self._center_window(800, 600)
-        self._setup_ui()
-        self._update_ui_text() 
-        self.show_initial_message()
-        self.master.after(self.GUI_UPDATE_INTERVAL_MS, self.monitor_queue)
+        self.menubar = None
+        self.language_menu = None
 
-    def _center_window(self, width, height):
-        screen_width = self.master.winfo_screenwidth()
-        screen_height = self.master.winfo_screenheight()
-        x = (screen_width // 2) - (width // 2)
-        y = (screen_height // 2) - (height // 2)
-        self.master.geometry(f'{width}x{height}+{x}+{y}')
+        self.create_widgets()
+        self.update_ui_language(is_initial_setup=True)
 
-    def _setup_ui(self):
-        """UI 위젯을 생성하고 배치합니다. 텍스트는 _update_ui_text에서 설정합니다."""
-        self.menubar = tk.Menu(self.master)
-        self.master.config(menu=self.menubar)
+    def get_string(self, key, **kwargs):
+        return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
 
-        self.language_menu = tk.Menu(self.menubar, tearoff=0)
-        self.language_menu.add_radiobutton(label="한국어", variable=self.lang_var, value='ko')
-        self.language_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
-        self.language_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
-        
-        top_frame = tk.Frame(self.master)
-        top_frame.pack(padx=10, pady=10, fill=tk.X)
-        
-        control_frame = tk.Frame(top_frame)
-        control_frame.pack(fill=tk.X)
+    def set_language(self, lang_code):
+        if self.current_lang != lang_code:
+            self.current_lang = lang_code
+            self.file_processor.set_get_string_func(self.get_string)
+            self.update_ui_language()
 
-        self.start_button = tk.Button(control_frame, command=self.start_processing_thread)
-        self.start_button.pack(side=tk.RIGHT, padx=(10, 0))
+    def on_language_change(self, *args):
+        new_lang = self.lang_var.get()
+        self.set_language(new_lang)
 
-        self.progress_label = tk.Label(control_frame, textvariable=self.progress_label_var, width=25)
-        self.progress_label.pack(side=tk.LEFT, padx=(0, 5))
-
-        self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
-        self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X)
-        
-        self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9), state='disabled')
-        self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
-
-    def _update_ui_text(self):
-        """UI의 모든 정적 텍스트를 현재 언어로 업데이트합니다."""
+    def update_ui_language(self, is_initial_setup=False):
         self.master.title(self.get_string('window_title'))
         
-        self.menubar.delete(0, tk.END)
-        self.menubar.add_cascade(label=self.get_string('menu_language'), menu=self.language_menu)
-        self.menubar.add_command(label=self.get_string('menu_about'), command=self._show_about_info)
+        # 메뉴바를 현재 언어로 다시 그림
+        self.create_menubar()
         
         self.start_button.config(text=self.get_string('start_button'))
         
@@ -230,156 +214,185 @@ class FileRenamerGUI:
                  self.progress_label_var.set(self.get_string('status_searching'))
             else:
                 self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
-
-    # <<< START OF CHANGE - 강제 종료 버그 수정 >>>
-    def _on_language_change(self, *args):
+        
+        if is_initial_setup:
+            self.show_initial_message()
+        
+        self.re_render_logs()
+        
+    def create_menubar(self):
         """
-        언어 변경 감지 시, UI 충돌을 피하기 위해 실제 변경 작업을 after()로 예약합니다.
+        메뉴바를 생성하거나, 이미 있다면 내용을 모두 지우고 현재 언어로 다시 만듭니다.
+        이것이 가장 안정적인 방법입니다.
         """
-        # 현재 이벤트 처리가 완료된 후 _apply_language_change를 실행하도록 예약
-        self.master.after(10, self._apply_language_change)
+        if self.menubar is None:
+            # 프로그램 시작 시 한 번만 메뉴바 객체를 생성
+            self.menubar = tk.Menu(self.master)
+            self.master.config(menu=self.menubar)
+        else:
+            # 언어 변경 시, 기존 메뉴 항목들을 모두 삭제
+            self.menubar.delete(0, tk.END)
 
-    def _apply_language_change(self):
-        """
-        예약된 언어 변경 작업을 실제로 수행합니다.
-        """
-        new_lang = self.lang_var.get()
-        if self.current_lang != new_lang:
-            self.current_lang = new_lang
-            self.file_processor.set_get_string_func(self.get_string)
-            self._update_ui_text()
-            self._redisplay_logs()
-    # <<< END OF CHANGE >>>
+        # 언어 메뉴 (드롭다운) 생성
+        self.language_menu = tk.Menu(self.menubar, tearoff=0)
+        self.language_menu.add_radiobutton(label="한국어", variable=self.lang_var, value='ko')
+        self.language_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
+        self.language_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
+        
+        # 현재 언어에 맞는 텍스트로 메뉴바에 항목들을 다시 추가
+        self.menubar.add_cascade(label=self.get_string('menu_language'), menu=self.language_menu)
+        self.menubar.add_command(label=self.get_string('menu_about'), command=self.show_about_info)
 
-    def get_string(self, key, **kwargs):
-        """현재 언어에 맞는 문자열을 반환합니다."""
-        return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
+    def show_about_info(self):
+        self.log_data.append(SEPARATOR)
+        self.log_data.append('SHOW_ABOUT_INFO')
+        self.log_data.append(SEPARATOR)
+        self.re_render_logs()
 
-    def _log(self, event):
-        """로그 이벤트를 저장하고 즉시 로그 영역을 다시 그립니다."""
-        self.log_events.append(event)
-        self._redisplay_logs()
+    def create_widgets(self):
+        # 메뉴바 생성은 update_ui_language에서 처리하므로 여기서 호출하지 않음
+        top_frame = tk.Frame(self.master)
+        top_frame.pack(padx=10, pady=10, fill=tk.X)
+        
+        control_frame = tk.Frame(top_frame)
+        control_frame.pack(fill=tk.X)
 
-    def _redisplay_logs(self):
-        """log_events에 저장된 모든 로그를 현재 언어로 다시 번역하여 표시합니다."""
+        # 1. 시작 버튼을 생성하고 오른쪽에 배치합니다. (side=tk.RIGHT)
+        self.start_button = tk.Button(control_frame, command=self.start_processing_thread)
+        self.start_button.pack(side=tk.RIGHT, padx=(10, 0))
+
+        # 2. 상태 레이블을 왼쪽에 배치합니다.
+        self.progress_label = tk.Label(control_frame, textvariable=self.progress_label_var, width=25)
+        self.progress_label.pack(side=tk.LEFT, padx=(0, 5))
+
+        # 3. 프로그레스 바를 레이블 옆, 남은 공간을 모두 채우도록 왼쪽에 배치합니다.
+        self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
+        self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X)
+        
+        # 로그 영역은 변경 없이 그대로 둡니다.
+        self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9))
+        self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
+
+    def show_initial_message(self):
+        self.log_data.clear()
+        
+        folder_lines = []
+        folders = self.file_processor.target_folders
+        for i, folder in enumerate(folders):
+            prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
+            folder_lines.append((prefix_key, {'folder_name': folder}))
+
+        initial_log_structure = [
+            SEPARATOR,
+            ('initial_info_db', {'folder_structure': "\n".join([self.get_string(k, **v) for k,v in folder_lines])}),
+            ('initial_info_start', {}),
+            SEPARATOR,
+        ]
+        self.log_data = initial_log_structure
+        self.re_render_logs()
+        
+    def re_render_logs(self):
         self.log_area.configure(state='normal')
         self.log_area.delete('1.0', tk.END)
         
         rendered_logs = []
-        for item in self.log_events:
+        for item in self.log_data:
             if isinstance(item, str):
-                rendered_logs.append(item)
-            elif isinstance(item, tuple):
-                key, original_kwargs = item
-                kwargs = original_kwargs.copy()
-                
-                if key == 'show_about_info':
-                    about_lines = [self.get_string('about_header'), ""]
-                    for about_key, value in self.ABOUT_INFO.items():
-                        label_key = f'about_label_{about_key}'
+                if item == 'SHOW_ABOUT_INFO':
+                    about_lines = [self.get_string('about_header')]
+                    for key, value in self.ABOUT_INFO.items():
+                        label_key = f'about_label_{key}'
                         label_text = self.get_string(label_key)
                         about_lines.append(f"  - {label_text}\t: {value}")
                     rendered_logs.append("\n".join(about_lines))
                 else:
-                    if key == 'initial_info_db':
-                        folder_lines = []
-                        folders = self.file_processor.target_folders
-                        for i, folder in enumerate(folders):
-                             prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
-                             folder_lines.append(self.get_string(prefix_key, folder_name=folder))
-                        kwargs['folder_structure'] = "\n".join(folder_lines)
-                    rendered_logs.append(self.get_string(key, **kwargs))
+                    rendered_logs.append(item)
+            elif isinstance(item, tuple):
+                key, original_kwargs = item
+                kwargs = original_kwargs.copy()
+                
+                if key == 'initial_info_db':
+                    folder_lines = []
+                    folders = self.file_processor.target_folders
+                    for i, folder in enumerate(folders):
+                         prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
+                         folder_lines.append(self.get_string(prefix_key, folder_name=folder))
+                    kwargs['folder_structure'] = "\n".join(folder_lines)
+
+                rendered_logs.append(self.get_string(key, **kwargs))
 
         self.log_area.insert('1.0', "\n".join(rendered_logs))
         self.log_area.configure(state='disabled')
         self.log_area.see(tk.END)
 
-    def show_initial_message(self):
-        """프로그램 시작 시 초기 메시지를 표시합니다."""
-        self.log_events.clear()
-        
-        self.log_events.extend([
-            SEPARATOR,
-            ('initial_info_db', {}),
-            ('initial_info_start', {}),
-            SEPARATOR,
-        ])
-        self._redisplay_logs()
-
-    def _show_about_info(self):
-        """정보(About) 메뉴 클릭 시 로그를 추가합니다."""
-        self._log(SEPARATOR)
-        self._log(('show_about_info', {}))
-        self._log(SEPARATOR)
+    def add_log_data(self, log_item):
+        self.log_data.append(log_item)
+        self.re_render_logs()
 
     def start_processing_thread(self):
-        """작업 시작 버튼 클릭 시 처리 스레드를 시작합니다."""
         if not os.path.exists(os.path.join(os.getcwd(), "manifest.db")):
             messagebox.showerror(self.get_string('error_title'), self.get_string('error_db_not_found'))
             return
         
         self.show_initial_message()
-        self._log(('job_start_log', {}))
+        self.add_log_data(('job_start_log', {}))
         
         self.is_processing = True
         self.start_button.config(state=tk.DISABLED)
         self.progress_bar['value'] = 0
         self.last_progress_info = {'current': 0, 'total': 0}
-        self.total_files_count = 0
-        self._update_ui_text()
+        self.progress_label_var.set(self.get_string('status_searching'))
         
         self.file_processor.set_get_string_func(self.get_string)
         
         processing_thread = threading.Thread(target=self.file_processor.process_files, daemon=True)
         processing_thread.start()
+        self.monitor_queue(processing_thread)
 
-    def monitor_queue(self):
-        """주기적으로 백그라운드 큐를 확인하여 UI를 업데이트합니다."""
-        is_worker_alive = False
-        for t in threading.enumerate():
-            if t.daemon and t != threading.main_thread():
-                is_worker_alive = True
-                break
-
-        log_updated = False
+    def monitor_queue(self, thread):
+        new_log_data = []
         try:
-            while not self.log_queue.empty():
-                log_item = self.log_queue.get_nowait()
-                self.log_events.append(log_item)
-                log_updated = True
+            for _ in range(self.MAX_LOGS_PER_CYCLE):
+                new_log_data.append(self.log_queue.get_nowait())
         except queue.Empty:
             pass
         
-        if log_updated:
-            self._redisplay_logs()
+        if new_log_data:
+            self.log_data.extend(new_log_data)
+            self.re_render_logs()
 
-        progress_updated = False
         try:
             while not self.progress_queue.empty():
                 progress_val, current, total = self.progress_queue.get_nowait()
                 self.progress_bar['value'] = progress_val
                 self.last_progress_info = {'current': current, 'total': total}
+                self.progress_label_var.set(self.get_string('status_processing', current=current, total=total))
                 self.total_files_count = total
-                progress_updated = True
         except queue.Empty:
             pass
-        
-        if progress_updated:
-            self._update_ui_text()
-        
-        if self.is_processing and not is_worker_alive:
-            while not self.log_queue.empty():
-                log_item = self.log_queue.get_nowait()
-                self.log_events.append(log_item)
+
+        if thread.is_alive():
+            self.master.after(self.GUI_UPDATE_INTERVAL_MS, lambda: self.monitor_queue(thread))
+        else:
+            final_logs = []
+            try:
+                while True: 
+                    final_logs.append(self.log_queue.get_nowait())
+            except queue.Empty: pass
             
-            self._log(('job_complete_log', {}))
+            if final_logs:
+                self.log_data.extend(final_logs)
+            
+            self.add_log_data(('job_complete_log', {}))
+            self.re_render_logs()
 
             self.is_processing = False
             self.progress_bar['value'] = 100
-            self._update_ui_text()
+            if self.total_files_count > 0:
+                self.progress_label_var.set(self.get_string('status_complete_count', count=self.total_files_count))
+            else:
+                self.progress_label_var.set(self.get_string('status_complete'))
             self.start_button.config(state=tk.NORMAL)
-
-        self.master.after(self.GUI_UPDATE_INTERVAL_MS, self.monitor_queue)
 
 
 class RenameHashedFile:
