@@ -18,7 +18,7 @@ LANGUAGES = {
         'status_processing': "처리: {current} / {total}", 'status_complete': "상태: 완료",
         'status_complete_count': "완료: {count} / {count}",
         'initial_info_db': "[ 주의 ] 현재 디렉터리에 'manifest.db' 파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n\n"
-                           "         [ 예시 ] \n"
+                           "         [ 예시 ]\n"
                            "         C:\\MyRenamer\\\n"
                            "            ├─ 01. Manifest File Renamer.py  (← 실행 파일)\n"
                            "            ├─ manifest.db\n"
@@ -151,7 +151,7 @@ SEPARATOR = "-" * 100
 class FileRenamerGUI:
     ABOUT_INFO = {
         'program': "Manifest File Renamer (GUI Version)",
-        'version': "2.0",
+        'version': "2.0.1 (Bug Fix)",
         'updated': "2025-07-13",
         'license': "MIT License",
         'developer': "(Github) IZH318",
@@ -193,7 +193,6 @@ class FileRenamerGUI:
 
     def _setup_ui(self):
         """UI 위젯을 생성하고 배치합니다. 텍스트는 _update_ui_text에서 설정합니다."""
-        # --- 메뉴바 ---
         self.menubar = tk.Menu(self.master)
         self.master.config(menu=self.menubar)
 
@@ -202,9 +201,6 @@ class FileRenamerGUI:
         self.language_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
         self.language_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
         
-        # 메뉴 항목 추가는 _update_ui_text에서 담당합니다.
-
-        # --- 컨트롤 프레임 (상단) ---
         top_frame = tk.Frame(self.master)
         top_frame.pack(padx=10, pady=10, fill=tk.X)
         
@@ -220,7 +216,6 @@ class FileRenamerGUI:
         self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
         self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
-        # --- 로그 영역 ---
         self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9), state='disabled')
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
@@ -228,15 +223,12 @@ class FileRenamerGUI:
         """UI의 모든 정적 텍스트를 현재 언어로 업데이트합니다."""
         self.master.title(self.get_string('window_title'))
         
-        # [FIXED] 안정적인 메뉴바 업데이트 (삭제 후 재생성)
         self.menubar.delete(0, tk.END)
         self.menubar.add_cascade(label=self.get_string('menu_language'), menu=self.language_menu)
         self.menubar.add_command(label=self.get_string('menu_about'), command=self._show_about_info)
         
-        # 버튼 텍스트 업데이트
         self.start_button.config(text=self.get_string('start_button'))
         
-        # 상태 레이블 텍스트 업데이트
         if not self.is_processing:
             if self.total_files_count > 0 and self.progress_bar['value'] == 100:
                 self.progress_label_var.set(self.get_string('status_complete_count', count=self.total_files_count))
@@ -248,14 +240,25 @@ class FileRenamerGUI:
             else:
                 self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
 
+    # <<< START OF CHANGE - 강제 종료 버그 수정 >>>
     def _on_language_change(self, *args):
-        """언어 변경 시 호출되는 콜백 함수."""
+        """
+        언어 변경 감지 시, UI 충돌을 피하기 위해 실제 변경 작업을 after()로 예약합니다.
+        """
+        # 현재 이벤트 처리가 완료된 후 _apply_language_change를 실행하도록 예약
+        self.master.after(10, self._apply_language_change)
+
+    def _apply_language_change(self):
+        """
+        예약된 언어 변경 작업을 실제로 수행합니다.
+        """
         new_lang = self.lang_var.get()
         if self.current_lang != new_lang:
             self.current_lang = new_lang
             self.file_processor.set_get_string_func(self.get_string)
             self._update_ui_text()
             self._redisplay_logs()
+    # <<< END OF CHANGE >>>
 
     def get_string(self, key, **kwargs):
         """현재 언어에 맞는 문자열을 반환합니다."""
@@ -304,16 +307,10 @@ class FileRenamerGUI:
         """프로그램 시작 시 초기 메시지를 표시합니다."""
         self.log_events.clear()
         
-        folder_lines = []
-        folders = self.file_processor.target_folders
-        for i, folder in enumerate(folders):
-            prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
-            folder_lines.append((prefix_key, {'folder_name': folder}))
-
         self.log_events.extend([
             ASCII_ART,
             SEPARATOR,
-            ('initial_info_db', {'folder_structure': "\n".join([self.get_string(k, **v) for k,v in folder_lines])}),
+            ('initial_info_db', {}),
             ('initial_info_start', {}),
             SEPARATOR,
         ])
@@ -339,7 +336,7 @@ class FileRenamerGUI:
         self.progress_bar['value'] = 0
         self.last_progress_info = {'current': 0, 'total': 0}
         self.total_files_count = 0
-        self._update_ui_text() # 상태 텍스트 업데이트
+        self._update_ui_text()
         
         self.file_processor.set_get_string_func(self.get_string)
         
@@ -348,15 +345,12 @@ class FileRenamerGUI:
 
     def monitor_queue(self):
         """주기적으로 백그라운드 큐를 확인하여 UI를 업데이트합니다."""
-        # 현재 실행 중인 작업 스레드가 있는지 확인
         is_worker_alive = False
         for t in threading.enumerate():
-            # 메인 스레드가 아닌 데몬 스레드가 살아있는지 확인
             if t.daemon and t != threading.main_thread():
                 is_worker_alive = True
                 break
 
-        # 로그 큐 처리
         log_updated = False
         try:
             while not self.log_queue.empty():
@@ -369,7 +363,6 @@ class FileRenamerGUI:
         if log_updated:
             self._redisplay_logs()
 
-        # 진행 상태 큐 처리
         progress_updated = False
         try:
             while not self.progress_queue.empty():
@@ -384,9 +377,7 @@ class FileRenamerGUI:
         if progress_updated:
             self._update_ui_text()
         
-        # 작업 완료 처리
         if self.is_processing and not is_worker_alive:
-            # 큐에 남은 메시지가 있을 수 있으므로 마지막으로 한 번 더 처리
             while not self.log_queue.empty():
                 log_item = self.log_queue.get_nowait()
                 self.log_events.append(log_item)
