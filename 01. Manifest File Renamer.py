@@ -136,22 +136,13 @@ LANGUAGES = {
         'about_label_website': "ウェブサイト",
     }
 }
-ASCII_ART = r"""
-      ___      _                        _____                       __  __      ___      _ ___  _         
-     / _ \____(_)__  _______ ___ ___   / ___/__  ___  ___  ___ ____/ /_/ /     / _ \___ (_) _ \(_)  _____ 
-    / ___/ __/ / _ \/ __/ -_|_-<(_-<  / /__/ _ \/ _ \/ _ \/ -_) __/ __/_/     / , _/ -_) / // / / |/ / -_)
-   /_/  /_/ /_/_//_/\__/\__/___/___/  \___/\___/_//_/_//_/\__/\__/\__(_)     /_/|_|\__(_)____/_/|___/\__/
-              __  ___          _ ___        __    _____ __      ___                             
-             /  |/  /__ ____  (_) _/__ ___ / /_  / __(_) /__   / _ \___ ___  ___ ___ _  ___ ____
-            / /|_/ / _ `/ _ \/ / _/ -_|_-</ __/ / _// / / -_) / , _/ -_) _ \/ _ `/  ' \/ -_) __/
-           /_/  /_/\_,_/_//_/_/_/ \__/___/\__/ /_/ /_/_/\__/ /_/|_|\__/_//_/\_,_/_/_/_/\__/_/
-        """
+
 SEPARATOR = "-" * 100
 
 class FileRenamerGUI:
     ABOUT_INFO = {
-        'program': "Manifest File Renamer (GUI Version)",
-        'version': "2.0.1 (Bug Fix)",
+        'program': "Manifest File Renamer",
+        'version': "2.0.0",
         'updated': "2025-07-13",
         'license': "MIT License",
         'developer': "(Github) IZH318",
@@ -308,7 +299,6 @@ class FileRenamerGUI:
         self.log_events.clear()
         
         self.log_events.extend([
-            ASCII_ART,
             SEPARATOR,
             ('initial_info_db', {}),
             ('initial_info_start', {}),
