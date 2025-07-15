@@ -1,6 +1,7 @@
 # 필요한 라이브러리 임포트
 import os
 import sys
+from datetime import datetime
 import sqlite3
 import hashlib
 import concurrent.futures
@@ -11,133 +12,135 @@ import threading
 import queue
 
 # 중앙 언어 관리 시스템
+# ▼▼▼ [수정 1] 이 LANGUAGES 딕셔너리 전체를 교체해주세요. ▼▼▼
 LANGUAGES = {
     'ko': {
         'window_title': "Manifest File Renamer", 'menu_language': "언어(Language)", 'menu_about': "정보(About)",
         'start_button': "작업 시작", 'status_waiting': "상태: 대기 중", 'status_searching': "파일 검색 중...",
         'status_processing': "처리: {current} / {total}", 'status_complete': "상태: 완료",
         'status_complete_count': "완료: {count} / {count}",
+        'program_started': "프로그램이 시작되었습니다. '작업 시작' 버튼을 눌러주세요.",
         'initial_info_db': "[ 주의 ] 현재 디렉터리에 'manifest.db' 파일과 작업을 진행할 파일이 원본 구조 그대로 있어야 합니다.\n\n"
                            "         [ 예시 ]\n"
                            "         C:\\MyRenamer\\\n"
                            "            ├─ 01. Manifest File Renamer.py  (← 실행 파일)\n"
                            "            ├─ manifest.db\n"
-                           "{folder_structure}\n",
+                           "{folder_structure}",
         'initial_info_start': "[ 안내 ] '작업 시작' 버튼을 눌러주세요.",
         'folder_item_branch': "            ├─ {folder_name}\\ (← 작업 대상 폴더)",
         'folder_item_last':   "            └─ {folder_name}\\ (← 작업 대상 폴더)",
         'error_title': "오류", 'error_db_not_found': "'manifest.db' 파일을 찾을 수 없습니다。",
-        'job_start_log': "\n" + "="*100 + "\n[ 작업 시작 ] 새로운 작업을 시작합니다.\n",
-        'job_complete_log': "\n작업이 모두 완료되었습니다.",
+        'job_start_log': "="*100 + "\n[ 작업 시작 ] 새로운 작업을 시작합니다.",
+        'job_complete_log': "작업이 모두 완료되었습니다.",
         'backend_warning_db_not_found': "[ 경고 ] 현재 디렉터리에 'manifest.db'파일이 존재하지 않습니다.",
         'backend_info_long_time': " [ 안내 ] 작업할 파일의 개수가 많거나 저장 장치의 읽기 쓰기 속도가 느릴 경우 시간이 오래 걸릴 수 있습니다.",
-        'backend_info_auto_rename': "          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.\n",
+        'backend_info_auto_rename': "          모든 파일이 불러와지면 파일 이름이 모두 자동으로 변환됩니다.",
         'backend_searching_files': "[ 진행 ] 대상 폴더에서 파일 목록을 검색 중입니다...",
         'backend_no_files_found': "대상 폴더에서 처리 할 파일을 찾을 수 없습니다.",
         'backend_found_files': "[ 완료 ] 총 {count}개의 처리 대상 파일을 찾았습니다. 이름 변경을 시작합니다.",
-        'backend_unprocessed_header': "\n\n\n [ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.",
+        'backend_unprocessed_header': "[ 안내 ] manifest.db에서 인식하지 못한 파일은 다음과 같이 예외 처리 또는 생략되었습니다.",
         'backend_unprocessed_error': " 오류 발생: 알 수 없는 오류가 발생했습니다. ({error})",
         'backend_file_process_fail': "파일 처리 실패 {path}: {exc}",
-        'backend_job_summary': "\n\n\n--- 작업 완료 ---\n총 {total_processed}개의 파일이 처리되었습니다.",
+        'backend_job_summary': "--- 작업 완료 ---\n총 {total_processed}개의 파일이 처리되었습니다.",
         'backend_unprocessed_summary': "{count}개의 파일은 처리되지 않았습니다.",
-        'backend_rename_exception_success': "\n  - 작업 상태: 예외 처리된 파일 이름 변경 완료",
-        'backend_rename_success': "\n  - 작업 상태: 파일 이름 변경 완료",
-        'backend_rename_original': "    - 원본: \\{path}",
-        'backend_rename_changed': "    - 변경: \\{path}",
         'backend_rename_error': "오류: {error}",
+        'backend_rename_block': "  - 작업 상태: 파일 이름 변경 완료\n"
+                                "    - 원본: \\{original}\n"
+                                "    - 변경: \\{new}\n",
+        'backend_rename_exception_block': "  - 작업 상태: 예외 처리된 파일 이름 변경 완료\n"
+                                          "    - 원본: \\{original}\n"
+                                          "    - 변경: \\{new}\n",
         'about_header': "[ 프로그램 정보 ]",
-        'about_label_program': "프로그램 이름",
-        'about_label_version': "버전",
-        'about_label_updated': "최종 업데이트",
-        'about_label_license': "라이선스",
-        'about_label_developer': "개발자",
-        'about_label_website': "웹 사이트",
+        'about_label_program': "프로그램 이름", 'about_label_version': "버전", 'about_label_updated': "최종 업데이트",
+        'about_label_license': "라이선스", 'about_label_developer': "개발자", 'about_label_website': "웹 사이트",
     },
     'en': {
         'window_title': "Manifest File Renamer", 'menu_language': "Language", 'menu_about': "About",
         'start_button': "Start Job", 'status_waiting': "Status: Waiting", 'status_searching': "Searching files...",
         'status_processing': "Processing: {current} / {total}", 'status_complete': "Status: Complete",
         'status_complete_count': "Complete: {count} / {count}",
+        'program_started': "Program started. Please press the 'Start Job' button.",
         'initial_info_db': "[ WARNING ] 'manifest.db' and the target files must be in the current directory with their original structure.\n\n"
                            "         [ Example ]\n"
                            "         C:\\MyRenamer\\\n"
                            "            ├─ 01. Manifest File Renamer.py  (← Executable)\n"
                            "            ├─ manifest.db\n"
-                           "{folder_structure}\n",
+                           "{folder_structure}",
         'initial_info_start': "[ INFO ] Please press the 'Start Job' button.",
         'folder_item_branch': "            ├─ {folder_name}\\ (← Target folder)",
         'folder_item_last':   "            └─ {folder_name}\\ (← Target folder)",
         'error_title': "Error", 'error_db_not_found': "'manifest.db' file not found.",
-        'job_start_log': "\n" + "="*100 + "\n[ JOB START ] Starting a new job.\n",
-        'job_complete_log': "\nThe job has been completed.",
+        'job_start_log': "="*100 + "\n[ JOB START ] Starting a new job.",
+        'job_complete_log': "The job has been completed.",
         'backend_warning_db_not_found': "[ WARNING ] 'manifest.db' does not exist in the current directory.",
         'backend_info_long_time': " [ INFO ] This may take a long time if there are many files or the storage device is slow.",
-        'backend_info_auto_rename': "          All files will be renamed automatically after being loaded.\n",
+        'backend_info_auto_rename': "          All files will be renamed automatically after being loaded.",
         'backend_searching_files': "[ PROGRESS ] Searching for files in target folders...",
         'backend_no_files_found': "No files to process were found in the target folders.",
         'backend_found_files': "[ COMPLETE ] Found a total of {count} files to process. Starting rename.",
-        'backend_unprocessed_header': "\n\n\n [ INFO ] Files not recognized by manifest.db were handled or skipped as follows.",
+        'backend_unprocessed_header': "[ INFO ] Files not recognized by manifest.db were handled or skipped as follows.",
         'backend_unprocessed_error': " An unknown error occurred. ({error})",
         'backend_file_process_fail': "Failed to process file {path}: {exc}",
-        'backend_job_summary': "\n\n\n--- JOB COMPLETE ---\nA total of {total_processed} files have been processed.",
+        'backend_job_summary': "--- JOB COMPLETE ---\nA total of {total_processed} files have been processed.",
         'backend_unprocessed_summary': "{count} files were not processed.",
-        'backend_rename_exception_success': "\n  - Status: Renamed file via exception handling",
-        'backend_rename_success': "\n  - Status: File renamed successfully",
-        'backend_rename_original': "    - Original: \\{path}",
-        'backend_rename_changed': "    - New: \\{path}",
         'backend_rename_error': "Error: {error}",
+        'backend_rename_block': "  - Status: File renamed successfully\n"
+                                "    - Original: \\{original}\n"
+                                "    - New: \\{new}\n",
+        'backend_rename_exception_block': "  - Status: Renamed file via exception handling\n"
+                                          "    - Original: \\{original}\n"
+                                          "    - New: \\{new}\n",
         'about_header': "[ Program Information ]",
-        'about_label_program': "Program",
-        'about_label_version': "Version",
-        'about_label_updated': "Updated",
-        'about_label_license': "License",
-        'about_label_developer': "Developer",
-        'about_label_website': "Website",
+        'about_label_program': "Program", 'about_label_version': "Version", 'about_label_updated': "Updated",
+        'about_label_license': "License", 'about_label_developer': "Developer", 'about_label_website': "Website",
     },
     'ja': {
         'window_title': "Manifest File Renamer", 'menu_language': "言語(Language)", 'menu_about': "情報(About)",
         'start_button': "作業開始", 'status_waiting': "状態: 待機中", 'status_searching': "ファイルを検索中...",
         'status_processing': "処理中: {current} / {total}", 'status_complete': "状態: 完了",
         'status_complete_count': "完了: {count} / {count}",
+        'program_started': "プログラムが起動しました。「作業開始」ボタンを押してください。",
         'initial_info_db': "[ 注意 ] 現在のディレクトリに 'manifest.db' ファイルと対象ファイルを元の構造のまま配置してください。\n\n"
                            "         [ 例 ]\n"
                            "         C:\\MyRenamer\\\n"
                            "            ├─ 01. Manifest File Renamer.py  (← 実行ファイル)\n"
                            "            ├─ manifest.db\n"
-                           "{folder_structure}\n",
+                           "{folder_structure}",
         'initial_info_start': "[ 案内 ] 「作業開始」ボタンを押してください。",
         'folder_item_branch': "            ├─ {folder_name}\\ (← 対象フォルダ)",
         'folder_item_last':   "            └─ {folder_name}\\ (← 対象フォルダ)",
         'error_title': "エラー", 'error_db_not_found': "'manifest.db' ファイルが見つかりません。",
-        'job_start_log': "\n" + "="*100 + "\n[ 作業開始 ] 新しい作業を開始します。\n",
-        'job_complete_log': "\nすべての作業が完了しました。",
+        'job_start_log': "="*100 + "\n[ 作業開始 ] 新しい作業を開始します。",
+        'job_complete_log': "すべての作業が完了しました。",
         'backend_warning_db_not_found': "[ 警告 ] 現在のディレクトリに 'manifest.db' が存在しません。",
         'backend_info_long_time': "[ 案内 ] ファイル数が多い、またはストレージの速度が遅い場合、時間がかかることがあります。",
-        'backend_info_auto_rename': "          すべてのファイルが読み込まれた後、自動的にリネームされます。\n",
+        'backend_info_auto_rename': "          すべてのファイルが読み込まれた後、自動的にリネームされます。",
         'backend_searching_files': "[ 進行 ] 対象フォルダ内のファイルを検索しています...",
         'backend_no_files_found': "対象フォルダに処理するファイルが見つかりませんでした。",
         'backend_found_files': "[ 完了 ] 合計{count}個の処理対象ファイルを見つけました。名前の変更を開始します。",
-        'backend_unprocessed_header': "\n\n\n [ 案内 ] manifest.dbで認識できなかったファイルは、次のように例外処理またはスキップされました。",
+        'backend_unprocessed_header': "[ 案内 ] manifest.dbで認識できなかったファイルは、次のように例外処理またはスキップされました。",
         'backend_unprocessed_error': " 不明なエラーが発生しました。({error})",
         'backend_file_process_fail': "ファイル処理失敗 {path}: {exc}",
-        'backend_job_summary': "\n\n\n--- 作業完了 ---\n合計{total_processed}個のファイルが処理されました。",
+        'backend_job_summary': "--- 作業完了 ---\n合計{total_processed}個のファイルが処理されました。",
         'backend_unprocessed_summary': "{count}個のファイルは処理されませんでした。",
-        'backend_rename_exception_success': "\n  - 状態: 例外処理によりファイル名を変更しました",
-        'backend_rename_success': "\n  - 状態: ファイル名の変更が完了しました",
-        'backend_rename_original': "    - 元の名前: \\{path}",
-        'backend_rename_changed': "    - 新しい名前: \\{path}",
         'backend_rename_error': "エラー: {error}",
+        'backend_rename_block': "  - 状態: ファイル名の変更が完了しました\n"
+                                "    - 元の名前: \\{original}\n"
+                                "    - 新しい名前: \\{new}\n",
+        'backend_rename_exception_block': "  - 状態: 例外処理によりファイル名を変更しました\n"
+                                          "    - 元の名前: \\{original}\n"
+                                          "    - 新しい名前: \\{new}\n",
         'about_header': "[ プログラム情報 ]",
-        'about_label_program': "プログラム名",
-        'about_label_version': "バージョン",
-        'about_label_updated': "最終更新",
-        'about_label_license': "ライセンス",
-        'about_label_developer': "開発者",
-        'about_label_website': "ウェブサイト",
+        'about_label_program': "プログラム名", 'about_label_version': "バージョン", 'about_label_updated': "最終更新",
+        'about_label_license': "ライセンス", 'about_label_developer': "開発者", 'about_label_website': "ウェブサイト",
     }
 }
 
 SEPARATOR = "-" * 100
+
+from datetime import datetime
+
+from datetime import datetime
 
 class FileRenamerGUI:
     ABOUT_INFO = {
@@ -155,7 +158,7 @@ class FileRenamerGUI:
         self.lang_var = tk.StringVar(value=self.current_lang)
         self.lang_var.trace_add("write", self.on_language_change)
         
-        self.log_data = []
+        self.log_data = [] 
         
         self.last_progress_info = {'current': 0, 'total': 0}
         self.is_processing = False
@@ -183,14 +186,6 @@ class FileRenamerGUI:
         self.update_ui_language(is_initial_setup=True)
 
     def get_string(self, key, **kwargs):
-        if key == 'SHOW_ABOUT_INFO':
-            about_lines = [self.get_string('about_header')]
-            for info_key, value in self.ABOUT_INFO.items():
-                label_key = f'about_label_{info_key}'
-                label_text = self.get_string(label_key)
-                about_lines.append(f"  - {label_text}\t: {value}")
-            return "\n".join(about_lines)
-            
         return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
 
     def set_language(self, lang_code):
@@ -220,9 +215,10 @@ class FileRenamerGUI:
                 self.progress_label_var.set(self.get_string('status_processing', **self.last_progress_info))
         
         if is_initial_setup:
+            self.log_data.clear()
             self.show_initial_message()
-        else:
-            self.re_render_logs()
+        
+        self.re_render_logs()
         
     def create_menubar(self):
         if self.menubar is None:
@@ -240,9 +236,10 @@ class FileRenamerGUI:
         self.menubar.add_command(label=self.get_string('menu_about'), command=self.show_about_info)
 
     def show_about_info(self):
-        self.add_log_data(SEPARATOR)
-        self.add_log_data(('SHOW_ABOUT_INFO', {}))
-        self.add_log_data(SEPARATOR)
+        self._add_raw_text(SEPARATOR)
+        self._add_log_event('SHOW_ABOUT_INFO')
+        self._add_raw_text(SEPARATOR)
+        self.re_render_logs()
 
     def create_widgets(self):
         top_frame = tk.Frame(self.master)
@@ -261,81 +258,68 @@ class FileRenamerGUI:
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
     def show_initial_message(self):
-        self.log_data.clear()
+        self._add_log_event('program_started')
+        self._add_raw_text(SEPARATOR)
         
         folder_lines = []
         folders = self.file_processor.target_folders
         for i, folder in enumerate(folders):
             prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
-            folder_lines.append((prefix_key, {'folder_name': folder}))
-
-        initial_log_structure = [
-            SEPARATOR,
-            ('initial_info_db', {'folder_structure': "\n".join([self.get_string(k, **v) for k,v in folder_lines])}),
-            ('initial_info_start', {}),
-            SEPARATOR,
-        ]
-        self.log_data = initial_log_structure
-        self.re_render_logs()
-
+            folder_lines.append(self.get_string(prefix_key, folder_name=folder))
+        
+        self._add_log_event('initial_info_db', {'folder_structure': "\n".join(folder_lines)})
+        self._add_log_event('initial_info_start')
+        self._add_raw_text(SEPARATOR)
+        
     def re_render_logs(self):
         self.log_area.configure(state='normal')
         self.log_area.delete('1.0', tk.END)
         
-        rendered_logs = []
-        for item in self.log_data:
-            text = ""
-            if isinstance(item, str):
-                text = item
-            elif isinstance(item, tuple):
-                key, kwargs = item
-                if key == 'initial_info_db':
-                    temp_kwargs = kwargs.copy()
-                    folder_lines = []
-                    folders = self.file_processor.target_folders
-                    for i, folder in enumerate(folders):
-                         prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
-                         folder_lines.append(self.get_string(prefix_key, folder_name=folder))
-                    temp_kwargs['folder_structure'] = "\n".join(folder_lines)
-                    text = self.get_string(key, **temp_kwargs)
+        for timestamp, key, kwargs in self.log_data:
+            line = ""
+            if timestamp:
+                # ▼▼▼ [핵심 수정] 삭제되었던 'SHOW_ABOUT_INFO' 처리 로직을 복원합니다.
+                if key == 'SHOW_ABOUT_INFO':
+                    about_lines = [self.get_string('about_header')]
+                    for info_key, value in self.ABOUT_INFO.items():
+                        label_key = f'about_label_{info_key}'
+                        label_text = self.get_string(label_key)
+                        about_lines.append(f"  - {label_text}\t: {value}")
+                    # About 정보는 타임스탬프 없이 내용만 표시
+                    line = "\n".join(about_lines)
                 else:
-                    text = self.get_string(key, **kwargs)
-            rendered_logs.append(text)
+                    message = self.get_string(key, **kwargs)
+                    if key == 'backend_job_summary':
+                        parts = message.split('\n', 1)
+                        line = f"{parts[0]}\n[{timestamp}] {parts[1]}"
+                    else:
+                        line = f"[{timestamp}] {message}"
+            else:
+                line = key # Raw text
+            
+            self.log_area.insert(tk.END, line + "\n")
 
-        self.log_area.insert('1.0', "\n".join(rendered_logs))
         self.log_area.configure(state='disabled')
         self.log_area.see(tk.END)
 
-    def _append_text_to_log_area(self, text):
-        self.log_area.configure(state='normal')
-        self.log_area.insert(tk.END, text + "\n")
-        self.log_area.configure(state='disabled')
-        self.log_area.see(tk.END)
+    def _add_raw_text(self, text):
+        self.log_data.append((None, text, None))
 
-    def add_log_data(self, log_item):
-        self.log_data.append(log_item)
-        
-        text_to_append = ""
-        if isinstance(log_item, str):
-            text_to_append = log_item
-        elif isinstance(log_item, tuple):
-            # ▼▼▼ [핵심 수정 1] 튜플을 key와 kwargs로 분해하여 올바르게 전달합니다.
-            key, kwargs = log_item
-            text_to_append = self.get_string(key, **kwargs)
-        
-        self._append_text_to_log_area(text_to_append)
+    def _add_log_event(self, key, kwargs=None):
+        if kwargs is None:
+            kwargs = {}
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        self.log_data.append((timestamp, key, kwargs))
 
     def start_processing_thread(self):
         if not os.path.exists(os.path.join(os.getcwd(), "manifest.db")):
             messagebox.showerror(self.get_string('error_title'), self.get_string('error_db_not_found'))
             return
         
-        self.log_area.configure(state='normal')
-        self.log_area.delete('1.0', tk.END)
-        self.log_area.configure(state='disabled')
-        
+        self.log_data.clear()
         self.show_initial_message()
-        self.add_log_data(('job_start_log', {}))
+        self._add_log_event('job_start_log')
+        self.re_render_logs()
         
         self.is_processing = True
         self.start_button.config(state=tk.DISABLED)
@@ -362,13 +346,9 @@ class FileRenamerGUI:
             pass
 
         if log_items_batch:
-            self.log_data.extend(log_items_batch)
-            
-            # ▼▼▼ [핵심 수정 2] 리스트 컴프리헨션에서도 key와 kwargs로 분해합니다.
-            log_text_batch = [self.get_string(key, **kwargs) for key, kwargs in log_items_batch]
-            full_text_to_append = "\n".join(log_text_batch)
-            
-            self._append_text_to_log_area(full_text_to_append)
+            for key, kwargs in log_items_batch:
+                self._add_log_event(key, kwargs)
+            self.re_render_logs()
 
         if progress_updates:
             for progress_val, current, total in progress_updates:
@@ -387,12 +367,11 @@ class FileRenamerGUI:
             except queue.Empty: pass
             
             if final_log_items:
-                self.log_data.extend(final_log_items)
-                # ▼▼▼ [핵심 수정 3] 여기도 마찬가지로 key, kwargs로 분해합니다.
-                final_text_batch = [self.get_string(key, **kwargs) for key, kwargs in final_log_items]
-                self._append_text_to_log_area("\n".join(final_text_batch))
-
-            self.add_log_data(('job_complete_log', {}))
+                for key, kwargs in final_log_items:
+                    self._add_log_event(key, kwargs)
+            
+            self._add_log_event('job_complete_log')
+            self.re_render_logs()
 
             self.is_processing = False
             self.progress_bar['value'] = 100
@@ -494,9 +473,10 @@ class RenameHashedFile:
                         processed_count_check += 1
                         relative_file_path = os.path.relpath(file_path, os.getcwd())
                         
-                        self.log('backend_rename_exception_success')
-                        self.log('backend_rename_original', path=relative_file_path)
-                        self.log('backend_rename_changed', path=new_filename.replace(os.sep, '\\'))
+                        # ▼▼▼ [핵심 수정] 3개의 로그를 하나로 합침
+                        self.log('backend_rename_exception_block', 
+                                 original=relative_file_path,
+                                 new=new_filename.replace(os.sep, '\\'))
                         renamed_by_content = True
                 except Exception as e:
                     self.log('backend_unprocessed_error', error=str(e))
@@ -529,9 +509,10 @@ class RenameHashedFile:
             os.rename(file_path, new_filepath)
             relative_file_path = os.path.relpath(file_path, os.getcwd())
             
-            self.log('backend_rename_success')
-            self.log('backend_rename_original', path=relative_file_path)
-            self.log('backend_rename_changed', path=new_filename.replace(os.sep, '\\').replace('/', '\\'))
+            # ▼▼▼ [핵심 수정] 3개의 로그를 하나로 합침
+            self.log('backend_rename_block', 
+                     original=relative_file_path, 
+                     new=new_filename.replace(os.sep, '\\').replace('/', '\\'))
             
             return True, new_filepath
         except Exception as e:
