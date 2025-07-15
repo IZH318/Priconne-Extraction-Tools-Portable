@@ -171,7 +171,6 @@ class FileRenamerGUI:
         self.progress_queue = queue.Queue()
         self.file_processor = RenameHashedFile(self.log_queue, self.progress_queue, self.get_string)
         
-        self.MAX_LOGS_PER_CYCLE = 1000
         self.GUI_UPDATE_INTERVAL_MS = 100
         
         self.progress_label_var = tk.StringVar()
@@ -184,6 +183,14 @@ class FileRenamerGUI:
         self.update_ui_language(is_initial_setup=True)
 
     def get_string(self, key, **kwargs):
+        if key == 'SHOW_ABOUT_INFO':
+            about_lines = [self.get_string('about_header')]
+            for info_key, value in self.ABOUT_INFO.items():
+                label_key = f'about_label_{info_key}'
+                label_text = self.get_string(label_key)
+                about_lines.append(f"  - {label_text}\t: {value}")
+            return "\n".join(about_lines)
+            
         return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
 
     def set_language(self, lang_code):
@@ -198,14 +205,11 @@ class FileRenamerGUI:
 
     def update_ui_language(self, is_initial_setup=False):
         self.master.title(self.get_string('window_title'))
-        
-        # 메뉴바를 현재 언어로 다시 그림
         self.create_menubar()
-        
         self.start_button.config(text=self.get_string('start_button'))
         
         if not self.is_processing:
-            if self.total_files_count > 0 and self.progress_bar['value'] == 100:
+            if self.total_files_count > 0 and self.progress_bar['value'] >= 100:
                 self.progress_label_var.set(self.get_string('status_complete_count', count=self.total_files_count))
             else:
                  self.progress_label_var.set(self.get_string('status_waiting'))
@@ -217,60 +221,43 @@ class FileRenamerGUI:
         
         if is_initial_setup:
             self.show_initial_message()
-        
-        self.re_render_logs()
+        else:
+            self.re_render_logs()
         
     def create_menubar(self):
-        """
-        메뉴바를 생성하거나, 이미 있다면 내용을 모두 지우고 현재 언어로 다시 만듭니다.
-        이것이 가장 안정적인 방법입니다.
-        """
         if self.menubar is None:
-            # 프로그램 시작 시 한 번만 메뉴바 객체를 생성
             self.menubar = tk.Menu(self.master)
             self.master.config(menu=self.menubar)
         else:
-            # 언어 변경 시, 기존 메뉴 항목들을 모두 삭제
             self.menubar.delete(0, tk.END)
 
-        # 언어 메뉴 (드롭다운) 생성
         self.language_menu = tk.Menu(self.menubar, tearoff=0)
         self.language_menu.add_radiobutton(label="한국어", variable=self.lang_var, value='ko')
         self.language_menu.add_radiobutton(label="English", variable=self.lang_var, value='en')
         self.language_menu.add_radiobutton(label="日本語", variable=self.lang_var, value='ja')
         
-        # 현재 언어에 맞는 텍스트로 메뉴바에 항목들을 다시 추가
         self.menubar.add_cascade(label=self.get_string('menu_language'), menu=self.language_menu)
         self.menubar.add_command(label=self.get_string('menu_about'), command=self.show_about_info)
 
     def show_about_info(self):
-        self.log_data.append(SEPARATOR)
-        self.log_data.append('SHOW_ABOUT_INFO')
-        self.log_data.append(SEPARATOR)
-        self.re_render_logs()
+        self.add_log_data(SEPARATOR)
+        self.add_log_data(('SHOW_ABOUT_INFO', {}))
+        self.add_log_data(SEPARATOR)
 
     def create_widgets(self):
-        # 메뉴바 생성은 update_ui_language에서 처리하므로 여기서 호출하지 않음
         top_frame = tk.Frame(self.master)
         top_frame.pack(padx=10, pady=10, fill=tk.X)
-        
         control_frame = tk.Frame(top_frame)
         control_frame.pack(fill=tk.X)
 
-        # 1. 시작 버튼을 생성하고 오른쪽에 배치합니다. (side=tk.RIGHT)
         self.start_button = tk.Button(control_frame, command=self.start_processing_thread)
         self.start_button.pack(side=tk.RIGHT, padx=(10, 0))
-
-        # 2. 상태 레이블을 왼쪽에 배치합니다.
         self.progress_label = tk.Label(control_frame, textvariable=self.progress_label_var, width=25)
         self.progress_label.pack(side=tk.LEFT, padx=(0, 5))
-
-        # 3. 프로그레스 바를 레이블 옆, 남은 공간을 모두 채우도록 왼쪽에 배치합니다.
         self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
         self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
-        # 로그 영역은 변경 없이 그대로 둡니다.
-        self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9))
+        self.log_area = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, font=("Consolas", 9), state='disabled')
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
     def show_initial_message(self):
@@ -290,49 +277,62 @@ class FileRenamerGUI:
         ]
         self.log_data = initial_log_structure
         self.re_render_logs()
-        
+
     def re_render_logs(self):
         self.log_area.configure(state='normal')
         self.log_area.delete('1.0', tk.END)
         
         rendered_logs = []
         for item in self.log_data:
+            text = ""
             if isinstance(item, str):
-                if item == 'SHOW_ABOUT_INFO':
-                    about_lines = [self.get_string('about_header')]
-                    for key, value in self.ABOUT_INFO.items():
-                        label_key = f'about_label_{key}'
-                        label_text = self.get_string(label_key)
-                        about_lines.append(f"  - {label_text}\t: {value}")
-                    rendered_logs.append("\n".join(about_lines))
-                else:
-                    rendered_logs.append(item)
+                text = item
             elif isinstance(item, tuple):
-                key, original_kwargs = item
-                kwargs = original_kwargs.copy()
-                
+                key, kwargs = item
                 if key == 'initial_info_db':
+                    temp_kwargs = kwargs.copy()
                     folder_lines = []
                     folders = self.file_processor.target_folders
                     for i, folder in enumerate(folders):
                          prefix_key = 'folder_item_last' if i == len(folders) - 1 else 'folder_item_branch'
                          folder_lines.append(self.get_string(prefix_key, folder_name=folder))
-                    kwargs['folder_structure'] = "\n".join(folder_lines)
-
-                rendered_logs.append(self.get_string(key, **kwargs))
+                    temp_kwargs['folder_structure'] = "\n".join(folder_lines)
+                    text = self.get_string(key, **temp_kwargs)
+                else:
+                    text = self.get_string(key, **kwargs)
+            rendered_logs.append(text)
 
         self.log_area.insert('1.0', "\n".join(rendered_logs))
         self.log_area.configure(state='disabled')
         self.log_area.see(tk.END)
 
+    def _append_text_to_log_area(self, text):
+        self.log_area.configure(state='normal')
+        self.log_area.insert(tk.END, text + "\n")
+        self.log_area.configure(state='disabled')
+        self.log_area.see(tk.END)
+
     def add_log_data(self, log_item):
         self.log_data.append(log_item)
-        self.re_render_logs()
+        
+        text_to_append = ""
+        if isinstance(log_item, str):
+            text_to_append = log_item
+        elif isinstance(log_item, tuple):
+            # ▼▼▼ [핵심 수정 1] 튜플을 key와 kwargs로 분해하여 올바르게 전달합니다.
+            key, kwargs = log_item
+            text_to_append = self.get_string(key, **kwargs)
+        
+        self._append_text_to_log_area(text_to_append)
 
     def start_processing_thread(self):
         if not os.path.exists(os.path.join(os.getcwd(), "manifest.db")):
             messagebox.showerror(self.get_string('error_title'), self.get_string('error_db_not_found'))
             return
+        
+        self.log_area.configure(state='normal')
+        self.log_area.delete('1.0', tk.END)
+        self.log_area.configure(state='disabled')
         
         self.show_initial_message()
         self.add_log_data(('job_start_log', {}))
@@ -350,41 +350,49 @@ class FileRenamerGUI:
         self.monitor_queue(processing_thread)
 
     def monitor_queue(self, thread):
-        new_log_data = []
+        log_items_batch = []
+        progress_updates = []
+        
         try:
-            for _ in range(self.MAX_LOGS_PER_CYCLE):
-                new_log_data.append(self.log_queue.get_nowait())
+            while not self.log_queue.empty():
+                log_items_batch.append(self.log_queue.get_nowait())
+            while not self.progress_queue.empty():
+                progress_updates.append(self.progress_queue.get_nowait())
         except queue.Empty:
             pass
-        
-        if new_log_data:
-            self.log_data.extend(new_log_data)
-            self.re_render_logs()
 
-        try:
-            while not self.progress_queue.empty():
-                progress_val, current, total = self.progress_queue.get_nowait()
+        if log_items_batch:
+            self.log_data.extend(log_items_batch)
+            
+            # ▼▼▼ [핵심 수정 2] 리스트 컴프리헨션에서도 key와 kwargs로 분해합니다.
+            log_text_batch = [self.get_string(key, **kwargs) for key, kwargs in log_items_batch]
+            full_text_to_append = "\n".join(log_text_batch)
+            
+            self._append_text_to_log_area(full_text_to_append)
+
+        if progress_updates:
+            for progress_val, current, total in progress_updates:
                 self.progress_bar['value'] = progress_val
                 self.last_progress_info = {'current': current, 'total': total}
                 self.progress_label_var.set(self.get_string('status_processing', current=current, total=total))
                 self.total_files_count = total
-        except queue.Empty:
-            pass
 
         if thread.is_alive():
             self.master.after(self.GUI_UPDATE_INTERVAL_MS, lambda: self.monitor_queue(thread))
         else:
-            final_logs = []
+            final_log_items = []
             try:
                 while True: 
-                    final_logs.append(self.log_queue.get_nowait())
+                    final_log_items.append(self.log_queue.get_nowait())
             except queue.Empty: pass
             
-            if final_logs:
-                self.log_data.extend(final_logs)
-            
+            if final_log_items:
+                self.log_data.extend(final_log_items)
+                # ▼▼▼ [핵심 수정 3] 여기도 마찬가지로 key, kwargs로 분해합니다.
+                final_text_batch = [self.get_string(key, **kwargs) for key, kwargs in final_log_items]
+                self._append_text_to_log_area("\n".join(final_text_batch))
+
             self.add_log_data(('job_complete_log', {}))
-            self.re_render_logs()
 
             self.is_processing = False
             self.progress_bar['value'] = 100
@@ -393,7 +401,6 @@ class FileRenamerGUI:
             else:
                 self.progress_label_var.set(self.get_string('status_complete'))
             self.start_button.config(state=tk.NORMAL)
-
 
 class RenameHashedFile:
     def __init__(self, log_queue, progress_queue, get_string_func):
