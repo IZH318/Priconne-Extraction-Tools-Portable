@@ -557,6 +557,7 @@ class FFmpegDownloader:
                 shutil.rmtree(temp_extract_dir)
 
 # --- GUI 애플리케이션 ---
+# --- GUI 애플리케이션 ---
 class App(tk.Tk):
     ABOUT_INFO = {
         'program': "Audio Video Converter",
@@ -956,13 +957,36 @@ class App(tk.Tk):
         except (KeyError, TypeError) as e:
             return f"<{key}: formatting error {e}>"
 
+    # ▼▼▼ [수정됨] _add_log_entry: 수동 로그 추가 시 새로운 통합 함수를 호출합니다.
     def _add_log_entry(self, target_tab, log_key, **kwargs):
+        """수동으로 로그를 추가할 때 호출되는 함수. 새로 만든 통합 함수를 호출합니다."""
+        self._append_log(target_tab, log_key, **kwargs)
+
+    # ▼▼▼ [신규 추가] _append_log: 로그 기록과 화면 출력을 효율적으로 처리하는 통합 함수입니다.
+    def _append_log(self, target_tab, log_key, **kwargs):
+        """
+        로그를 효율적으로 처리하는 통합 함수.
+        1. 로그 기록(history)에 데이터를 추가합니다.
+        2. 해당 데이터를 기반으로 출력할 메시지 문자열을 생성합니다.
+        3. 올바른 탭의 ScrolledText 위젯 끝에 메시지를 추가합니다. (가장 효율적인 방식)
+        """
+        # 1. 대상 위젯과 기록 리스트를 결정합니다.
         history = self.video_log_history if target_tab == 'video' else self.audio_log_history
         log_widget = self.video_log_text if target_tab == 'video' else self.audio_log_text
+        
+        # 2. 로그 기록(history)에 원본 데이터를 저장합니다. (언어 변경 시 사용)
         history.append((log_key, kwargs))
+        
+        # 3. 화면에 출력할 최종 메시지 문자열을 렌더링합니다.
         message = self._render_log_entry(log_key, kwargs)
-        self.log_to_gui(message + '\n', log_widget)
+        
+        # 4. ScrolledText 위젯에 효율적으로 텍스트를 추가합니다.
+        log_widget.config(state='normal')
+        log_widget.insert(tk.END, message + '\n')
+        log_widget.config(state='disabled')
+        log_widget.see(tk.END) # 스크롤을 항상 맨 아래로 이동
 
+    # ▼▼▼ [수정됨] _redraw_logs: 언어 변경 시에만 사용되며, 비효율적인 로그 추가에는 사용되지 않습니다.
     def _redraw_logs(self):
         log_widget = self.video_log_text
         history = self.video_log_history
@@ -984,60 +1008,91 @@ class App(tk.Tk):
         log_widget.config(state='disabled')
         log_widget.see(tk.END)
 
-    def log_to_gui(self, message, log_widget):
-        log_widget.config(state='normal')
-        log_widget.insert(tk.END, message)
-        log_widget.config(state='disabled')
-        log_widget.see(tk.END)
+    # ▼▼▼ [삭제됨] log_to_gui: 더 이상 필요 없으므로 이 클래스에서 제거되었습니다.
 
+    # ▼▼▼ [수정됨] _process_log_queue: 로그 메시지 처리 시 _append_log를 호출하여 성능을 개선합니다.
     def _process_log_queue(self):
-        MAX_MESSAGES_PER_CYCLE = 200
+        """
+        GUI 큐를 '배치(Batch)' 단위로 처리하여 UI 멈춤 현상을 완벽히 해결하는 최종 버전.
+        한 번의 실행 주기에 큐에 쌓인 모든 메시지를 수집하여 단일 작업으로 처리합니다.
+        (ValueError 수정됨)
+        """
+        messages_by_tab = {'video': [], 'audio': []}
+        progress_updates = []
+        completion_signals = []
+
         try:
-            for _ in range(MAX_MESSAGES_PER_CYCLE):
+            while True:
                 msg = self.log_queue.get_nowait()
                 msg_type, *args = msg
-                d = self.lang_data
 
-                if msg_type.startswith('__'): 
-                    was_cancelled = args[0]
-                    if msg_type == '__VIDEO_DONE__':
-                        widgets, total = self.video_widgets, self.video_total_files
-                        current = widgets['progress']['value']
-                        status_key = 'status_cancelled' if was_cancelled else 'status_complete'
-                        widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
-                        self._reset_video_ui_state()
-                    elif msg_type == '__AUDIO_DONE__':
-                        widgets, total = self.audio_widgets, self.audio_total_files
-                        current = widgets['progress']['value']
-                        status_key = 'status_cancelled' if was_cancelled else 'status_complete'
-                        widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
-                        self._reset_audio_ui_state()
-                
-                elif msg_type == 'log_entry':
+                if msg_type == 'log_entry':
                     target_tab, log_key, kwargs = args
-                    history = self.video_log_history if target_tab == 'video' else self.audio_log_history
-                    history.append((log_key, kwargs))
-                    self._redraw_logs()
-
-                elif msg_type == 'progress_start':
-                    target_tab, total = args
-                    widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
-                    if target_tab == 'video': self.video_total_files = total
-                    else: self.audio_total_files = total
-                    widgets['progress'].config(maximum=total, value=0)
-                    widgets['status_label'].config(text=d['status_starting'].format(total=total))
-                
-                elif msg_type == 'progress_update':
-                    target_tab, value = args
-                    widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
-                    total = self.video_total_files if target_tab == 'video' else self.audio_total_files
-                    widgets['progress']['value'] = value
-                    widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
+                    # ▼▼▼ 여기가 핵심 수정 부분입니다 ▼▼▼
+                    # 전체 msg를 담는 대신, 필요한 (log_key, kwargs)만 담습니다.
+                    messages_by_tab[target_tab].append((log_key, kwargs))
+                elif msg_type.startswith('progress'):
+                    progress_updates.append(msg)
+                elif msg_type.startswith('__'):
+                    completion_signals.append(msg)
 
         except queue.Empty:
             pass
-        finally:
-            self.after(100, self._process_log_queue)
+
+        d = self.lang_data
+
+        for tab, messages in messages_by_tab.items():
+            if not messages:
+                continue
+
+            full_log_text = []
+            log_widget = self.video_log_text if tab == 'video' else self.audio_log_text
+            history = self.video_log_history if tab == 'video' else self.audio_log_history
+
+            # ▼▼▼ 이제 for문이 정상적으로 동작합니다 ▼▼▼
+            for log_key, kwargs in messages:
+                history.append((log_key, kwargs))
+                full_log_text.append(self._render_log_entry(log_key, kwargs))
+            
+            if full_log_text:
+                log_widget.config(state='normal')
+                log_widget.insert(tk.END, '\n'.join(full_log_text) + '\n')
+                log_widget.config(state='disabled')
+                log_widget.see(tk.END)
+
+        for msg in progress_updates:
+            msg_type, *args = msg
+            if msg_type == 'progress_start':
+                target_tab, total = args
+                widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
+                if target_tab == 'video': self.video_total_files = total
+                else: self.audio_total_files = total
+                widgets['progress'].config(maximum=total, value=0)
+                widgets['status_label'].config(text=d['status_starting'].format(total=total))
+            elif msg_type == 'progress_update':
+                target_tab, value = args
+                widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
+                total = self.video_total_files if target_tab == 'video' else self.audio_total_files
+                widgets['progress']['value'] = value
+                widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
+        
+        for msg in completion_signals:
+            msg_type, *args = msg
+            was_cancelled = args[0]
+            if msg_type == '__VIDEO_DONE__':
+                widgets, total = self.video_widgets, self.video_total_files
+                current = widgets['progress']['value']
+                status_key = 'status_cancelled' if was_cancelled else 'status_complete'
+                widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
+                self._reset_video_ui_state()
+            elif msg_type == '__AUDIO_DONE__':
+                widgets, total = self.audio_widgets, self.audio_total_files
+                current = widgets['progress']['value']
+                status_key = 'status_cancelled' if was_cancelled else 'status_complete'
+                widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
+                self._reset_audio_ui_state()
+
+        self.after(100, self._process_log_queue)
 
 if __name__ == "__main__":
     app = App()
