@@ -875,9 +875,6 @@ class AssetExtractorApp:
         self.log_text.tag_config("WARNING", background="#FFF3CD", foreground="#856404")
         self.log_text.tag_config("ERROR", background="#F8D7DA", foreground="#721C24")
         self.log_text.tag_config("SUCCESS", background="#D4EDDA", foreground="#155724")
-        # [MODIFIED] Removed special tags for 'About' info to use default styles.
-        # self.log_text.tag_config("ABOUT_HEADER", foreground="#00008B", font=('TkDefaultFont', 9, 'bold'))
-        # self.log_text.tag_config("ABOUT_CONTENT", foreground="#00008B")
 
         progress_info_frame = ttk.Frame(self.log_frame)
         progress_info_frame.grid(row=1, column=0, sticky='ew', padx=5, pady=(0, 5))
@@ -937,34 +934,31 @@ class AssetExtractorApp:
         self._update_progress_bar()
 
     def _redisplay_logs(self):
-        """Clear and redisplay all logs in the current language."""
         self.log_text.config(state='normal')
         self.log_text.delete('1.0', tk.END)
         for event in self.log_events:
-            self._render_log_event(event) # Re-render each stored event
+            self._render_log_event(event)
         self.log_text.config(state='disabled')
         self.log_text.see(tk.END)
 
     def _add_log_event(self, message_key, level='INFO', format_args=None, prefix=None):
-        """Adds a structured log event to the internal list (the 'Model')."""
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
         event = (timestamp, prefix, message_key, level, format_args)
         self.log_events.append(event)
         return event
 
-    def _render_log_event(self, event):
-        """Renders a single log event to the text widget (the 'View')."""
+    def _render_log_event(self, event, widget=None):
+        # ▼▼▼ [수정] 위젯을 인자로 받아 직접 그릴 수 있도록 변경
+        target_widget = widget or self.log_text
         timestamp, prefix, message_key, level, format_args = event
         
-        # Special case: 'show_about_info' triggers a specific display function
         if message_key == 'show_about_info':
-            self._display_about_info_in_log()
+            self._display_about_info_in_log(target_widget)
             return
 
         lang = self.lang.get()
         message_template = LANGUAGES[lang].get(message_key, message_key)
         
-        # Handle different message types
         if message_key == 'raw_text':
             message = format_args.get('text', '') if format_args else ''
         else:
@@ -973,32 +967,29 @@ class AssetExtractorApp:
         log_prefix = f"[{prefix}] " if prefix else ""
         full_message = f"[{timestamp}] {log_prefix}{message}\n"
         
-        self.log_text.config(state='normal')
-        self.log_text.insert(tk.END, full_message, level)
-        self.log_text.config(state='disabled')
-        self.log_text.see(tk.END)
+        target_widget.config(state='normal')
+        target_widget.insert(tk.END, full_message, level)
+        target_widget.config(state='disabled')
 
     def _log(self, message_key, level='INFO', format_args=None, prefix=None):
-        """Main logging function. Stores the event and then renders it."""
         event = self._add_log_event(message_key, level, format_args, prefix)
         self._render_log_event(event)
+        self.log_text.see(tk.END) # _log는 즉시 스크롤
 
     def _show_about_info(self):
-        """[MODIFIED] Logs the intention to show 'About' info with INFO level."""
         self._log('show_about_info', level='INFO')
 
-    def _display_about_info_in_log(self):
-        """[MODIFIED] Renders the 'About' information using the default INFO style."""
+    def _display_about_info_in_log(self, widget):
+        # ▼▼▼ [수정] 위젯을 인자로 받아 해당 위젯에 그림
         lang = self.lang.get()
         d = LANGUAGES[lang]
-        
         separator = "-" * 70 + "\n"
         
-        self.log_text.config(state='normal')
-        self.log_text.insert(tk.END, separator, "INFO")
+        widget.config(state='normal')
+        widget.insert(tk.END, separator, "INFO")
         
         header_text = f"{d['about_header']}\n"
-        self.log_text.insert(tk.END, header_text, "INFO") # Use INFO tag
+        widget.insert(tk.END, header_text, "INFO")
         
         about_lines = []
         for key, value in self.ABOUT_INFO.items():
@@ -1006,31 +997,47 @@ class AssetExtractorApp:
             label_text = d.get(label_key, key.capitalize())
             about_lines.append(f"  - {label_text} : {value}")
         
-        self.log_text.insert(tk.END, "\n".join(about_lines) + "\n", "INFO") # Use INFO tag
-        self.log_text.insert(tk.END, separator, "INFO")
-        
-        self.log_text.config(state='disabled')
-        self.log_text.see(tk.END)
+        widget.insert(tk.END, "\n".join(about_lines) + "\n", "INFO")
+        widget.insert(tk.END, separator, "INFO")
+        widget.config(state='disabled')
 
+    # ▼▼▼ [핵심 수정] _process_queues를 배치 처리 방식으로 완전히 교체
     def _process_queues(self):
+        log_batch = []
+        completion_batch_size = 0
+
         try:
             while not self.log_queue.empty():
-                log_type, *data = self.log_queue.get_nowait()
-                if log_type == 'log':
-                    prefix, message_key, level, format_args = data
-                    self._log(message_key, level, format_args, prefix)
-                elif log_type == 'raw':
-                    text, level = data
-                    self._log('raw_text', level, {'text': text})
-
+                log_batch.append(self.log_queue.get_nowait())
             while not self.completion_queue.empty():
                 self.completion_queue.get_nowait()
-                self.processed_files_count += 1
-                self._update_progress_bar()
+                completion_batch_size += 1
         except queue.Empty:
             pass
-        finally:
-            self.root.after(100, self._process_queues)
+
+        # --- 1. 수집된 로그 메시지를 하나의 텍스트로 합쳐 단 한번에 GUI에 표시 ---
+        if log_batch:
+            self.log_text.config(state='normal')
+            for log_item in log_batch:
+                log_type, *data = log_item
+                if log_type == 'log':
+                    prefix, message_key, level, format_args = data
+                    event = self._add_log_event(message_key, level, format_args, prefix)
+                    self._render_log_event(event) # 개별 렌더링은 유지, 단일 활성화/비활성화
+                elif log_type == 'raw':
+                    text, level = data
+                    event = self._add_log_event('raw_text', level, {'text': text})
+                    self._render_log_event(event)
+            self.log_text.config(state='disabled')
+            self.log_text.see(tk.END) # 모든 작업 후 한번만 스크롤
+
+        # --- 2. 수집된 완료 카운트를 한번에 반영 ---
+        if completion_batch_size > 0:
+            self.processed_files_count += completion_batch_size
+            self._update_progress_bar()
+
+        # --- 3. 다음 주기 예약 ---
+        self.root.after(100, self._process_queues)
     
     def _update_progress_bar(self):
         d = LANGUAGES[self.lang.get()]
@@ -1047,9 +1054,9 @@ class AssetExtractorApp:
         self.start_button.config(state=state)
         self.output_button.config(state=state)
         try:
-            self.menu_bar.entryconfig(1, state=state) # 파일 메뉴
-            self.menu_bar.entryconfig(2, state=state) # 언어 메뉴
-            self.menu_bar.entryconfig(3, state=state) # 정보 메뉴
+            self.menu_bar.entryconfig(1, state=state)
+            self.menu_bar.entryconfig(2, state=state)
+            self.menu_bar.entryconfig(3, state=state)
         except tk.TclError:
             pass
     
@@ -1160,8 +1167,6 @@ class AssetExtractorApp:
         self.root.after(0, self._on_extraction_complete)
 
     def _on_extraction_complete(self):
-        """추출 완료 후 UI를 업데이트하는 메서드."""
-        # 큐에 남은 메시지가 모두 처리되도록 잠시 대기
         self.root.after(200, self._finalize_completion)
 
     def _finalize_completion(self):
