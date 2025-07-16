@@ -30,8 +30,8 @@ LANGUAGES = {
         'cancel_conversion': "변환 중단",
         'overwrite_option': "기존 파일 덮어쓰기",
         'log_section': "처리 내역",
-        'menu_language': "언어",
-        'menu_info': "정보",
+        'menu_language': "언어(Language)",
+        'menu_info': "정보(About)",
         'about_header': "[ 프로그램 정보 ]",
         'about_label_program': "프로그램 이름",
         'about_label_version': "버전",
@@ -66,24 +66,23 @@ LANGUAGES = {
         'env_check_footer': "--------------------------",
         'max_worker_log': "[시스템] 시스템 부하를 고려하여 최대 {count}개의 파일을 동시에 변환합니다.",
         'conv_log_source': "  [원본]\n    {path}",
-        'conv_log_result_header': "\n  [결과]",
+        'conv_log_result_header': "  [결과]",
         'conv_log_skipped': "    이미 변환된 파일입니다. (건너뜀)",
         'conv_log_success': "    변환 성공: {path}",
         'conv_log_error_no_file': "    [오류] 변환은 성공했으나 결과 파일이 없습니다.",
         'conv_log_error_fail': "    [오류] 변환 실패 - {filename}",
         'conv_log_error_exception': "    [오류] 치명적 예외 발생 - {error}",
-        'conv_log_details_header': "\n  [상세 로그]",
-        'conv_log_details_error_header': "\n  [상세 오류]",
+        'conv_log_details_header': "  [상세 로그]",
+        'conv_log_details_error_header': "  [상세 오류]",
         'conv_log_worker_exception': "  [오류] 작업자 실행 중 예외: {filename} - {error}",
-        'conv_start_video': "\n--- 비디오 변환 작업을 시작합니다. ---",
-        'conv_start_audio': "\n--- 오디오 변환 작업을 시작합니다. ---",
+        'conv_start_video': "--- 비디오 변환 작업을 시작합니다. ---",
+        'conv_start_audio': "--- 오디오 변환 작업을 시작합니다. ---",
         'conv_video_skip_notice': "[알림] 기존 파일은 항상 건너뜁니다.",
         'conv_audio_overwrite_notice': "[옵션] 기존 파일을 덮어씁니다.",
         'conv_audio_skip_notice': "[옵션] 기존 파일은 건너뜁니다.",
         'conv_error_usmtoolkit_not_found': "\n[오류] UsmToolkit.exe를 찾을 수 없습니다. 변환을 중단합니다.\n",
         'conv_error_vgmstream_not_found': "\n[오류] vgmstream 실행 파일(test.exe)을 찾을 수 없습니다. 변환을 중단합니다.\n",
-        'conv_complete_video': "\n--- 비디오 변환 작업이 완료되었습니다. ---",
-        'conv_summary_video': "총 {total}개 파일 중 {success}개 변환, {skipped}개 건너뜀, {error}개 오류.\n",
+        'conv_summary_video': "총 {total}개 파일의 변환 작업이 완료되었습니다. (성공: {success}, 건너뜀: {skipped}, 오류: {error})\n",
         'conv_complete_audio': "\n--- 오디오 변환 작업이 완료되었습니다. ---",
         'conv_summary_audio': "총 {tracks}개의 트랙이 WAV 파일로 변환되었습니다.\n",
         'conv_audio_stream_error': "    [오류] 파일의 스트림 정보를 읽을 수 없습니다.",
@@ -121,7 +120,7 @@ LANGUAGES = {
         'overwrite_option': "Overwrite existing files",
         'log_section': "Processing Log",
         'menu_language': "Language",
-        'menu_info': "Info",
+        'menu_info': "About",
         'about_header': "[ Program Information ]",
         'about_label_program': "Program Name",
         'about_label_version': "Version",
@@ -156,24 +155,23 @@ LANGUAGES = {
         'env_check_footer': "-----------------------------",
         'max_worker_log': "[System] Up to {count} files will be converted simultaneously considering system load.",
         'conv_log_source': "  [Source]\n    {path}",
-        'conv_log_result_header': "\n  [Result]",
+        'conv_log_result_header': "  [Result]",
         'conv_log_skipped': "    Already converted file. (Skipped)",
         'conv_log_success': "    Conversion successful: {path}",
         'conv_log_error_no_file': "    [Error] Conversion succeeded, but the output file is missing.",
         'conv_log_error_fail': "    [Error] Conversion failed - {filename}",
         'conv_log_error_exception': "    [Error] Critical exception occurred - {error}",
-        'conv_log_details_header': "\n  [Details Log]",
-        'conv_log_details_error_header': "\n  [Error Details]",
+        'conv_log_details_header': "  [Details Log]",
+        'conv_log_details_error_header': "  [Error Details]",
         'conv_log_worker_exception': "  [Error] Exception during worker execution: {filename} - {error}",
-        'conv_start_video': "\n--- Starting video conversion ---",
-        'conv_start_audio': "\n--- Starting audio conversion ---",
+        'conv_start_video': "--- Starting video conversion ---",
+        'conv_start_audio': "--- Starting audio conversion ---",
         'conv_video_skip_notice': "[Notice] Existing files are always skipped.",
         'conv_audio_overwrite_notice': "[Option] Overwriting existing files.",
         'conv_audio_skip_notice': "[Option] Skipping existing files.",
         'conv_error_usmtoolkit_not_found': "\n[Error] UsmToolkit.exe not found. Aborting conversion.\n",
         'conv_error_vgmstream_not_found': "\n[Error] vgmstream executable (test.exe) not found. Aborting conversion.\n",
-        'conv_complete_video': "\n--- Video conversion complete ---",
-        'conv_summary_video': "Total {total} files: {success} converted, {skipped} skipped, {error} errors.\n",
+        'conv_summary_video': "Video conversion for {total} files is complete. (Success: {success}, Skipped: {skipped}, Errors: {error})\n",
         'conv_complete_audio': "\n--- Audio conversion complete ---",
         'conv_summary_audio': "A total of {tracks} tracks have been converted to WAV files.\n",
         'conv_audio_stream_error': "    [Error] Could not read stream info from the file.",
@@ -210,8 +208,8 @@ LANGUAGES = {
         'cancel_conversion': "変換中止",
         'overwrite_option': "既存のファイルを上書き",
         'log_section': "処理履歴",
-        'menu_language': "言語",
-        'menu_info': "情報",
+        'menu_language': "言語(Language)",
+        'menu_info': "情報(About)",
         'about_header': "[ プログラム情報 ]",
         'about_label_program': "プログラム名",
         'about_label_version': "バージョン",
@@ -246,24 +244,23 @@ LANGUAGES = {
         'env_check_footer': "--------------------------",
         'max_worker_log': "[システム] システム負荷を考慮し、最大{count}個のファイルを同時に変換します。",
         'conv_log_source': "  [元ファイル]\n    {path}",
-        'conv_log_result_header': "\n  [結果]",
+        'conv_log_result_header': "  [結果]",
         'conv_log_skipped': "    変換済みのファイルです。（スキップ）",
         'conv_log_success': "    変換成功: {path}",
         'conv_log_error_no_file': "    [エラー] 変換は成功しましたが、出力ファイルが見つかりません。",
         'conv_log_error_fail': "    [エラー] 変換失敗 - {filename}",
         'conv_log_error_exception': "    [エラー] 致命的な例外が発生 - {error}",
-        'conv_log_details_header': "\n  [詳細ログ]",
-        'conv_log_details_error_header': "\n  [エラー詳細]",
+        'conv_log_details_header': "  [詳細ログ]",
+        'conv_log_details_error_header': "  [エラー詳細]",
         'conv_log_worker_exception': "  [エラー] ワーカー実行中に例外が発生: {filename} - {error}",
-        'conv_start_video': "\n--- ビデオ変換を開始します ---",
-        'conv_start_audio': "\n--- オーディオ変換を開始します ---",
+        'conv_start_video': "--- ビデオ変換を開始します ---",
+        'conv_start_audio': "--- オーディオ変換を開始します ---",
         'conv_video_skip_notice': "[通知] 既存のファイルは常にスキップされます。",
         'conv_audio_overwrite_notice': "[オプション] 既存のファイルを上書きします。",
         'conv_audio_skip_notice': "[オプション] 既存のファイルをスキップします。",
         'conv_error_usmtoolkit_not_found': "\n[エラー] UsmToolkit.exe が見つかりません。変換を中止します。\n",
         'conv_error_vgmstream_not_found': "\n[エラー] vgmstream実行可能ファイル(test.exe)が見つかりません。変換を中止します。\n",
-        'conv_complete_video': "\n--- ビデオ変換が完了しました ---",
-        'conv_summary_video': "合計{total}ファイル中、{success}個変換、{skipped}個スキップ、{error}個エラー。\n",
+        'conv_summary_video': "計{total}ファイルの変換作業が完了しました。(成功: {success}, スキップ: {skipped}, エラー: {error})\n",
         'conv_complete_audio': "\n--- オーディオ変換が完了しました ---",
         'conv_summary_audio': "合計{tracks}個のトラックがWAVファイルに変換されました。\n",
         'conv_audio_stream_error': "    [エラー] ファイルのストリーム情報を読み取れませんでした。",
@@ -289,6 +286,7 @@ LANGUAGES = {
 class ConversionLogic:
     cpu_threads = os.cpu_count() or 1
     MAX_WORKERS = max(1, cpu_threads // 2)
+    SEPARATOR = "-" * 40
 
     def __init__(self, log_queue, base_path):
         self.log_queue = log_queue
@@ -313,9 +311,12 @@ class ConversionLogic:
         usmtoolkit_dir = usmtoolkit_path.parent
         extract_path = Path(output_dir) / (usm_file.stem + ".mp4")
         
-        log_entries = [('raw', {'text': "\n" + "-" * 60}), 
+        log_entries = [('raw', {'text': self.SEPARATOR}), 
                        ('conv_log_source', {'path': self._get_relative_path(usm_file)})]
         status = "unknown"
+
+        # 결과와 상세 로그 사이에 빈 줄을 만들기 위해 raw 로그 추가
+        log_entries.append(('raw', {'text': ''})) 
 
         if extract_path.exists():
             log_entries.append(('conv_log_result_header', {}))
@@ -334,6 +335,8 @@ class ConversionLogic:
                     status = "error"
                 tool_output = result.stdout.strip()
                 if tool_output:
+                    # 상세 로그와 내용 사이에 빈 줄을 만들기 위해 raw 로그 추가
+                    log_entries.append(('raw', {'text': ''})) 
                     log_entries.append(('conv_log_details_header', {}))
                     log_entries.extend([('raw', {'text': f"    > {line}"}) for line in tool_output.splitlines()])
             except subprocess.CalledProcessError as e:
@@ -342,19 +345,23 @@ class ConversionLogic:
                 status = "error"
                 error_output = (e.stderr or e.stdout or "No error output.").strip()
                 if error_output:
+                    # 상세 오류와 내용 사이에 빈 줄을 만들기 위해 raw 로그 추가
+                    log_entries.append(('raw', {'text': ''}))
                     log_entries.append(('conv_log_details_error_header', {}))
                     log_entries.extend([('raw', {'text': f"    > {line}"}) for line in error_output.splitlines()])
             except Exception as e:
                 log_entries.append(('conv_log_result_header', {}))
                 log_entries.append(('conv_log_error_exception', {'error': e}))
                 status = "error"
-        log_entries.append(('raw', {'text': "-" * 60}))
+        log_entries.append(('raw', {'text': self.SEPARATOR}))
         return status, log_entries
-
+    
     def run_video_conversion(self, input_paths, output_dir, usmtoolkit_path, cancel_event):
         target_tab = 'video'
         self._log_entry(target_tab, 'conv_start_video')
         self._log_entry(target_tab, 'conv_video_skip_notice')
+        self.log_queue.put(('log_spacing', target_tab))
+        
         if not usmtoolkit_path:
             self._log_entry(target_tab, 'conv_error_usmtoolkit_not_found')
             self.log_queue.put(('__VIDEO_DONE__', True))
@@ -370,7 +377,7 @@ class ConversionLogic:
                 if cancel_event.is_set(): break
                 try:
                     status, log_entries = future.result()
-                    for key, kwargs in log_entries: self._log_entry(target_tab, key, **kwargs)
+                    self.log_queue.put(('log_block', target_tab, log_entries))
                     if status == "success": success_count += 1
                     elif status == "skipped": skipped_count += 1
                     else: error_count += 1
@@ -383,7 +390,6 @@ class ConversionLogic:
                     self.log_queue.put(('progress_update', target_tab, completed_tasks))
         
         if cancel_event.is_set(): self._log_entry(target_tab, 'log_conversion_cancelled')
-        self._log_entry(target_tab, 'conv_complete_video')
         self._log_entry(target_tab, 'conv_summary_video', total=total_files, success=success_count, skipped=skipped_count, error=error_count)
         self.log_queue.put(('__VIDEO_DONE__', cancel_event.is_set()))
 
@@ -391,6 +397,7 @@ class ConversionLogic:
         target_tab = 'audio'
         self._log_entry(target_tab, 'conv_start_audio')
         self._log_entry(target_tab, 'conv_audio_overwrite_notice' if overwrite else 'conv_audio_skip_notice')
+        self.log_queue.put(('log_spacing', target_tab))
 
         if not vgmstream_path:
             self._log_entry(target_tab, 'conv_error_vgmstream_not_found')
@@ -408,7 +415,7 @@ class ConversionLogic:
                 if cancel_event.is_set(): break
                 try:
                     converted_count, log_entries = future.result()
-                    for key, kwargs in log_entries: self._log_entry(target_tab, key, **kwargs)
+                    self.log_queue.put(('log_block', target_tab, log_entries))
                     total_converted_tracks += converted_count
                 except Exception as e:
                     path = future_to_path[future]
@@ -441,7 +448,7 @@ class ConversionLogic:
 
     def _convert_audio_container(self, item_path_str, output_dir, vgmstream_path, overwrite, cancel_event):
         item_path = Path(item_path_str)
-        log_entries = [('raw', {'text': "\n" + "-" * 60}),
+        log_entries = [('raw', {'text': self.SEPARATOR}),
                        ('conv_log_source', {'path': self._get_relative_path(item_path)}),
                        ('conv_log_result_header', {})]
         total_converted = 0
@@ -452,7 +459,7 @@ class ConversionLogic:
         num_streams = self._get_stream_count(item_path, vgmstream_path)
         if num_streams == 0:
             log_entries.append(('conv_audio_stream_error', {}))
-            log_entries.append(('raw', {'text': "-" * 60}))
+            log_entries.append(('raw', {'text': self.SEPARATOR}))
             return 0, log_entries
 
         for i in range(1, num_streams + 1):
@@ -479,7 +486,7 @@ class ConversionLogic:
                     log_entries.extend([('raw', {'text': f"      > {line}"}) for line in error_output.splitlines()])
 
         if cancel_event.is_set(): log_entries.append(('log_conversion_cancelled', {}))
-        log_entries.append(('raw', {'text': "-" * 60}))
+        log_entries.append(('raw', {'text': self.SEPARATOR}))
         return total_converted, log_entries
 
 class FFmpegDownloader:
@@ -550,14 +557,20 @@ class FFmpegDownloader:
 class App(tk.Tk):
     ABOUT_INFO = {
         'program': "Audio Video Converter",
-        'version': "2.3.0",
-        'updated': "2025-07-15",
+        'version': "2.0.0",
+        'updated': "2025-07-17",
         'license': "MIT License",
         'developer': "(Github) IZH318",
         'website': "https://github.com/IZH318",
     }
+    SEPARATOR = "-" * 40
 
     def __init__(self):
+        # --- 다국어 텍스트 데이터 ---
+        # env_check_footer 키와 값을 각 언어에서 제거합니다.
+        for lang in LANGUAGES.values():
+            lang.pop('env_check_footer', None)
+            
         super().__init__()
         
         self.lang_data = LANGUAGES['ko']
@@ -583,13 +596,12 @@ class App(tk.Tk):
         ffmpeg_parent_dir = self.usmtoolkit_path.parent if self.usmtoolkit_path else self.base_path
         self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir, lambda: self.lang_data)
 
-        # 타임스탬프 중복 체크를 위한 변수
         self.last_log_timestamp = {'video': None, 'audio': None}
 
         self._setup_ui()
         self._log_initial_status()
         self._process_log_queue()
-
+    
     def _configure_window(self):
         self.title(self.lang_data['window_title'])
         width, height = 800, 600
@@ -617,14 +629,16 @@ class App(tk.Tk):
         self.menubar = Menu(self)
         self.config(menu=self.menubar)
         d = self.lang_data
-        self.info_menu_label = d['menu_info']
-        self.menubar.add_command(label=self.info_menu_label, command=self._show_about_info)
+
         self.lang_menu_label = d['menu_language']
         self.lang_menu = Menu(self.menubar, tearoff=0)
         self.lang_menu.add_command(label="한국어", command=lambda: self.switch_language('ko'))
         self.lang_menu.add_command(label="English", command=lambda: self.switch_language('en'))
         self.lang_menu.add_command(label="日本語", command=lambda: self.switch_language('ja'))
         self.menubar.add_cascade(label=self.lang_menu_label, menu=self.lang_menu)
+
+        self.info_menu_label = d['menu_info']
+        self.menubar.add_command(label=self.info_menu_label, command=self._show_about_info)
 
     def switch_language(self, lang_code):
         if lang_code in LANGUAGES:
@@ -675,15 +689,15 @@ class App(tk.Tk):
         except tk.TclError:
             target_tab = 'video'
         
-        self._add_raw_log(target_tab, "\n" + "-" * 70)
-        self._add_log_entry(target_tab, 'about_header')
-        self._add_raw_log(target_tab, "")
+        self.log_queue.put(('log_un-timestamped', target_tab, 'raw', {'text': f"\n{self.SEPARATOR}"}))
+        self.log_queue.put(('log_un-timestamped', target_tab, 'about_header', {}))
+        self.log_queue.put(('log_spacing', target_tab))
         
         for key, value in self.ABOUT_INFO.items():
             label_key = f'about_label_{key}'
-            self._add_log_entry(target_tab, 'about_line_key', label_key=label_key, value=value)
+            self.log_queue.put(('log_un-timestamped', target_tab, 'about_line_key', {'label_key': label_key, 'value': value}))
 
-        self._add_raw_log(target_tab, "-" * 70 + "\n")
+        self.log_queue.put(('log_un-timestamped', target_tab, 'raw', {'text': f"{self.SEPARATOR}\n"}))
 
     def _build_conversion_tab_ui(self, parent_tab, tab_type):
         d = self.lang_data
@@ -692,30 +706,33 @@ class App(tk.Tk):
         full_paths = self.audio_full_paths if is_audio_tab else self.video_full_paths
         filenames_var = self.audio_filenames_var if is_audio_tab else self.video_filenames_var
 
-        tab_pane = ttk.PanedWindow(parent_tab, orient=tk.HORIZONTAL)
-        tab_pane.pack(fill=tk.BOTH, expand=True)
-        controls_frame = ttk.Frame(tab_pane, width=240)
-        tab_pane.add(controls_frame) 
-        log_frame_container = ttk.LabelFrame(tab_pane, text=d['log_section'])
-        tab_pane.add(log_frame_container)
-        
-        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state='disabled', font=("Consolas", 9))
-        log_text_widget.pack(side='top', fill="both", expand=True, padx=5, pady=(5,0))
-        status_frame = ttk.Frame(log_frame_container)
-        status_frame.pack(side='bottom', fill='x', padx=5, pady=(2,5))
-        status_label = ttk.Label(status_frame, text=d['status_idle'])
-        status_label.pack(side='left')
-        progress_bar = ttk.Progressbar(status_frame, orient='horizontal', mode='determinate')
-        progress_bar.pack(side='left', fill='x', expand=True, padx=(5,0))
+        # --- Container for the ENTIRE BOTTOM ROW (packed first) ---
+        # 이 프레임은 PanedWindow 바깥에, 탭의 맨 아래에 위치합니다.
+        main_bottom_controls_frame = ttk.Frame(parent_tab)
+        main_bottom_controls_frame.pack(side='bottom', fill='x', pady=5, padx=5)
 
-        input_frame = ttk.LabelFrame(controls_frame, text=d['input_section'])
+        # --- PanedWindow for the main content area (packed second, fills remaining space) ---
+        # 상단의 분할된 영역입니다.
+        tab_pane = ttk.PanedWindow(parent_tab, orient=tk.HORIZONTAL)
+        tab_pane.pack(side='top', fill=tk.BOTH, expand=True)
+        
+        # --- Left Pane Container ---
+        left_pane_frame = ttk.Frame(tab_pane)
+        tab_pane.add(left_pane_frame, weight=1)
+
+        # --- Right Pane Container ---
+        right_pane_frame = ttk.Frame(tab_pane)
+        tab_pane.add(right_pane_frame, weight=3)
+
+        # --- Widgets for LEFT Pane (inside PanedWindow) ---
+        input_frame = ttk.LabelFrame(left_pane_frame, text=d['input_section'])
         input_frame.pack(fill='x', pady=5, padx=5)
         add_files_btn = ttk.Button(input_frame, text=d['add_files'], command=lambda: self._add_files(file_types, full_paths, filenames_var, tab_type))
         add_files_btn.pack(side='left', padx=5, pady=5, expand=True, fill='x')
         add_folder_btn = ttk.Button(input_frame, text=d['add_folder'], command=lambda: self._add_folder(file_types, full_paths, filenames_var, tab_type))
         add_folder_btn.pack(side='left', padx=5, pady=5, expand=True, fill='x')
 
-        list_container = ttk.LabelFrame(controls_frame, text=d['file_list_section'])
+        list_container = ttk.LabelFrame(left_pane_frame, text=d['file_list_section'])
         list_container.pack(fill='both', expand=True, pady=5, padx=5)
         list_frame = ttk.Frame(list_container)
         list_frame.pack(fill='both', expand=True, padx=5, pady=5)
@@ -726,17 +743,38 @@ class App(tk.Tk):
         listbox.config(yscrollcommand=scrollbar.set)
         self._create_right_click_menu(listbox, full_paths, filenames_var, tab_type)
         
-        output_frame = ttk.LabelFrame(controls_frame, text=d['output_section'])
-        output_frame.pack(fill='x', pady=5, padx=5)
+        # --- Widgets for RIGHT Pane (inside PanedWindow) ---
+        log_frame_container = ttk.LabelFrame(right_pane_frame, text=d['log_section'])
+        log_frame_container.pack(fill="both", expand=True, padx=5, pady=5)
+        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state='disabled', font=("Consolas", 9))
+        log_text_widget.pack(fill="both", expand=True, padx=5, pady=(5,0))
+        status_frame = ttk.Frame(log_frame_container)
+        status_frame.pack(side='bottom', fill='x', padx=5, pady=(2,5))
+        status_label = ttk.Label(status_frame, text=d['status_idle'])
+        status_label.pack(side='left')
+        progress_bar = ttk.Progressbar(status_frame, orient='horizontal', mode='determinate')
+        progress_bar.pack(side='left', fill='x', expand=True, padx=(5,0))
+
+        # --- Widgets for the BOTTOM ROW (spanning the full width) ---
+        # 이 위젯들은 처음에 만든 main_bottom_controls_frame에 배치됩니다.
+        
+        # 3. Action Section (fixed size, on the right)
+        action_frame = ttk.LabelFrame(main_bottom_controls_frame, text=d['action_section'])
+        action_frame.pack(side='right', fill='y', padx=(5, 0))
+
+        # 2. Output Section (expandable, on the left, takes remaining space)
+        output_frame = ttk.LabelFrame(main_bottom_controls_frame, text=d['output_section'])
+        output_frame.pack(side='left', fill='x', expand=True)
+        
+        # 위젯 내부 요소들 생성
         output_entry = ttk.Entry(output_frame, state='readonly')
         output_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
         browse_btn = ttk.Button(output_frame, text=d['browse'], command=lambda: self._select_output_folder(output_entry))
         browse_btn.pack(side='left', padx=5, pady=5)
-
-        action_frame = ttk.LabelFrame(controls_frame, text=d['action_section'])
-        action_frame.pack(fill='x', pady=5, padx=5)
+        
         action_button = ttk.Button(action_frame, text=d['start_conversion'])
         
+        # --- Final Widget Setup & Return ---
         widgets_dict = {'action_btn': action_button, 'add_files_btn': add_files_btn, 'add_folder_btn': add_folder_btn, 'output_entry': output_entry, 'progress': progress_bar, 'status_label': status_label}
         ui_elements_for_lang_update = {'log_frame_container': log_frame_container, 'input_frame': input_frame, 'list_container': list_container, 'output_frame': output_frame, 'action_frame': action_frame, 'browse_btn': browse_btn}
         
@@ -751,16 +789,18 @@ class App(tk.Tk):
             action_button.config(command=lambda: self.start_video_conversion(output_entry.get()))
 
         return widgets_dict, log_text_widget, ui_elements_for_lang_update
-    
+
     def _log_initial_status(self):
         self.video_log_history.clear()
         self.audio_log_history.clear()
         
         for tab in ['video', 'audio']:
-            self._add_raw_log(tab, "-"*26)
+            # 타임스탬프가 없는 raw text 메시지를 직접 큐에 추가
+            self.log_queue.put(('log_un-timestamped', tab, 'raw', {'text': self.SEPARATOR}))
             self._add_log_entry(tab, 'program_started')
-            self._add_raw_log(tab, "-"*26)
+            self.log_queue.put(('log_un-timestamped', tab, 'raw', {'text': self.SEPARATOR}))
 
+        # --- Video Tab Environment Check ---
         self._add_log_entry('video', 'env_check_header')
         if self.usmtoolkit_path:
             self._add_log_entry('video', 'env_success', tool_name="UsmToolkit.exe")
@@ -774,10 +814,13 @@ class App(tk.Tk):
         else:
             self._add_log_entry('video', 'env_error', tool_name="UsmToolkit.exe")
             self._add_log_entry('video', 'env_error_desc_video')
-        self._add_log_entry('video', 'env_check_footer')
+        # env_check_footer 대신 SEPARATOR를 타임스탬프 없이 직접 출력
+        self.log_queue.put(('log_un-timestamped', 'video', 'raw', {'text': self.SEPARATOR}))
         self._add_log_entry('video', 'max_worker_log', count=self.logic.MAX_WORKERS)
-        self._add_raw_log('video', '')
+        self.log_queue.put(('log_un-timestamped', 'video', 'raw', {'text': self.SEPARATOR}))
+        self._add_spacing('video')
 
+        # --- Audio Tab Environment Check ---
         self._add_log_entry('audio', 'env_check_header')
         if self.vgmstream_path:
             self._add_log_entry('audio', 'env_success', tool_name="vgmstream(test.exe)")
@@ -785,10 +828,11 @@ class App(tk.Tk):
         else:
             self._add_log_entry('audio', 'env_error', tool_name="vgmstream(test.exe)")
             self._add_log_entry('audio', 'env_error_desc_audio')
-        self._add_log_entry('audio', 'env_check_footer')
+        # env_check_footer 대신 SEPARATOR를 타임스탬프 없이 직접 출력
+        self.log_queue.put(('log_un-timestamped', 'audio', 'raw', {'text': self.SEPARATOR}))
         self._add_log_entry('audio', 'max_worker_log', count=self.logic.MAX_WORKERS)
-        self._add_raw_log('audio', '')
-
+        self.log_queue.put(('log_un-timestamped', 'audio', 'raw', {'text': self.SEPARATOR}))
+        self._add_spacing('audio')
     def _create_right_click_menu(self, listbox, full_paths, filenames_var, tab_type):
         menu = Menu(listbox, tearoff=0)
         menu.add_command(label="", command=lambda: self._remove_selected_from_list(listbox, full_paths, filenames_var, tab_type))
@@ -840,16 +884,16 @@ class App(tk.Tk):
         if not new_paths: return
         unique_new_paths = [p for p in new_paths if p not in set(full_paths)]
         if not unique_new_paths:
-            self._add_raw_log(tab_type, '')
+            self._add_spacing(tab_type)
             self._add_log_entry(tab_type, 'alert_files_exist')
-            self._add_raw_log(tab_type, '')
+            self._add_spacing(tab_type)
             return
         full_paths.extend(unique_new_paths)
         self._update_listbox(full_paths, filenames_var)
-        self._add_raw_log(tab_type, '')
+        self._add_spacing(tab_type)
         self._add_log_entry(tab_type, 'log_files_added', count=len(unique_new_paths))
         self._add_log_entry(tab_type, 'log_total_files', total=len(full_paths))
-        self._add_raw_log(tab_type, '')
+        self._add_spacing(tab_type)
         
     def _add_files(self, ft, fp, fv, tt): self._add_paths_to_list(self._select_files(ft), fp, tt, fv)
     def _add_folder(self, ft, fp, fv, tt): self._add_paths_to_list(self._select_folder_and_search(ft), fp, tt, fv)
@@ -859,18 +903,18 @@ class App(tk.Tk):
         if not sel_idx: return
         for i in sorted(sel_idx, reverse=True): del fp[i]
         self._update_listbox(fp, fv)
-        self._add_raw_log(tt, '')
+        self._add_spacing(tt)
         self._add_log_entry(tt, 'log_files_removed', count=len(sel_idx))
-        self._add_raw_log(tt, '')
+        self._add_spacing(tt)
         
     def _clear_list(self, fp, fv, tt):
         if not fp: return
         count = len(fp)
         fp.clear()
         self._update_listbox(fp, fv)
-        self._add_raw_log(tt, '')
+        self._add_spacing(tt)
         self._add_log_entry(tt, 'log_all_files_removed', count=count)
-        self._add_raw_log(tt, '')
+        self._add_spacing(tt)
 
     def start_video_conversion(self, output_dir):
         if not self.video_full_paths: self._add_log_entry('video', 'error_no_files'); return
@@ -883,7 +927,6 @@ class App(tk.Tk):
             return
 
         self._set_ui_state(self.video_widgets, 'disabled')
-        self._add_raw_log('video', "")
         self._add_log_entry('video', 'ffmpeg_preparing')
         
         download_future = self.ffmpeg_downloader.ensure_ffmpeg_ready()
@@ -905,10 +948,12 @@ class App(tk.Tk):
                 self.after(100, check_ffmpeg_status)
 
         self.after(100, check_ffmpeg_status)
-
+    
     def _start_actual_video_conversion(self, output_dir):
         d = self.lang_data
         self.video_cancel_event.clear()
+
+        self._add_spacing('video')
 
         threading.Thread(
             target=self.logic.run_video_conversion,
@@ -930,6 +975,8 @@ class App(tk.Tk):
         if not self.audio_full_paths: self._add_log_entry('audio', 'error_no_files'); return
         if not output_dir: self._add_log_entry('audio', 'error_no_output_audio'); return
 
+        self._add_spacing('audio')
+
         self.audio_cancel_event.clear()
         self._set_ui_state(self.audio_widgets, 'disabled')
         self.audio_widgets['action_btn'].config(text=self.lang_data['cancel_conversion'], command=self.cancel_audio_conversion, state='normal')
@@ -938,63 +985,71 @@ class App(tk.Tk):
     def cancel_audio_conversion(self): 
         self.audio_widgets['action_btn'].config(state='disabled')
         self.audio_cancel_event.set()
-    
-    def _render_log_entry(self, timestamp, key, kwargs, last_ts=None):
-        ts_str = ""
-        if timestamp:
-            if timestamp != last_ts:
-                ts_str = f"[{timestamp}] "
-            else:
-                ts_str = " " * 13 # [HH:MM:SS.ms] 길이만큼 공백
 
+    def _render_log_entry(self, timestamp, key, kwargs, last_ts=None):
+        if key == 'spacing':
+            return ""
+
+        # 1. 원본 내용 생성
+        content = ""
         if key == 'raw':
-            return kwargs.get('text', '')
-        
-        if key == 'about_line_key':
+            content = kwargs.get('text', '')
+        elif key == 'about_line_key':
             label_key = kwargs.get('label_key')
             label = self.lang_data.get(label_key, label_key)
             value = kwargs.get('value', '')
-            return self.lang_data.get('about_line', "{label}: {value}").format(label=label, value=value)
+            content = self.lang_data.get('about_line', "{label}: {value}").format(label=label, value=value)
+        else:
+            template = self.lang_data.get(key)
+            if template:
+                try:
+                    content = template.format(**kwargs)
+                except (KeyError, TypeError) as e:
+                    content = f"<{key}: formatting error {e}>"
+            else:
+                content = f"<{key} not found in language data>"
 
-        template = self.lang_data.get(key, f"<{key} not found>")
-        try:
-            if template.startswith('\n'):
-                return f"\n{ts_str}{template.lstrip()}"
-            return f"{ts_str}{template.format(**kwargs)}"
-        except (KeyError, TypeError) as e:
-            return f"{ts_str}<{key}: formatting error {e}>"
+        # 2. 접두사 결정
+        first_line_prefix = ""
+        subsequent_line_prefix = ""
+        if timestamp:
+            # 타임스탬프가 이전 로그와 다르면 타임스탬프를, 같으면 공백을 접두사로 사용
+            if timestamp != last_ts:
+                first_line_prefix = f"[{timestamp}] "
+            else:
+                first_line_prefix = " " * 13
+            # 타임스탬프가 있는 경우, 두 번째 줄부터는 항상 공백으로 들여쓰기
+            subsequent_line_prefix = " " * 13
+        
+        # 3. 내용을 줄 단위로 나누어 각 줄에 접두사 적용
+        lines = content.splitlines()
+        if not lines:
+            # 내용이 비어있으면(e.g., raw, text:'') 접두사만 반환하여 빈 줄 효과
+            return first_line_prefix.rstrip()
 
+        processed_lines = [f"{first_line_prefix}{lines[0]}"]
+        processed_lines.extend([f"{subsequent_line_prefix}{line}" for line in lines[1:]])
+        
+        return '\n'.join(processed_lines)
+        
     def _add_log_entry(self, target_tab, log_key, **kwargs):
-        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        self._append_log(target_tab, timestamp, log_key, **kwargs)
+        self.log_queue.put(('log_entry', target_tab, log_key, kwargs))
 
     def _add_raw_log(self, target_tab, text, **kwargs):
-        self._append_log(target_tab, None, 'raw', text=text, **kwargs)
-
-    def _append_log(self, target_tab, timestamp, log_key, **kwargs):
-        history = self.video_log_history if target_tab == 'video' else self.audio_log_history
-        log_widget = self.video_log_text if target_tab == 'video' else self.audio_log_text
-        
-        last_ts = self.last_log_timestamp[target_tab]
-        history.append((timestamp, log_key, kwargs))
-        
-        message = self._render_log_entry(timestamp, log_key, kwargs, last_ts)
-        
-        log_widget.config(state='normal')
-        log_widget.insert(tk.END, message + '\n')
-        log_widget.config(state='disabled')
-        log_widget.see(tk.END)
-        
-        if timestamp:
-            self.last_log_timestamp[target_tab] = timestamp
-
+        # raw log는 항상 타임스탬프를 가짐
+        self.log_queue.put(('log_entry', target_tab, 'raw', {'text': text, **kwargs}))
+    
+    def _add_spacing(self, target_tab):
+        # 빈 줄은 전용 메시지 타입으로 처리
+        self.log_queue.put(('log_spacing', target_tab))
+    
     def _redraw_logs(self):
         for tab, history_list, log_widget in [('video', self.video_log_history, self.video_log_text),
                                               ('audio', self.audio_log_history, self.audio_log_text)]:
             log_widget.config(state='normal')
             log_widget.delete('1.0', tk.END)
             
-            self.last_log_timestamp[tab] = None # 초기화
+            self.last_log_timestamp[tab] = None
             last_ts = None
             
             for timestamp, key, kwargs in history_list:
@@ -1003,88 +1058,97 @@ class App(tk.Tk):
                 if timestamp:
                     last_ts = timestamp
             
-            self.last_log_timestamp[tab] = last_ts # 마지막 타임스탬프 저장
+            self.last_log_timestamp[tab] = last_ts
             log_widget.config(state='disabled')
             log_widget.see(tk.END)
 
     def _process_log_queue(self):
-        messages_by_tab = {'video': [], 'audio': []}
-        progress_updates = []
-        completion_signals = []
-
         try:
-            while True:
+            while not self.log_queue.empty():
                 msg = self.log_queue.get_nowait()
-                msg_type, *args = msg
+                msg_type = msg[0]
+
+                if msg_type.startswith('progress') or msg_type.startswith('__'):
+                    if msg_type.startswith('progress'): self._handle_progress_update(msg)
+                    else: self._handle_completion_signal(msg)
+                    continue
+
+                target_tab = msg[1]
+                log_widget = self.video_log_text if target_tab == 'video' else self.audio_log_text
+                history = self.video_log_history if target_tab == 'video' else self.audio_log_history
+                
+                log_widget.config(state='normal')
 
                 if msg_type == 'log_entry':
-                    target_tab, log_key, kwargs = args
+                    _, _, log_key, kwargs = msg
                     timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                    messages_by_tab[target_tab].append((timestamp, log_key, kwargs))
-                elif msg_type.startswith('progress'):
-                    progress_updates.append(msg)
-                elif msg_type.startswith('__'):
-                    completion_signals.append(msg)
+                    last_ts = self.last_log_timestamp[target_tab]
+                    history.append((timestamp, log_key, kwargs))
+                    message = self._render_log_entry(timestamp, log_key, kwargs, last_ts)
+                    log_widget.insert(tk.END, message + '\n')
+                    self.last_log_timestamp[target_tab] = timestamp
+                
+                elif msg_type == 'log_un-timestamped':
+                    _, _, log_key, kwargs = msg
+                    history.append((None, log_key, kwargs))
+                    message = self._render_log_entry(None, log_key, kwargs, None)
+                    log_widget.insert(tk.END, message + '\n')
+
+                elif msg_type == 'log_spacing':
+                    history.append((None, 'spacing', {}))
+                    log_widget.insert(tk.END, '\n')
+                
+                elif msg_type == 'log_block':
+                    _, _, log_entries = msg
+                    block_timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                    for l_key, l_kwargs in log_entries:
+                        last_ts = self.last_log_timestamp[target_tab]
+                        history.append((block_timestamp, l_key, l_kwargs))
+                        message = self._render_log_entry(block_timestamp, l_key, l_kwargs, last_ts)
+                        log_widget.insert(tk.END, message + '\n')
+                        self.last_log_timestamp[target_tab] = block_timestamp
+                
+                log_widget.see(tk.END)
+                log_widget.config(state='disabled')
 
         except queue.Empty:
             pass
-
+        finally:
+            self.after(100, self._process_log_queue)
+    
+    def _handle_progress_update(self, msg):
         d = self.lang_data
-
-        for tab, messages in messages_by_tab.items():
-            if not messages:
-                continue
-
-            log_widget = self.video_log_text if tab == 'video' else self.audio_log_text
-            history = self.video_log_history if tab == 'video' else self.audio_log_history
-            
-            log_widget.config(state='normal')
-            
-            current_batch_texts = []
-            for timestamp, log_key, kwargs in messages:
-                last_ts = self.last_log_timestamp[tab]
-                history.append((timestamp, log_key, kwargs))
-                current_batch_texts.append(self._render_log_entry(timestamp, log_key, kwargs, last_ts))
-                if timestamp:
-                    self.last_log_timestamp[tab] = timestamp
-
-            log_widget.insert(tk.END, '\n'.join(current_batch_texts) + '\n')
-            log_widget.config(state='disabled')
-            log_widget.see(tk.END)
-
-        for msg in progress_updates:
-            msg_type, *args = msg
-            if msg_type == 'progress_start':
-                target_tab, total = args
-                widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
-                if target_tab == 'video': self.video_total_files = total
-                else: self.audio_total_files = total
-                widgets['progress'].config(maximum=total, value=0)
-                widgets['status_label'].config(text=d['status_starting'].format(total=total))
-            elif msg_type == 'progress_update':
-                target_tab, value = args
-                widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
-                total = self.video_total_files if target_tab == 'video' else self.audio_total_files
-                widgets['progress']['value'] = value
-                widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
-        
-        for msg in completion_signals:
-            msg_type, *args = msg
-            was_cancelled = args[0]
-            if msg_type == '__VIDEO_DONE__':
-                widgets, total = self.video_widgets, self.video_total_files
-                current = widgets['progress']['value']
-                status_key = 'status_cancelled' if was_cancelled else 'status_complete'
-                widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
-                self._reset_video_ui_state()
-            elif msg_type == '__AUDIO_DONE__':
-                widgets, total = self.audio_widgets, self.audio_total_files
-                current = widgets['progress']['value']
-                status_key = 'status_cancelled' if was_cancelled else 'status_complete'
-                widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
-                self._reset_audio_ui_state()
-
-        self.after(100, self._process_log_queue)
+        msg_type, *args = msg
+        if msg_type == 'progress_start':
+            target_tab, total = args
+            widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
+            if target_tab == 'video': self.video_total_files = total
+            else: self.audio_total_files = total
+            widgets['progress'].config(maximum=total, value=0)
+            widgets['status_label'].config(text=d['status_starting'].format(total=total))
+        elif msg_type == 'progress_update':
+            target_tab, value = args
+            widgets = self.video_widgets if target_tab == 'video' else self.audio_widgets
+            total = self.video_total_files if target_tab == 'video' else self.audio_total_files
+            widgets['progress']['value'] = value
+            widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
+    
+    def _handle_completion_signal(self, msg):
+        d = self.lang_data
+        msg_type, *args = msg
+        was_cancelled = args[0]
+        if msg_type == '__VIDEO_DONE__':
+            widgets, total = self.video_widgets, self.video_total_files
+            current = widgets['progress']['value']
+            status_key = 'status_cancelled' if was_cancelled else 'status_complete'
+            widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
+            self._reset_video_ui_state()
+        elif msg_type == '__AUDIO_DONE__':
+            widgets, total = self.audio_widgets, self.audio_total_files
+            current = widgets['progress']['value']
+            status_key = 'status_cancelled' if was_cancelled else 'status_complete'
+            widgets['status_label'].config(text=d[status_key].format(current=current, total=total))
+            self._reset_audio_ui_state()
 
 if __name__ == "__main__":
     app = App()
