@@ -76,7 +76,6 @@ LANGUAGES = {
         'run': "작업 시작",
         'start_extraction': "작업 시작",
         'program_started': "프로그램이 시작되었습니다. '메뉴'에서 파일을 선택해주세요.",
-        'language_changed': "언어가 {lang}로 변경되었습니다.",
         'no_files_to_process': "폴더에서 Unity3D 파일을 찾지 못했습니다.",
         'added_files': "{count}개의 새 파일을 목록에 추가했습니다. (총 {total}개)",
         'removed_selected_files': "{count}개의 파일을 목록에서 제거했습니다. (남은 파일: {total}개)",
@@ -137,7 +136,6 @@ LANGUAGES = {
         'run': "Start Process",
         'start_extraction': "Start Process",
         'program_started': "Program started. Please select files from the 'Menu'.",
-        'language_changed': "Language changed to {lang}.",
         'no_files_to_process': "No Unity3D files found in the folder.",
         'added_files': "Added {count} new files to the list. (Total: {total})",
         'removed_selected_files': "Removed {count} files from the list. (Remaining: {total})",
@@ -198,7 +196,6 @@ LANGUAGES = {
         'run': "実行",
         'start_extraction': "実行",
         'program_started': "プログラムが起動しました。「メニュー」からファイルを選択してください。",
-        'language_changed': "言語が{lang}に変更されました。",
         'no_files_to_process': "フォルダ内にUnity3Dファイルが見つかりませんでした。",
         'added_files': "{count}個の新しいファイルをリストに追加しました。(合計: {total}個)",
         'removed_selected_files': "{count}個のファイルをリストから削除しました。(残り: {total}個)",
@@ -910,7 +907,6 @@ class AssetExtractorApp:
         self._update_ui_text()
         d = LANGUAGES[self.lang.get()]
         lang_name = d.get(f'lang_{self.lang.get()}', self.lang.get())
-        self._log('language_changed', format_args={'lang': lang_name})
         self._redisplay_logs()
 
     def _update_ui_text(self):
