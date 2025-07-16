@@ -1,5 +1,3 @@
-# --- START OF FILE 03. Audio Video Converter.py ---
-
 import os
 import sys
 import subprocess
@@ -12,10 +10,12 @@ import concurrent.futures
 import urllib.request
 import zipfile
 import shutil
+from datetime import datetime
 
 # --- 다국어 텍스트 데이터 ---
 LANGUAGES = {
     'ko': {
+        'program_started': "프로그램이 시작되었습니다.",
         'window_title': "오디오/비디오 변환기",
         'video_tab': "비디오 변환기 (.usm → .mp4)",
         'audio_tab': "오디오 변환기 (.awb → .wav)",
@@ -30,7 +30,6 @@ LANGUAGES = {
         'cancel_conversion': "변환 중단",
         'overwrite_option': "기존 파일 덮어쓰기",
         'log_section': "처리 내역",
-        # 메뉴 및 정보
         'menu_language': "언어",
         'menu_info': "정보",
         'about_header': "[ 프로그램 정보 ]",
@@ -41,10 +40,8 @@ LANGUAGES = {
         'about_label_developer': "개발자",
         'about_label_website': "웹 사이트",
         'about_line': "  - {label}\t: {value}",
-        # 리스트박스 메뉴
         'remove_selected': "선택 항목 제거",
         'remove_all': "전체 항목 제거",
-        # 메시지 및 오류
         'alert_files_exist': "[알림] 선택한 파일들은 이미 목록에 존재합니다.",
         'log_files_added': "{count}개의 새 파일이 추가되었습니다.",
         'log_total_files': "총 파일 수: {total}개",
@@ -54,13 +51,11 @@ LANGUAGES = {
         'error_no_files': "[오류] 변환할 파일을 먼저 추가하세요.",
         'error_no_output_video': "[오류] 비디오를 저장할 경로를 지정하세요.",
         'error_no_output_audio': "[오류] 오디오를 저장할 경로를 지정하세요.",
-        # 상태 라벨 텍스트
         'status_idle': "상태: 대기 중",
         'status_starting': "처리 시작... (총 {total}개)",
         'status_processing': "처리중: {current} / {total}",
         'status_complete': "완료: {current} / {total}",
         'status_cancelled': "중단됨: {current} / {total}",
-        # 초기 상태 로그
         'env_check_header': "--- 프로그램 환경 점검 ---",
         'env_success': "  [성공] {tool_name} 발견",
         'env_path': "    > 경로: {path}",
@@ -70,7 +65,6 @@ LANGUAGES = {
         'env_error_desc_ffmpeg_auto_download': "    > 비디오 변환 시작 시 자동으로 FFmpeg 다운로드",
         'env_check_footer': "--------------------------",
         'max_worker_log': "[시스템] 시스템 부하를 고려하여 최대 {count}개의 파일을 동시에 변환합니다.",
-        # 변환 로그
         'conv_log_source': "  [원본]\n    {path}",
         'conv_log_result_header': "\n  [결과]",
         'conv_log_skipped': "    이미 변환된 파일입니다. (건너뜀)",
@@ -96,7 +90,6 @@ LANGUAGES = {
         'conv_audio_stream_skipped': "    알림: 이미 변환된 파일 (건너뜀) - {filename}",
         'conv_audio_stream_success': "    성공: {path}",
         'conv_audio_stream_fail': "    [오류] 스트림 #{index} 변환 실패 - {name}",
-        # FFmpeg 관련 메시지
         'ffmpeg_preparing': "FFmpeg 준비 중... (필요 시 다운로드)",
         'ffmpeg_not_found': "[알림] FFmpeg (ffmpeg.exe)이 발견되지 않았습니다. {path} 경로로 다운로드 및 설치를 시도합니다.",
         'ffmpeg_already_exists': "[알림] FFmpeg (ffmpeg.exe)이 {path} 경로에 이미 존재합니다. (패스)",
@@ -112,6 +105,7 @@ LANGUAGES = {
         'ffmpeg_exe_not_found_in_zip': "압축 해제 후 '{path}'를 찾을 수 없습니다. ZIP 파일 구조를 확인해주세요.",
     },
     'en': {
+        'program_started': "Program started.",
         'window_title': "Audio/Video Converter",
         'video_tab': "Video Converter (.usm → .mp4)",
         'audio_tab': "Audio Converter (.awb → .wav)",
@@ -201,6 +195,7 @@ LANGUAGES = {
         'ffmpeg_exe_not_found_in_zip': "Could not find '{path}' after extraction. Please check the ZIP file structure.",
     },
     'ja': {
+        'program_started': "プログラムが起動しました。",
         'window_title': "オーディオ/ビデオコンバーター",
         'video_tab': "ビデオコンバーター (.usm → .mp4)",
         'audio_tab': "オーディオコンバーター (.awb → .wav)",
@@ -291,7 +286,6 @@ LANGUAGES = {
     }
 }
 
-# --- 핵심 변환 로직 ---
 class ConversionLogic:
     cpu_threads = os.cpu_count() or 1
     MAX_WORKERS = max(1, cpu_threads // 2)
@@ -299,8 +293,6 @@ class ConversionLogic:
     def __init__(self, log_queue, base_path):
         self.log_queue = log_queue
         self.base_path = base_path
-        self._log_entry('video', 'max_worker_log', count=self.MAX_WORKERS)
-        self._log_entry('audio', 'max_worker_log', count=self.MAX_WORKERS)
 
     def _log_entry(self, target_tab, log_key, **kwargs):
         self.log_queue.put(('log_entry', target_tab, log_key, kwargs))
@@ -311,7 +303,7 @@ class ConversionLogic:
 
     def _run_subprocess(self, command):
         return subprocess.run(
-            command, capture_output=True, text=True, encoding='utf-8',
+            command, capture_output=True, text=True,
             errors='ignore', check=False,
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
         )
@@ -332,7 +324,7 @@ class ConversionLogic:
         else:
             command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(Path(output_dir).resolve())]
             try:
-                result = subprocess.run(command, cwd=usmtoolkit_dir, capture_output=True, text=True, encoding='utf-8', errors='ignore', check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
+                result = subprocess.run(command, cwd=usmtoolkit_dir, capture_output=True, text=True, errors='ignore', check=True, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
                 log_entries.append(('conv_log_result_header', {}))
                 if extract_path.exists():
                     log_entries.append(('conv_log_success', {'path': self._get_relative_path(extract_path)}))
@@ -490,7 +482,6 @@ class ConversionLogic:
         log_entries.append(('raw', {'text': "-" * 60}))
         return total_converted, log_entries
 
-# --- FFmpeg 다운로드 및 설치 클래스 (단순화 버전) ---
 class FFmpegDownloader:
     FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
     FFMPEG_ZIP_FILENAME = "ffmpeg_temp.zip"
@@ -556,12 +547,10 @@ class FFmpegDownloader:
             if temp_extract_dir and temp_extract_dir.exists():
                 shutil.rmtree(temp_extract_dir)
 
-# --- GUI 애플리케이션 ---
-# --- GUI 애플리케이션 ---
 class App(tk.Tk):
     ABOUT_INFO = {
         'program': "Audio Video Converter",
-        'version': "2.2.0",
+        'version': "2.3.0",
         'updated': "2025-07-15",
         'license': "MIT License",
         'developer': "(Github) IZH318",
@@ -593,6 +582,9 @@ class App(tk.Tk):
         
         ffmpeg_parent_dir = self.usmtoolkit_path.parent if self.usmtoolkit_path else self.base_path
         self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir, lambda: self.lang_data)
+
+        # 타임스탬프 중복 체크를 위한 변수
+        self.last_log_timestamp = {'video': None, 'audio': None}
 
         self._setup_ui()
         self._log_initial_status()
@@ -683,15 +675,15 @@ class App(tk.Tk):
         except tk.TclError:
             target_tab = 'video'
         
-        self._add_log_entry(target_tab, 'raw', text="\n" + "-" * 70)
+        self._add_raw_log(target_tab, "\n" + "-" * 70)
         self._add_log_entry(target_tab, 'about_header')
-        self._add_log_entry(target_tab, 'raw', text="")
+        self._add_raw_log(target_tab, "")
         
         for key, value in self.ABOUT_INFO.items():
             label_key = f'about_label_{key}'
             self._add_log_entry(target_tab, 'about_line_key', label_key=label_key, value=value)
 
-        self._add_log_entry(target_tab, 'raw', text="-" * 70 + "\n")
+        self._add_raw_log(target_tab, "-" * 70 + "\n")
 
     def _build_conversion_tab_ui(self, parent_tab, tab_type):
         d = self.lang_data
@@ -707,7 +699,7 @@ class App(tk.Tk):
         log_frame_container = ttk.LabelFrame(tab_pane, text=d['log_section'])
         tab_pane.add(log_frame_container)
         
-        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state='disabled')
+        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state='disabled', font=("Consolas", 9))
         log_text_widget.pack(side='top', fill="both", expand=True, padx=5, pady=(5,0))
         status_frame = ttk.Frame(log_frame_container)
         status_frame.pack(side='bottom', fill='x', padx=5, pady=(2,5))
@@ -763,6 +755,11 @@ class App(tk.Tk):
     def _log_initial_status(self):
         self.video_log_history.clear()
         self.audio_log_history.clear()
+        
+        for tab in ['video', 'audio']:
+            self._add_raw_log(tab, "-"*26)
+            self._add_log_entry(tab, 'program_started')
+            self._add_raw_log(tab, "-"*26)
 
         self._add_log_entry('video', 'env_check_header')
         if self.usmtoolkit_path:
@@ -777,10 +774,9 @@ class App(tk.Tk):
         else:
             self._add_log_entry('video', 'env_error', tool_name="UsmToolkit.exe")
             self._add_log_entry('video', 'env_error_desc_video')
-            self._add_log_entry('video', 'env_error', tool_name="FFmpeg (ffmpeg.exe)")
-            self._add_log_entry('video', 'env_error_desc_ffmpeg_auto_download')
         self._add_log_entry('video', 'env_check_footer')
-        self._add_log_entry('video', 'raw', text='\n')
+        self._add_log_entry('video', 'max_worker_log', count=self.logic.MAX_WORKERS)
+        self._add_raw_log('video', '')
 
         self._add_log_entry('audio', 'env_check_header')
         if self.vgmstream_path:
@@ -790,7 +786,8 @@ class App(tk.Tk):
             self._add_log_entry('audio', 'env_error', tool_name="vgmstream(test.exe)")
             self._add_log_entry('audio', 'env_error_desc_audio')
         self._add_log_entry('audio', 'env_check_footer')
-        self._add_log_entry('audio', 'raw', text='\n')
+        self._add_log_entry('audio', 'max_worker_log', count=self.logic.MAX_WORKERS)
+        self._add_raw_log('audio', '')
 
     def _create_right_click_menu(self, listbox, full_paths, filenames_var, tab_type):
         menu = Menu(listbox, tearoff=0)
@@ -843,16 +840,16 @@ class App(tk.Tk):
         if not new_paths: return
         unique_new_paths = [p for p in new_paths if p not in set(full_paths)]
         if not unique_new_paths:
-            self._add_log_entry(tab_type, 'raw', text='\n')
+            self._add_raw_log(tab_type, '')
             self._add_log_entry(tab_type, 'alert_files_exist')
-            self._add_log_entry(tab_type, 'raw', text='\n')
+            self._add_raw_log(tab_type, '')
             return
         full_paths.extend(unique_new_paths)
         self._update_listbox(full_paths, filenames_var)
-        self._add_log_entry(tab_type, 'raw', text='\n')
+        self._add_raw_log(tab_type, '')
         self._add_log_entry(tab_type, 'log_files_added', count=len(unique_new_paths))
         self._add_log_entry(tab_type, 'log_total_files', total=len(full_paths))
-        self._add_log_entry(tab_type, 'raw', text='\n')
+        self._add_raw_log(tab_type, '')
         
     def _add_files(self, ft, fp, fv, tt): self._add_paths_to_list(self._select_files(ft), fp, tt, fv)
     def _add_folder(self, ft, fp, fv, tt): self._add_paths_to_list(self._select_folder_and_search(ft), fp, tt, fv)
@@ -862,18 +859,18 @@ class App(tk.Tk):
         if not sel_idx: return
         for i in sorted(sel_idx, reverse=True): del fp[i]
         self._update_listbox(fp, fv)
-        self._add_log_entry(tt, 'raw', text='\n')
+        self._add_raw_log(tt, '')
         self._add_log_entry(tt, 'log_files_removed', count=len(sel_idx))
-        self._add_log_entry(tt, 'raw', text='\n')
+        self._add_raw_log(tt, '')
         
     def _clear_list(self, fp, fv, tt):
         if not fp: return
         count = len(fp)
         fp.clear()
         self._update_listbox(fp, fv)
-        self._add_log_entry(tt, 'raw', text='\n')
+        self._add_raw_log(tt, '')
         self._add_log_entry(tt, 'log_all_files_removed', count=count)
-        self._add_log_entry(tt, 'raw', text='\n')
+        self._add_raw_log(tt, '')
 
     def start_video_conversion(self, output_dir):
         if not self.video_full_paths: self._add_log_entry('video', 'error_no_files'); return
@@ -886,7 +883,7 @@ class App(tk.Tk):
             return
 
         self._set_ui_state(self.video_widgets, 'disabled')
-        self._add_log_entry('video', 'raw', text="\n")
+        self._add_raw_log('video', "")
         self._add_log_entry('video', 'ffmpeg_preparing')
         
         download_future = self.ffmpeg_downloader.ensure_ffmpeg_ready()
@@ -941,9 +938,17 @@ class App(tk.Tk):
     def cancel_audio_conversion(self): 
         self.audio_widgets['action_btn'].config(state='disabled')
         self.audio_cancel_event.set()
+    
+    def _render_log_entry(self, timestamp, key, kwargs, last_ts=None):
+        ts_str = ""
+        if timestamp:
+            if timestamp != last_ts:
+                ts_str = f"[{timestamp}] "
+            else:
+                ts_str = " " * 13 # [HH:MM:SS.ms] 길이만큼 공백
 
-    def _render_log_entry(self, key, kwargs):
-        if key == 'raw': return kwargs.get('text', '')
+        if key == 'raw':
+            return kwargs.get('text', '')
         
         if key == 'about_line_key':
             label_key = kwargs.get('label_key')
@@ -953,70 +958,56 @@ class App(tk.Tk):
 
         template = self.lang_data.get(key, f"<{key} not found>")
         try:
-            return template.format(**kwargs)
+            if template.startswith('\n'):
+                return f"\n{ts_str}{template.lstrip()}"
+            return f"{ts_str}{template.format(**kwargs)}"
         except (KeyError, TypeError) as e:
-            return f"<{key}: formatting error {e}>"
+            return f"{ts_str}<{key}: formatting error {e}>"
 
-    # ▼▼▼ [수정됨] _add_log_entry: 수동 로그 추가 시 새로운 통합 함수를 호출합니다.
     def _add_log_entry(self, target_tab, log_key, **kwargs):
-        """수동으로 로그를 추가할 때 호출되는 함수. 새로 만든 통합 함수를 호출합니다."""
-        self._append_log(target_tab, log_key, **kwargs)
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        self._append_log(target_tab, timestamp, log_key, **kwargs)
 
-    # ▼▼▼ [신규 추가] _append_log: 로그 기록과 화면 출력을 효율적으로 처리하는 통합 함수입니다.
-    def _append_log(self, target_tab, log_key, **kwargs):
-        """
-        로그를 효율적으로 처리하는 통합 함수.
-        1. 로그 기록(history)에 데이터를 추가합니다.
-        2. 해당 데이터를 기반으로 출력할 메시지 문자열을 생성합니다.
-        3. 올바른 탭의 ScrolledText 위젯 끝에 메시지를 추가합니다. (가장 효율적인 방식)
-        """
-        # 1. 대상 위젯과 기록 리스트를 결정합니다.
+    def _add_raw_log(self, target_tab, text, **kwargs):
+        self._append_log(target_tab, None, 'raw', text=text, **kwargs)
+
+    def _append_log(self, target_tab, timestamp, log_key, **kwargs):
         history = self.video_log_history if target_tab == 'video' else self.audio_log_history
         log_widget = self.video_log_text if target_tab == 'video' else self.audio_log_text
         
-        # 2. 로그 기록(history)에 원본 데이터를 저장합니다. (언어 변경 시 사용)
-        history.append((log_key, kwargs))
+        last_ts = self.last_log_timestamp[target_tab]
+        history.append((timestamp, log_key, kwargs))
         
-        # 3. 화면에 출력할 최종 메시지 문자열을 렌더링합니다.
-        message = self._render_log_entry(log_key, kwargs)
+        message = self._render_log_entry(timestamp, log_key, kwargs, last_ts)
         
-        # 4. ScrolledText 위젯에 효율적으로 텍스트를 추가합니다.
         log_widget.config(state='normal')
         log_widget.insert(tk.END, message + '\n')
         log_widget.config(state='disabled')
-        log_widget.see(tk.END) # 스크롤을 항상 맨 아래로 이동
+        log_widget.see(tk.END)
+        
+        if timestamp:
+            self.last_log_timestamp[target_tab] = timestamp
 
-    # ▼▼▼ [수정됨] _redraw_logs: 언어 변경 시에만 사용되며, 비효율적인 로그 추가에는 사용되지 않습니다.
     def _redraw_logs(self):
-        log_widget = self.video_log_text
-        history = self.video_log_history
-        log_widget.config(state='normal')
-        log_widget.delete('1.0', tk.END)
-        for key, kwargs in history:
-            message = self._render_log_entry(key, kwargs)
-            log_widget.insert(tk.END, message + '\n')
-        log_widget.config(state='disabled')
-        log_widget.see(tk.END)
+        for tab, history_list, log_widget in [('video', self.video_log_history, self.video_log_text),
+                                              ('audio', self.audio_log_history, self.audio_log_text)]:
+            log_widget.config(state='normal')
+            log_widget.delete('1.0', tk.END)
+            
+            self.last_log_timestamp[tab] = None # 초기화
+            last_ts = None
+            
+            for timestamp, key, kwargs in history_list:
+                message = self._render_log_entry(timestamp, key, kwargs, last_ts)
+                log_widget.insert(tk.END, message + '\n')
+                if timestamp:
+                    last_ts = timestamp
+            
+            self.last_log_timestamp[tab] = last_ts # 마지막 타임스탬프 저장
+            log_widget.config(state='disabled')
+            log_widget.see(tk.END)
 
-        log_widget = self.audio_log_text
-        history = self.audio_log_history
-        log_widget.config(state='normal')
-        log_widget.delete('1.0', tk.END)
-        for key, kwargs in history:
-            message = self._render_log_entry(key, kwargs)
-            log_widget.insert(tk.END, message + '\n')
-        log_widget.config(state='disabled')
-        log_widget.see(tk.END)
-
-    # ▼▼▼ [삭제됨] log_to_gui: 더 이상 필요 없으므로 이 클래스에서 제거되었습니다.
-
-    # ▼▼▼ [수정됨] _process_log_queue: 로그 메시지 처리 시 _append_log를 호출하여 성능을 개선합니다.
     def _process_log_queue(self):
-        """
-        GUI 큐를 '배치(Batch)' 단위로 처리하여 UI 멈춤 현상을 완벽히 해결하는 최종 버전.
-        한 번의 실행 주기에 큐에 쌓인 모든 메시지를 수집하여 단일 작업으로 처리합니다.
-        (ValueError 수정됨)
-        """
         messages_by_tab = {'video': [], 'audio': []}
         progress_updates = []
         completion_signals = []
@@ -1028,9 +1019,8 @@ class App(tk.Tk):
 
                 if msg_type == 'log_entry':
                     target_tab, log_key, kwargs = args
-                    # ▼▼▼ 여기가 핵심 수정 부분입니다 ▼▼▼
-                    # 전체 msg를 담는 대신, 필요한 (log_key, kwargs)만 담습니다.
-                    messages_by_tab[target_tab].append((log_key, kwargs))
+                    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                    messages_by_tab[target_tab].append((timestamp, log_key, kwargs))
                 elif msg_type.startswith('progress'):
                     progress_updates.append(msg)
                 elif msg_type.startswith('__'):
@@ -1045,20 +1035,22 @@ class App(tk.Tk):
             if not messages:
                 continue
 
-            full_log_text = []
             log_widget = self.video_log_text if tab == 'video' else self.audio_log_text
             history = self.video_log_history if tab == 'video' else self.audio_log_history
-
-            # ▼▼▼ 이제 for문이 정상적으로 동작합니다 ▼▼▼
-            for log_key, kwargs in messages:
-                history.append((log_key, kwargs))
-                full_log_text.append(self._render_log_entry(log_key, kwargs))
             
-            if full_log_text:
-                log_widget.config(state='normal')
-                log_widget.insert(tk.END, '\n'.join(full_log_text) + '\n')
-                log_widget.config(state='disabled')
-                log_widget.see(tk.END)
+            log_widget.config(state='normal')
+            
+            current_batch_texts = []
+            for timestamp, log_key, kwargs in messages:
+                last_ts = self.last_log_timestamp[tab]
+                history.append((timestamp, log_key, kwargs))
+                current_batch_texts.append(self._render_log_entry(timestamp, log_key, kwargs, last_ts))
+                if timestamp:
+                    self.last_log_timestamp[tab] = timestamp
+
+            log_widget.insert(tk.END, '\n'.join(current_batch_texts) + '\n')
+            log_widget.config(state='disabled')
+            log_widget.see(tk.END)
 
         for msg in progress_updates:
             msg_type, *args = msg
