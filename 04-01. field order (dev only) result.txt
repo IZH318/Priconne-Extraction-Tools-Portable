@@ -1,0 +1,75 @@
+파트 1: {0} 그룹의 모든 데이터 (원본 순서 유지)
+
+파일에 존재하는 모든 "0": [] 블록을 종합하여, 그 안에서 발견된 모든 종류의 데이터를 최초 등장 순서에 따라 정리.
+
+1.  title
+2.  outline
+3.  bgm
+4.  place
+5.  situation
+6.  movie
+7.  fadeout
+8.  white_out
+9.  black_out
+10. transition
+11. background_color
+12. background
+13. chara_full
+14. fadein
+15. focus
+16. jingle
+17. env
+18. voice_effect
+19. ui_visible
+
+---
+
+파트 2: {1} ~ {n} 그룹의 모든 데이터 (원본 순서 유지)
+
+"1": [] 블록부터 마지막 블록까지를 종합하여, 그 안에서 발견된 모든 종류의 데이터를 최초 등장 순서에 따라 정리.
+
+1.  vo
+2.  face
+3.  print
+4.  nod
+5.  wait
+6.  window_visible
+7.  change
+8.  jump
+9.  eye_open
+10. se
+11. pop
+12. shake
+13. sway
+14. fadeout *(겹치는 데이터)*
+15. fadeout_all
+16. white_out *(겹치는 데이터)*
+17. chara_full *(겹치는 데이터)*
+18. fadein *(겹치는 데이터)*
+19. voice_effect *(겹치는 데이터)*
+20. focus *(겹치는 데이터)*
+21. pan
+22. camera_zoom
+23. emotion
+24. effect
+25. choice
+26. tag
+27. goto
+28. still
+29. still_unit
+30. still_move
+31. still_normalize
+32. out_l
+33. in_r
+34. effect_delete
+35. se_pause
+36. ignore_bgm
+37. env_stop
+38. unknown
+39. multi_lipsync
+40. change_window
+41. text_size
+42. bright_change
+43. character_up_down
+44. background_blur
+45. event_adv_move_horizontal
