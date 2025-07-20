@@ -8,7 +8,7 @@ class SearchWindow(tk.Toplevel):
     """고급 검색 기능을 위한 별도의 창 (LabelFrame 적용)"""
     def __init__(self, app, all_files_dict, character_map, search_callback, search_data):
         super().__init__(app.master)
-        self.title("스토리 상세 검색")
+        self.title("storydata 고급 검색")
         
         self.app = app
         self.all_files_dict = all_files_dict
@@ -96,14 +96,37 @@ class SearchWindow(tk.Toplevel):
 
     def _check_file_content(self, data, criteria):
         content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
-        if not content_criteria: return True
+        if not content_criteria:
+            return True
+
         for scene in data.values():
-            if criteria.get('content') and 'print' in scene and criteria['content'] in scene['print'].get('text', '').lower(): return True
-            if criteria.get('bgm') and 'bgm' in scene and criteria['bgm'] in str(scene['bgm']).lower(): return True
-            if criteria.get('background') and 'background' in scene and criteria['background'] in str(scene['background']).lower(): return True
-            if criteria.get('char_name') and 'print' in scene:
-                if self.search_vars['char_type'].get() == '화자' and criteria['char_name'] in self._get_char_name(scene['print'].get('name', '')).lower(): return True
-                if self.search_vars['char_type'].get() == '피호명자(대사)' and criteria['char_name'] in scene['print'].get('text', '').lower(): return True
+            match = True
+            if 'content' in content_criteria and not ('print' in scene and content_criteria['content'] in scene['print'].get('text', '').lower()):
+                match = False
+            
+            if 'bgm' in content_criteria and not ('bgm' in scene and content_criteria['bgm'] in str(scene.get('bgm', '')).lower()):
+                match = False
+
+            if 'background' in content_criteria and not ('background' in scene and content_criteria['background'] in str(scene.get('background', '')).lower()):
+                match = False
+
+            if 'char_name' in content_criteria:
+                char_name_crit = content_criteria['char_name']
+                char_type = self.search_vars['char_type'].get()
+                
+                char_found = False
+                if 'print' in scene:
+                    if char_type == '화자' and char_name_crit in self._get_char_name(scene['print'].get('name', '')).lower():
+                        char_found = True
+                    if char_type == '피호명자(대사)' and char_name_crit in scene['print'].get('text', '').lower():
+                        char_found = True
+                
+                if not char_found:
+                    match = False
+            
+            if match:
+                return True
+
         return False
 
     def _reset(self):
@@ -129,8 +152,11 @@ class StoryViewerApp:
         self.character_map = self.load_json_file("character_map.json")
         
         self.field_order = [
+            # {0} 그룹의 모든 데이터 (중복 제외)
             'title', 'outline', 'bgm', 'place', 'situation', 'movie', 'black_out', 
             'transition', 'background_color', 'background', 'jingle', 'env', 'ui_visible',
+
+            # {1} ~ {n} 그룹의 모든 데이터 (원본 순서 기준)
             'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'jump', 
             'eye_open', 'se', 'pop', 'shake', 'sway', 'fadeout', 'fadeout_all', 
             'white_out', 'chara_full', 'fadein', 'voice_effect', 'focus', 'pan', 
@@ -183,12 +209,15 @@ class StoryViewerApp:
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
         self.paned_window.pack(fill="both", expand=True)
 
+        left_weight = 1
+        right_weight = 2
+
         left_group = ttk.LabelFrame(self.paned_window, text="스토리 파일 목록", padding=5)
-        self.paned_window.add(left_group, weight=1)
+        self.paned_window.add(left_group, weight=left_weight) 
         left_group.grid_rowconfigure(1, weight=1)
         left_group.grid_columnconfigure(0, weight=1)
 
-        ttk.Button(left_group, text="검색...", command=self.open_search_window).grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        ttk.Button(left_group, text="storydata 고급 검색", command=self.open_search_window).grid(row=0, column=0, sticky="ew", pady=(0, 5))
         
         list_frame_inner = ttk.Frame(left_group)
         list_frame_inner.grid(row=1, column=0, sticky="nsew")
@@ -203,7 +232,7 @@ class StoryViewerApp:
         self.file_listbox.bind("<<ListboxSelect>>", self.on_file_select)
         
         right_group = ttk.LabelFrame(self.paned_window, text="스토리 상세 정보", padding=5)
-        self.paned_window.add(right_group, weight=3)
+        self.paned_window.add(right_group, weight=right_weight)
         right_group.grid_rowconfigure(0, weight=1)
         right_group.grid_columnconfigure(0, weight=1)
         
@@ -220,6 +249,14 @@ class StoryViewerApp:
 
         self.status_bar = ttk.Label(self.master, text="폴더를 열어주세요.", anchor=tk.W, padding=5)
         self.status_bar.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
+        
+        def reapply_weights(event=None):
+            total_width = self.paned_window.winfo_width()
+            sash_position = int(total_width * left_weight / (left_weight + right_weight))
+            self.paned_window.sashpos(0, sash_position)
+            self.paned_window.unbind("<Configure>")
+
+        self.paned_window.bind("<Configure>", reapply_weights)
 
     def setup_text_tags(self):
         default_font_family = font.nametofont("TkDefaultFont").cget("family")
@@ -360,6 +397,9 @@ class StoryViewerApp:
         SearchWindow(self, self.all_files, self.character_map, self.update_file_list, self.search_data)
 
     def update_file_list(self, filenames):
+        self.update_story_text([])
+        self.current_file_path = None
+
         self.current_filenames_in_list = sorted(filenames)
         self.file_listbox.delete(0, tk.END)
         self.display_name_to_filename.clear()
