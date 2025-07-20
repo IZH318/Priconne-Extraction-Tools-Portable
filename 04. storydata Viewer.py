@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, font
 import os
 import json
 import re
@@ -9,10 +9,7 @@ class SearchWindow(tk.Toplevel):
     def __init__(self, app, all_files_dict, character_map, search_callback, search_data):
         super().__init__(app.master)
         self.title("스토리 상세 검색")
-        self.geometry("480x240")
-        self.transient(app.master)
-        self.grab_set()
-
+        
         self.app = app
         self.all_files_dict = all_files_dict
         self.character_map = character_map
@@ -27,21 +24,24 @@ class SearchWindow(tk.Toplevel):
             'bgm': tk.StringVar(),
             'background': tk.StringVar()
         }
+        self.transient(app.master)
+        self.grab_set()
+        
         self._setup_ui()
-        self._center_window()
+        self._center_window(480, 240)
 
-    def _center_window(self):
-        self.update_idletasks()
-        w, h = self.winfo_width(), self.winfo_height()
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        x, y = int(sw/2 - w/2), int(sh/2 - h/2)
-        self.geometry(f"{w}x{h}+{x}+{y}")
+    def _center_window(self, width, height):
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
         
     def _setup_ui(self):
+        self.geometry("480x240")
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill="both", expand=True)
 
-        # 검색 조건 그룹박스 (LabelFrame)
         criteria_frame = ttk.LabelFrame(main_frame, text="검색 조건", padding="10")
         criteria_frame.pack(fill="x", expand=True, anchor="n")
         criteria_frame.columnconfigure(1, weight=1)
@@ -62,7 +62,6 @@ class SearchWindow(tk.Toplevel):
         ttk.Label(criteria_frame, text="배경 파일명:").grid(row=4, column=0, sticky="w", pady=3)
         ttk.Combobox(criteria_frame, textvariable=self.search_vars['background'], values=self.search_data.get('backgrounds', [])).grid(row=4, column=1, columnspan=2, sticky="ew")
 
-        # 버튼 프레임 (그룹박스 바깥에 위치)
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side="bottom", fill="x", pady=(10, 0))
         
@@ -116,18 +115,22 @@ class StoryViewerApp:
     def __init__(self, master):
         self.master = master
         self.master.title("storydata Viewer")
-        self.master.geometry("800x600")
 
         self.all_files = {}
         self.search_data = {}
+        self.file_titles = {}
+        self.display_name_to_filename = {}
+        self.current_filenames_in_list = []
+        self.current_file_path = None
+        
+        self.display_mode_var = tk.StringVar(value="원본 파일 이름으로 표시")
+        self.view_mode_var = tk.StringVar(value="간단히 표시")
+
         self.character_map = self.load_json_file("character_map.json")
         
         self.field_order = [
-            # {0} 그룹의 모든 데이터 (중복 제외)
             'title', 'outline', 'bgm', 'place', 'situation', 'movie', 'black_out', 
             'transition', 'background_color', 'background', 'jingle', 'env', 'ui_visible',
-
-            # {1} ~ {n} 그룹의 모든 데이터 (원본 순서 기준)
             'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'jump', 
             'eye_open', 'se', 'pop', 'shake', 'sway', 'fadeout', 'fadeout_all', 
             'white_out', 'chara_full', 'fadein', 'voice_effect', 'focus', 'pan', 
@@ -140,81 +143,99 @@ class StoryViewerApp:
         
         self.setup_ui()
         self.setup_text_tags()
-        self._center_window()
+        self._center_window(800, 600)
 
-    def _center_window(self):
-        self.master.update_idletasks()
-        w, h = self.master.winfo_width(), self.master.winfo_height()
-        sw, sh = self.master.winfo_screenwidth(), self.master.winfo_screenheight()
-        x, y = int(sw/2 - w/2), int(sh/2 - h/2)
-        self.master.geometry(f"{w}x{h}+{x}+{y}")
+    def _center_window(self, width, height):
+        screen_width = self.master.winfo_screenwidth()
+        screen_height = self.master.winfo_screenheight()
+        x = (screen_width // 2) - (width // 2)
+        y = (screen_height // 2) - (height // 2)
+        self.master.geometry(f'{width}x{height}+{x}+{y}')
 
     def setup_ui(self):
+        self.master.geometry("800x600")
         self.create_menu()
-        self.master.grid_rowconfigure(0, weight=1)
+        self.master.grid_rowconfigure(1, weight=1)
         self.master.grid_columnconfigure(0, weight=1)
         
+        options_group = ttk.LabelFrame(self.master, text="옵션")
+        options_group.grid(row=0, column=0, sticky="ew", padx=10, pady=(5,0))
+        options_group.columnconfigure(0, weight=1)
+        options_group.columnconfigure(1, weight=1)
+
+        file_options_group = ttk.LabelFrame(options_group, text="스토리 파일 목록 옵션", padding=5)
+        file_options_group.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
+        
+        ttk.Radiobutton(file_options_group, text="원본 파일 이름으로 표시", variable=self.display_mode_var, value="원본 파일 이름으로 표시", command=self._on_display_mode_change).grid(row=0, column=0, padx=5)
+        ttk.Radiobutton(file_options_group, text="title 정보로 표시", variable=self.display_mode_var, value="title 정보로 표시", command=self._on_display_mode_change).grid(row=0, column=1, padx=5)
+
+        detail_options_group = ttk.LabelFrame(options_group, text="스토리 상세 정보 옵션", padding=5)
+        detail_options_group.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+
+        ttk.Radiobutton(detail_options_group, text="간단히 표시 (title, outline, vo, print)", variable=self.view_mode_var, value="간단히 표시", command=self._on_view_mode_change).grid(row=0, column=0, padx=5)
+        ttk.Radiobutton(detail_options_group, text="자세히 표시", variable=self.view_mode_var, value="자세히 표시", command=self._on_view_mode_change).grid(row=0, column=1, padx=5)
+
         main_frame = ttk.Frame(self.master, padding=(10, 5, 10, 0))
-        main_frame.grid(row=0, column=0, sticky="nsew")
+        main_frame.grid(row=1, column=0, sticky="nsew")
         main_frame.grid_rowconfigure(0, weight=1)
         main_frame.grid_columnconfigure(0, weight=1)
         
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.HORIZONTAL)
-        self.paned_window.grid(row=0, column=0, sticky="nsew")
+        self.paned_window.pack(fill="both", expand=True)
 
-        left_frame = ttk.Frame(self.paned_window)
-        self.paned_window.add(left_frame, weight=1)
-        left_frame.grid_rowconfigure(2, weight=1)
-        left_frame.grid_columnconfigure(0, weight=1)
+        left_group = ttk.LabelFrame(self.paned_window, text="스토리 파일 목록", padding=5)
+        self.paned_window.add(left_group, weight=1)
+        left_group.grid_rowconfigure(1, weight=1)
+        left_group.grid_columnconfigure(0, weight=1)
 
-        ttk.Label(left_frame, text="스토리 파일 목록").grid(row=0, column=0, sticky="w")
-        ttk.Button(left_frame, text="검색...", command=self.open_search_window).grid(row=1, column=0, sticky="ew", pady=5)
+        ttk.Button(left_group, text="검색...", command=self.open_search_window).grid(row=0, column=0, sticky="ew", pady=(0, 5))
         
-        list_frame_inner = ttk.Frame(left_frame)
-        list_frame_inner.grid(row=2, column=0, sticky="nsew")
+        list_frame_inner = ttk.Frame(left_group)
+        list_frame_inner.grid(row=1, column=0, sticky="nsew")
         list_frame_inner.grid_rowconfigure(0, weight=1)
         list_frame_inner.grid_columnconfigure(0, weight=1)
 
-        self.file_listbox = tk.Listbox(list_frame_inner, selectmode=tk.SINGLE, font=("Malgun Gothic", 10))
+        self.file_listbox = tk.Listbox(list_frame_inner, selectmode=tk.SINGLE)
         self.file_listbox.grid(row=0, column=0, sticky="nsew")
         list_scrollbar = ttk.Scrollbar(list_frame_inner, orient=tk.VERTICAL, command=self.file_listbox.yview)
         list_scrollbar.grid(row=0, column=1, sticky="ns")
         self.file_listbox.config(yscrollcommand=list_scrollbar.set)
         self.file_listbox.bind("<<ListboxSelect>>", self.on_file_select)
         
-        right_frame = ttk.Frame(self.paned_window)
-        self.paned_window.add(right_frame, weight=3)
-        right_frame.grid_rowconfigure(1, weight=1)
-        right_frame.grid_columnconfigure(0, weight=1)
-        ttk.Label(right_frame, text="스토리 상세 정보").grid(row=0, column=0, sticky="w")
+        right_group = ttk.LabelFrame(self.paned_window, text="스토리 상세 정보", padding=5)
+        self.paned_window.add(right_group, weight=3)
+        right_group.grid_rowconfigure(0, weight=1)
+        right_group.grid_columnconfigure(0, weight=1)
         
-        text_frame_inner = ttk.Frame(right_frame)
-        text_frame_inner.grid(row=1, column=0, sticky="nsew", pady=(5,0))
+        text_frame_inner = ttk.Frame(right_group)
+        text_frame_inner.grid(row=0, column=0, sticky="nsew")
         text_frame_inner.grid_rowconfigure(0, weight=1)
         text_frame_inner.grid_columnconfigure(0, weight=1)
         
-        self.story_text = tk.Text(text_frame_inner, wrap=tk.WORD, state=tk.DISABLED, font=("Malgun Gothic", 10), spacing1=2, padx=10, pady=10)
+        self.story_text = tk.Text(text_frame_inner, wrap=tk.WORD, state=tk.DISABLED, spacing1=2, padx=10, pady=10)
         self.story_text.grid(row=0, column=0, sticky="nsew")
         text_scrollbar = ttk.Scrollbar(text_frame_inner, orient=tk.VERTICAL, command=self.story_text.yview)
         text_scrollbar.grid(row=0, column=1, sticky="ns")
         self.story_text.config(yscrollcommand=text_scrollbar.set)
 
-        self.status_bar = ttk.Label(self.master, text="폴더를 열어주세요.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
-        self.status_bar.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        self.status_bar = ttk.Label(self.master, text="폴더를 열어주세요.", anchor=tk.W, padding=5)
+        self.status_bar.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
 
     def setup_text_tags(self):
-        base_font = ("Malgun Gothic", 10)
-        self.story_text.tag_configure('scene_header', font=('Malgun Gothic', 14, 'bold'), foreground='#00008B')
-        self.story_text.tag_configure('key', font=(base_font[0], base_font[1], 'bold'), foreground='#4A4A4A', lmargin1=20)
-        self.story_text.tag_configure('value', font=("Consolas", 10), foreground='#333333', lmargin1=40, lmargin2=40)
-        self.story_text.tag_configure('print_sub_key', font=("Consolas", 10), foreground='#333333', lmargin1=40, lmargin2=40)
-        self.story_text.tag_configure('choice', font=(base_font[0], base_font[1], 'bold'), foreground='#8B0000', lmargin1=40, lmargin2=40)
-        self.story_text.tag_configure('choice_tag', font=(base_font[0], base_font[1], 'italic'), foreground='#808080')
+        default_font_family = font.nametofont("TkDefaultFont").cget("family")
+
+        self.story_text.tag_configure('scene_header', font=(default_font_family, 14, 'bold'), foreground='#00008B')
+        self.story_text.tag_configure('key', font=(default_font_family, 10, 'bold'), foreground='#4A4A4A', lmargin1=20)
+        self.story_text.tag_configure('value', font=(default_font_family, 10), foreground='#333333', lmargin1=40, lmargin2=40)
+        self.story_text.tag_configure('print_sub_key', font=(default_font_family, 10), foreground='#333333', lmargin1=40, lmargin2=40)
+        self.story_text.tag_configure('choice', font=(default_font_family, 10, 'bold'), foreground='#8B0000', lmargin1=40, lmargin2=40)
+        self.story_text.tag_configure('choice_tag', font=(default_font_family, 10, 'italic'), foreground='#808080')
     
     def create_menu(self):
         menu_bar = tk.Menu(self.master)
         file_menu = tk.Menu(menu_bar, tearoff=0)
-        file_menu.add_command(label="폴더 열기", command=self.open_folder)
+        file_menu.add_command(label="파일 열기...", command=self.open_files)
+        file_menu.add_command(label="폴더 열기...", command=self.open_folder)
         file_menu.add_separator()
         file_menu.add_command(label="종료", command=self.master.quit)
         menu_bar.add_cascade(label="파일", menu=file_menu)
@@ -224,20 +245,60 @@ class StoryViewerApp:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except FileNotFoundError:
-            return {}
+        except FileNotFoundError: return {}
         except json.JSONDecodeError:
             messagebox.showerror("오류", f"{file_desc} 파일({file_path})의 형식이 잘못되었습니다.")
             return {}
-
-    def open_folder(self):
-        folder_path = filedialog.askdirectory(title="스토리 데이터가 있는 폴더를 선택하세요")
-        if not folder_path: return
-
+            
+    def _clear_workspace(self):
         self.update_story_text([])
         self.all_files.clear()
         self.search_data.clear()
-        self.status_bar.config(text="파일 검색 중...")
+        self.file_listbox.delete(0, tk.END)
+        self.file_titles.clear()
+        self.display_name_to_filename.clear()
+        self.current_filenames_in_list = []
+        self.current_file_path = None
+
+    def _is_valid_storydata(self, file_path):
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if not isinstance(data, dict) or not data:
+                return False
+            return all(k.isdigit() and isinstance(v, dict) for k, v in data.items())
+        except Exception:
+            return False
+
+    def open_files(self):
+        file_paths = filedialog.askopenfilenames(
+            title="storydata 파일을 선택하세요",
+            filetypes=[("JSON 파일", "*.json"), ("모든 파일", "*.*")]
+        )
+        if not file_paths: return
+
+        self._clear_workspace()
+        self.status_bar.config(text="선택한 파일 검증 중...")
+        self.master.update_idletasks()
+
+        for path in file_paths:
+            if self._is_valid_storydata(path):
+                filename = os.path.basename(path)
+                self.all_files[filename] = path
+            
+        if not self.all_files:
+            messagebox.showwarning("알림", "선택한 파일 중 유효한 storydata 파일이 없습니다.")
+            self.status_bar.config(text="준비")
+            return
+
+        self._analyze_and_update_ui()
+
+    def open_folder(self):
+        folder_path = filedialog.askdirectory(title="storydata 파일이 있는 폴더를 선택하세요")
+        if not folder_path: return
+
+        self._clear_workspace()
+        self.status_bar.config(text="폴더에서 파일 검색 중...")
         self.master.update_idletasks()
         
         pattern = re.compile(r'^storydata_\d{7}\.json$')
@@ -245,7 +306,15 @@ class StoryViewerApp:
             for filename in sorted(filenames):
                 if pattern.match(filename):
                     self.all_files[filename] = os.path.join(dirpath, filename)
+        
+        if not self.all_files:
+            messagebox.showwarning("알림", "선택한 폴더에 storydata 파일이 없습니다.")
+            self.status_bar.config(text="준비")
+            return
 
+        self._analyze_and_update_ui()
+
+    def _analyze_and_update_ui(self):
         self.status_bar.config(text=f"총 {len(self.all_files)}개 파일 분석 중...")
         self.master.update_idletasks()
         
@@ -256,9 +325,13 @@ class StoryViewerApp:
             if isinstance(value, list) and value and isinstance(value[0], str): return value[0]
             return None
 
-        for path in self.all_files.values():
+        for filename, path in self.all_files.items():
             try:
                 with open(path, 'r', encoding='utf-8') as f: data = json.load(f)
+                
+                title = data.get('0', {}).get('title', '').strip()
+                self.file_titles[filename] = title if title else filename
+
                 for scene in data.values():
                     if 'bgm' in scene:
                         bgm_name = _extract_asset_name(scene['bgm'])
@@ -282,22 +355,41 @@ class StoryViewerApp:
 
     def open_search_window(self):
         if not self.all_files:
-            messagebox.showinfo("알림", "먼저 폴더를 열어 파일을 로드해주세요.")
+            messagebox.showinfo("알림", "먼저 파일이나 폴더를 열어주세요.")
             return
         SearchWindow(self, self.all_files, self.character_map, self.update_file_list, self.search_data)
 
     def update_file_list(self, filenames):
+        self.current_filenames_in_list = sorted(filenames)
         self.file_listbox.delete(0, tk.END)
-        for filename in sorted(filenames):
-            self.file_listbox.insert(tk.END, filename)
+        self.display_name_to_filename.clear()
+
+        display_mode = self.display_mode_var.get()
+        
+        for filename in self.current_filenames_in_list:
+            display_name = filename
+            if display_mode == "title 정보로 표시":
+                title = self.file_titles.get(filename, filename)
+                if title != filename:
+                    display_name = f"{title}"
+
+            self.file_listbox.insert(tk.END, display_name)
+            self.display_name_to_filename[display_name] = filename
+            
         self.status_bar.config(text=f"{len(filenames)}개의 파일이 목록에 표시됩니다.")
 
     def on_file_select(self, event):
         sel_indices = self.file_listbox.curselection()
         if not sel_indices: return
-        filename = self.file_listbox.get(sel_indices[0])
-        path = self.all_files.get(filename)
-        if path: self.load_and_display_story(path)
+        
+        display_name = self.file_listbox.get(sel_indices[0])
+        filename = self.display_name_to_filename.get(display_name)
+        
+        if filename:
+            path = self.all_files.get(filename)
+            if path:
+                self.current_file_path = path
+                self.load_and_display_story(path)
 
     def load_and_display_story(self, file_path):
         try:
@@ -313,14 +405,29 @@ class StoryViewerApp:
         char_id_str = str(char_id)
         return self.character_map.get(char_id_str, char_id_str)
 
+    def _on_display_mode_change(self):
+        self.update_file_list(self.current_filenames_in_list)
+
+    def _on_view_mode_change(self):
+        if self.current_file_path:
+            self.load_and_display_story(self.current_file_path)
+
     def format_story_data(self, data):
         content_list = []
+        view_mode = self.view_mode_var.get()
+        
         for key in sorted(data.keys(), key=int):
             scene = data[key]
             content_list.append((f" S# {key} \n", 'scene_header'))
             
-            sorted_scene_keys = sorted(scene.keys(), key=self._sort_key_func)
-            for field in sorted_scene_keys:
+            keys_to_display = []
+            if view_mode == "간단히 표시":
+                simple_keys = ['title', 'outline', 'vo', 'print']
+                keys_to_display = [k for k in simple_keys if k in scene]
+            else:
+                keys_to_display = sorted(scene.keys(), key=self._sort_key_func)
+            
+            for field in keys_to_display:
                 value = scene[field]
                 content_list.append((f"{field}\n", 'key'))
                 formatter = getattr(self, f'_format_{field}', self._format_default)
