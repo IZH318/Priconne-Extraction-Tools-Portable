@@ -338,7 +338,10 @@ class StoryDataDeserializer:
                 case StoryDataDeserializer.CommandId.TAG:
                     story.setdefault(num + 1, {})
                     story[num + 1][command_id.name.lower()] = args[0]
-                case StoryDataDeserializer.CommandId.TITLE | StoryDataDeserializer.CommandId.SITUATION | StoryDataDeserializer.CommandId.OUTLINE | StoryDataDeserializer.CommandId.VO | StoryDataDeserializer.CommandId.GOTO:
+                case StoryDataDeserializer.CommandId.OUTLINE:
+                    if args:
+                        block[command_id.name.lower()] = StoryDataDeserializer._clean_text(args[0])
+                case StoryDataDeserializer.CommandId.TITLE | StoryDataDeserializer.CommandId.SITUATION | StoryDataDeserializer.CommandId.VO | StoryDataDeserializer.CommandId.GOTO:
                     block[command_id.name.lower()] = args[0] if len(args) == 1 else args
                 case _:
                     if command_id.name.lower() not in block or not isinstance(block[command_id.name.lower()], list):
