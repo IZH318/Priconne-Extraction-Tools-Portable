@@ -183,13 +183,19 @@ class StoryViewerApp:
         content_list = []
         
         field_order = [
-            'title', 'outline', 'situation', 'tag', 'background', 'bg_pan', 'bg_pan_x', 'bgm', 'se',
-            'effect', 'movie', 'still', 'chara_full', 'face', 'focus', 'nod', 'shake', 'pop',
-            'sway', 'scale', 'change', 'character_up_down', 'multi_lipsync', 'fadein',
-            'fadeout', 'fadein_all', 'fadeout_all', 'white_out', 'black_out', 'eye_open',
-            'effect_delete', 'se_pause', 'env_stop', 'ignore_bgm', 'window_visible', 'ui_visible', 
-            'text_size', 'change_window', 'event_adv_move_horizontal', 'wait', 'vo', 
-            'voice_effect', 'print', 'choice'
+            # {0} 그룹의 모든 데이터 (중복 제외)
+            'title', 'outline', 'bgm', 'place', 'situation', 'movie', 'black_out', 
+            'transition', 'background_color', 'background', 'jingle', 'env', 'ui_visible',
+
+            # {1} ~ {n} 그룹의 모든 데이터 (원본 순서 기준)
+            'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'jump', 
+            'eye_open', 'se', 'pop', 'shake', 'sway', 'fadeout', 'fadeout_all', 
+            'white_out', 'chara_full', 'fadein', 'voice_effect', 'focus', 'pan', 
+            'camera_zoom', 'emotion', 'effect', 'choice', 'tag', 'goto', 'still', 
+            'still_unit', 'still_move', 'still_normalize', 'out_l', 'in_r', 
+            'effect_delete', 'se_pause', 'ignore_bgm', 'env_stop', 'unknown', 
+            'multi_lipsync', 'change_window', 'text_size', 'bright_change', 
+            'character_up_down', 'background_blur', 'event_adv_move_horizontal'
         ]
 
         for key in sorted(data.keys(), key=int):
