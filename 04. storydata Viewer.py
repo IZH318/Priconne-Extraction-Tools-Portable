@@ -66,7 +66,7 @@ class SearchWindow(tk.Toplevel):
 
     def _get_char_name(self, char_id):
         if not isinstance(char_id, str): char_id = str(char_id)
-        return self.character_map.get(char_id, f"ID:{char_id}")
+        return self.character_map.get(char_id, f"{char_id}")
 
     def _search(self):
         self.app.status_bar.config(text="검색 중...")
@@ -281,7 +281,7 @@ class StoryViewerApp:
 
     def get_char_name(self, char_id):
         if not isinstance(char_id, str): char_id = str(char_id)
-        return self.character_map.get(char_id, f"ID:{char_id}")
+        return self.character_map.get(char_id, f"{char_id}")
 
     def format_story_data(self, data):
         content_list = []
