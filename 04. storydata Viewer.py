@@ -3,32 +3,60 @@ from tkinter import ttk, filedialog, messagebox, font
 import os
 import json
 import re
+import sqlite3
 
 class SearchWindow(tk.Toplevel):
     """고급 검색 기능을 위한 별도의 창 (LabelFrame 적용)"""
-    def __init__(self, app, all_files_dict, character_map, search_callback, search_data):
+    def __init__(self, app, all_files_dict, search_callback, search_data):
         super().__init__(app.master)
         self.title("storydata 고급 검색")
         
         self.app = app
         self.all_files_dict = all_files_dict
-        self.character_map = character_map
+        
         self.search_callback = search_callback
         self.search_data = search_data
 
         self.search_vars = {
             'filename': tk.StringVar(),
+            'title': tk.StringVar(),
+            'outline': tk.StringVar(),
             'char_name': tk.StringVar(),
             'char_type': tk.StringVar(value='화자'),
             'content': tk.StringVar(),
             'bgm': tk.StringVar(),
-            'background': tk.StringVar()
+            'background': tk.StringVar(),
+            'event_name': tk.StringVar()
         }
+        self.server_var = tk.StringVar(value='JP')
+
+        # 각 서버별 DB 파일 경로 및 테이블/컬럼 정보 정의
+        self.server_db_info = {
+            'JP': {
+                'db_path': 'master_jp.db',
+                'event_list_table': 'v1_8931e2893a2d2290dbf498046bc66faafeebc40b6764dd69334ad51f5aca2e9f',
+                'event_name_col_list': 'e3f0f79d746654f52125f3c28eb487d9e102f02077fe104d1423f08e80e056e3', # 이벤트 목록 테이블의 이벤트 이름 컬럼 (2번째)
+                'event_details_table': 'v1_04d08b8c6bf704241326eca45b6d63cc1a6dd38d03ff256df15b8ec8d4cd2649',
+                'event_info_col_details': '20d0bf56a9ca7d14b3172ac4dd383fee10c010d4ecd30c9854302d10390d774e', # 이벤트 상세 테이블의 이벤트 이름+정보 컬럼 (11번째)
+                'event_id_col_details': '69d3bbead1844607ef41ecb520a4d5385cae02eddca377aa13721ec7fd01e0ec' # 이벤트 상세 테이블의 이벤트 고유 ID 컬럼 (12번째)
+            },
+            'KR': {
+                'db_path': 'master_kr.db',
+                'event_list_table': 'v1_4e380b72af2e31867844884ba838095ad9ea8f02bf83037a3c8ed47b8943f164',
+                'event_name_col_list': 'abb720eaefdc23b376dc5b817b683e633eb66fe9a3941025ae27413c56d56fad', # 이벤트 목록 테이블의 이벤트 이름 컬럼 (4번째)
+                'event_details_table': 'v1_ebabad5e41c1f71b3e5d705a8fe81411012e124827b4cbde3dfb2469674f598f',
+                'event_info_col_details': '45d39837db60a2b9aca5a03c3c17a9999201e08e97c3cff92bb95786dd344355', # 이벤트 상세 테이블의 이벤트 이름+정보 컬럼 (3번째)
+                'event_id_col_details': '6db6c11bbfa308b726f5f24bdee2bc75a2f805e2ae94ed4908aaa7444ce3e2eb' # 이벤트 상세 테이블의 이벤트 고유 ID 컬럼 (7번째)
+            }
+        }
+        
         self.transient(app.master)
         self.grab_set()
         
         self._setup_ui()
-        self._center_window(480, 240)
+        self._center_window(420, 420)
+
+        self._on_server_selection_change()
 
     def _center_window(self, width, height):
         screen_width = self.winfo_screenwidth()
@@ -38,29 +66,52 @@ class SearchWindow(tk.Toplevel):
         self.geometry(f'{width}x{height}+{x}+{y}')
         
     def _setup_ui(self):
-        self.geometry("480x240")
+        self.geometry("420x420")
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill="both", expand=True)
 
-        criteria_frame = ttk.LabelFrame(main_frame, text="검색 조건", padding="10")
-        criteria_frame.pack(fill="x", expand=True, anchor="n")
+        criteria_frame = ttk.LabelFrame(main_frame, text="기본 검색 조건", padding="10")
+        criteria_frame.pack(fill="x", expand=False, anchor="n", pady=(0, 10))
         criteria_frame.columnconfigure(1, weight=1)
 
         ttk.Label(criteria_frame, text="파일 이름:").grid(row=0, column=0, sticky="w", pady=3)
         ttk.Combobox(criteria_frame, textvariable=self.search_vars['filename'], values=self.search_data.get('filenames', [])).grid(row=0, column=1, columnspan=2, sticky="ew")
 
-        ttk.Label(criteria_frame, text="캐릭터 이름:").grid(row=1, column=0, sticky="w", pady=3)
-        ttk.Combobox(criteria_frame, textvariable=self.search_vars['char_name'], values=self.search_data.get('character_names', [])).grid(row=1, column=1, sticky="ew")
-        ttk.Combobox(criteria_frame, textvariable=self.search_vars['char_type'], values=['화자', '피호명자(대사)'], width=12, state='readonly').grid(row=1, column=2, sticky="e", padx=(5,0))
+        ttk.Label(criteria_frame, text="제목:").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Entry(criteria_frame, textvariable=self.search_vars['title']).grid(row=1, column=1, columnspan=2, sticky="ew")
 
-        ttk.Label(criteria_frame, text="내용(대사):").grid(row=2, column=0, sticky="w", pady=3)
-        ttk.Entry(criteria_frame, textvariable=self.search_vars['content']).grid(row=2, column=1, columnspan=2, sticky="ew")
+        ttk.Label(criteria_frame, text="개요:").grid(row=2, column=0, sticky="w", pady=3)
+        ttk.Entry(criteria_frame, textvariable=self.search_vars['outline']).grid(row=2, column=1, columnspan=2, sticky="ew")
 
-        ttk.Label(criteria_frame, text="BGM 파일명:").grid(row=3, column=0, sticky="w", pady=3)
-        ttk.Combobox(criteria_frame, textvariable=self.search_vars['bgm'], values=self.search_data.get('bgms', [])).grid(row=3, column=1, columnspan=2, sticky="ew")
+        ttk.Label(criteria_frame, text="캐릭터 이름:").grid(row=3, column=0, sticky="w", pady=3)
+        ttk.Combobox(criteria_frame, textvariable=self.search_vars['char_name'], values=self.search_data.get('character_names', [])).grid(row=3, column=1, sticky="ew")
+        ttk.Combobox(criteria_frame, textvariable=self.search_vars['char_type'], values=['화자', '피호명자(대사)'], width=12, state='readonly').grid(row=3, column=2, sticky="e", padx=(5,0))
 
-        ttk.Label(criteria_frame, text="배경 파일명:").grid(row=4, column=0, sticky="w", pady=3)
-        ttk.Combobox(criteria_frame, textvariable=self.search_vars['background'], values=self.search_data.get('backgrounds', [])).grid(row=4, column=1, columnspan=2, sticky="ew")
+        ttk.Label(criteria_frame, text="내용(대사):").grid(row=4, column=0, sticky="w", pady=3)
+        ttk.Entry(criteria_frame, textvariable=self.search_vars['content']).grid(row=4, column=1, columnspan=2, sticky="ew")
+
+        ttk.Label(criteria_frame, text="BGM 파일명:").grid(row=5, column=0, sticky="w", pady=3)
+        ttk.Combobox(criteria_frame, textvariable=self.search_vars['bgm'], values=self.search_data.get('bgms', [])).grid(row=5, column=1, columnspan=2, sticky="ew")
+
+        ttk.Label(criteria_frame, text="배경 파일명:").grid(row=6, column=0, sticky="w", pady=3)
+        ttk.Combobox(criteria_frame, textvariable=self.search_vars['background'], values=self.search_data.get('backgrounds', [])).grid(row=6, column=1, columnspan=2, sticky="ew")
+
+
+        event_search_frame = ttk.LabelFrame(main_frame, text="이벤트 스토리 검색", padding="10")
+        event_search_frame.pack(fill="x", expand=True, anchor="n")
+        event_search_frame.columnconfigure(1, weight=1)
+
+        server_frame = ttk.LabelFrame(event_search_frame, text="서버", padding="5")
+        server_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0,5))
+        server_frame.columnconfigure(0, weight=1)
+        server_frame.columnconfigure(1, weight=1)
+
+        ttk.Radiobutton(server_frame, text="일본 서버 (JP)", variable=self.server_var, value="JP", command=self._on_server_selection_change).grid(row=0, column=0, padx=5, sticky="w")
+        ttk.Radiobutton(server_frame, text="한국 서버 (KR)", variable=self.server_var, value="KR", command=self._on_server_selection_change).grid(row=0, column=1, padx=5, sticky="w")
+
+        ttk.Label(event_search_frame, text="이벤트 목록:").grid(row=1, column=0, sticky="w", pady=3)
+        self.event_combobox = ttk.Combobox(event_search_frame, textvariable=self.search_vars['event_name'])
+        self.event_combobox.grid(row=1, column=1, columnspan=2, sticky="ew")
 
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side="bottom", fill="x", pady=(10, 0))
@@ -68,55 +119,172 @@ class SearchWindow(tk.Toplevel):
         ttk.Button(button_frame, text="검색", command=self._search).pack(side="right")
         ttk.Button(button_frame, text="초기화", command=self._reset).pack(side="right", padx=(0, 5))
 
-    def _get_char_name(self, char_id):
-        char_id_str = str(char_id)
-        return self.character_map.get(char_id_str, char_id_str)
+    def _on_server_selection_change(self):
+        selected_server = self.server_var.get()
+        db_info = self.server_db_info.get(selected_server)
+
+        if not db_info:
+            self.event_combobox['values'] = []
+            self.search_vars['event_name'].set('')
+            self.app.status_bar.config(text="서버 정보 로드 실패.")
+            return
+
+        script_dir = os.path.dirname(__file__)
+        db_path = os.path.join(script_dir, db_info['db_path'])
+        
+        if not os.path.exists(db_path):
+            messagebox.showwarning("데이터베이스 오류", f"{db_path} 파일을 찾을 수 없습니다.\n\n해당 서버의 이벤트 목록을 로드할 수 없습니다.")
+            self.event_combobox['values'] = []
+            self.search_vars['event_name'].set('')
+            self.app.status_bar.config(text=f"'{db_info['db_path']}' 파일 없음.")
+            return
+
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            
+            event_names = []
+            query_event_list = f"SELECT DISTINCT \"{db_info['event_name_col_list']}\" FROM \"{db_info['event_list_table']}\""
+            cursor.execute(query_event_list)
+            
+            event_names = sorted([row[0].replace('\\n', '') for row in cursor.fetchall() if row[0]])
+
+            self.event_combobox['values'] = event_names
+            self.search_vars['event_name'].set('')
+            self.app.status_bar.config(text=f"'{selected_server}' 서버 이벤트 목록 로드 완료 ({len(event_names)}개).")
+
+        except sqlite3.OperationalError as e:
+            messagebox.showerror("데이터베이스 오류", f"데이터베이스 연결 또는 쿼리 오류 ({db_path}):\n{e}")
+            self.event_combobox['values'] = []
+            self.search_vars['event_name'].set('')
+            self.app.status_bar.config(text=f"데이터베이스 오류: {e}")
+        except Exception as e:
+            messagebox.showerror("오류", f"이벤트 목록 로드 중 알 수 없는 오류 발생:\n{e}")
+            self.event_combobox['values'] = []
+            self.search_vars['event_name'].set('')
+            self.app.status_bar.config(text=f"이벤트 목록 로드 오류: {e}")
+        finally:
+            if 'conn' in locals() and conn:
+                conn.close()
 
     def _search(self):
         self.app.status_bar.config(text="검색 중...")
         self.app.master.update_idletasks()
 
         criteria = {key: var.get().lower() for key, var in self.search_vars.items() if var.get()}
-        if not criteria:
+        
+        event_name_from_combo = self.search_vars['event_name'].get()
+        if event_name_from_combo:
+            event_name_for_db_query = event_name_from_combo.replace(' ', '\\n')
+        else:
+            event_name_for_db_query = ""
+
+        if 'event_name' in criteria:
+            del criteria['event_name']
+
+
+        if not criteria and not event_name_for_db_query:
             self._reset()
             return
         
-        matched_files = []
-        for filename, path in self.all_files_dict.items():
-            if not criteria.get('filename') or criteria['filename'] in filename.lower():
-                try:
-                    with open(path, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                    if self._check_file_content(data, criteria):
-                        matched_files.append(filename)
-                except Exception: continue
+        initial_matched_files = set(self.all_files_dict.keys())
 
-        self.search_callback(matched_files)
+        if event_name_for_db_query:
+            selected_server = self.server_var.get()
+            db_info = self.server_db_info.get(selected_server)
+
+            if not db_info:
+                messagebox.showerror("검색 오류", "선택된 서버 정보가 유효하지 않습니다.")
+                self.search_callback([])
+                self.destroy()
+                return
+
+            script_dir = os.path.dirname(__file__)
+            db_path = os.path.join(script_dir, db_info['db_path'])
+
+            if not os.path.exists(db_path):
+                messagebox.showwarning("검색 오류", f"{db_path} 파일을 찾을 수 없어 이벤트 검색을 수행할 수 없습니다.")
+                pass 
+            else:
+                try:
+                    conn = sqlite3.connect(db_path)
+                    cursor = conn.cursor()
+
+                    query_event_ids = f"SELECT \"{db_info['event_id_col_details']}\" FROM \"{db_info['event_details_table']}\" WHERE \"{db_info['event_info_col_details']}\" LIKE ?"
+                    cursor.execute(query_event_ids, (f"{event_name_for_db_query}%",))
+                    
+                    event_story_ids = {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
+                    
+                    initial_matched_files = initial_matched_files.intersection(event_story_ids)
+                    if not initial_matched_files:
+                        self.search_callback([])
+                        self.destroy()
+                        return
+
+                except sqlite3.OperationalError as e:
+                    messagebox.showerror("데이터베이스 오류", f"이벤트 ID 조회 중 오류 발생:\n{e}")
+                    self.search_callback([])
+                    self.destroy()
+                    return
+                finally:
+                    if conn: conn.close()
+            
+        final_matched_files = []
+
+        for filename in initial_matched_files:
+            file_path = self.all_files_dict.get(filename)
+            if not file_path: continue
+
+            if 'filename' in criteria and criteria['filename'] not in filename.lower():
+                continue
+
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
+                if self._check_file_content(data, content_criteria):
+                    final_matched_files.append(filename)
+            except Exception:
+                continue
+        
+        final_matched_files = sorted(list(set(final_matched_files)))
+
+        self.search_callback(final_matched_files)
         self.destroy()
 
     def _check_file_content(self, data, criteria):
-        content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
-        if not content_criteria:
+        scene_0 = data.get('0', {})
+        if 'title' in criteria and criteria['title'] not in scene_0.get('title', '').lower():
+            return False
+        if 'outline' in criteria and criteria['outline'] not in scene_0.get('outline', '').lower():
+            return False
+
+        scene_level_criteria_keys = ['char_name', 'content', 'bgm', 'background']
+        has_scene_level_criteria = any(key in criteria for key in scene_level_criteria_keys)
+
+        if not has_scene_level_criteria:
             return True
 
         for scene in data.values():
             match = True
-            if 'content' in content_criteria and not ('print' in scene and content_criteria['content'] in scene['print'].get('text', '').lower()):
+            
+            if 'content' in criteria and not ('print' in scene and criteria['content'] in scene['print'].get('text', '').lower()):
                 match = False
             
-            if 'bgm' in content_criteria and not ('bgm' in scene and content_criteria['bgm'] in str(scene.get('bgm', '')).lower()):
+            if 'bgm' in criteria and not ('bgm' in scene and criteria['bgm'] in str(scene.get('bgm', '')).lower()):
                 match = False
 
-            if 'background' in content_criteria and not ('background' in scene and content_criteria['background'] in str(scene.get('background', '')).lower()):
+            if 'background' in criteria and not ('background' in scene and criteria['background'] in str(scene.get('background', '')).lower()):
                 match = False
 
-            if 'char_name' in content_criteria:
-                char_name_crit = content_criteria['char_name']
+            if 'char_name' in criteria:
+                char_name_crit = criteria['char_name']
                 char_type = self.search_vars['char_type'].get()
                 
                 char_found = False
                 if 'print' in scene:
-                    if char_type == '화자' and char_name_crit in self._get_char_name(scene['print'].get('name', '')).lower():
+                    if char_type == '화자' and char_name_crit in str(scene['print'].get('name', '')).lower():
                         char_found = True
                     if char_type == '피호명자(대사)' and char_name_crit in scene['print'].get('text', '').lower():
                         char_found = True
@@ -131,6 +299,8 @@ class SearchWindow(tk.Toplevel):
 
     def _reset(self):
         for var in self.search_vars.values(): var.set('')
+        self.server_var.set('JP')
+        self._on_server_selection_change()
         self.search_callback(list(self.all_files_dict.keys()))
         self.destroy()
 
@@ -149,8 +319,6 @@ class StoryViewerApp:
         self.display_mode_var = tk.StringVar(value="원본 파일 이름으로 표시")
         self.view_mode_var = tk.StringVar(value="간단히 표시")
 
-        self.character_map = self.load_json_file("character_map.json")
-        
         self.field_order = [
             # 20250722 storydata 기준
             # 파트 1: {0} 그룹의 모든 데이터 (중복 제외)
@@ -202,7 +370,7 @@ class StoryViewerApp:
         ttk.Radiobutton(detail_options_group, text="간단히 표시 (title, outline, vo, print)", variable=self.view_mode_var, value="간단히 표시", command=self._on_view_mode_change).grid(row=0, column=0, padx=5)
         ttk.Radiobutton(detail_options_group, text="자세히 표시", variable=self.view_mode_var, value="자세히 표시", command=self._on_view_mode_change).grid(row=0, column=1, padx=5)
 
-        main_frame = ttk.Frame(self.master, padding=(10, 5, 10, 0))
+        main_frame = ttk.Frame(self.master, padding=(10, 5, 10, 0)) 
         main_frame.grid(row=1, column=0, sticky="nsew")
         main_frame.grid_rowconfigure(0, weight=1)
         main_frame.grid_columnconfigure(0, weight=1)
@@ -281,11 +449,14 @@ class StoryViewerApp:
 
     def load_json_file(self, file_path, file_desc="JSON"):
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
+            script_dir = os.path.dirname(__file__)
+            full_path = os.path.join(script_dir, file_path)
+            with open(full_path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except FileNotFoundError: return {}
+        except FileNotFoundError:
+            return {} 
         except json.JSONDecodeError:
-            messagebox.showerror("오류", f"{file_desc} 파일({file_path})의 형식이 잘못되었습니다.")
+            messagebox.showerror("오류", f"{file_desc} 파일('{file_path}')의 형식이 잘못되었습니다.")
             return {}
             
     def _clear_workspace(self):
@@ -339,14 +510,16 @@ class StoryViewerApp:
         self.status_bar.config(text="폴더에서 파일 검색 중...")
         self.master.update_idletasks()
         
-        pattern = re.compile(r'^storydata_\d{7}\.json$')
+        pattern = re.compile(r'^storydata_\d+\.json$')
         for dirpath, _, filenames in os.walk(folder_path):
             for filename in sorted(filenames):
                 if pattern.match(filename):
-                    self.all_files[filename] = os.path.join(dirpath, filename)
+                    full_path = os.path.join(dirpath, filename)
+                    if self._is_valid_storydata(full_path):
+                        self.all_files[filename] = full_path
         
         if not self.all_files:
-            messagebox.showwarning("알림", "선택한 폴더에 storydata 파일이 없습니다.")
+            messagebox.showwarning("알림", "선택한 폴더에 유효한 storydata 파일이 없습니다.")
             self.status_bar.config(text="준비")
             return
 
@@ -356,7 +529,7 @@ class StoryViewerApp:
         self.status_bar.config(text=f"총 {len(self.all_files)}개 파일 분석 중...")
         self.master.update_idletasks()
         
-        unique_chars, unique_bgms, unique_bgs = set(), set(), set()
+        unique_char_names, unique_bgms, unique_bgs = set(), set(), set()
         
         def _extract_asset_name(value):
             if isinstance(value, str): return value
@@ -371,19 +544,23 @@ class StoryViewerApp:
                 self.file_titles[filename] = title if title else filename
 
                 for scene in data.values():
+                    if 'print' in scene and 'name' in scene['print']:
+                        char_name = str(scene['print']['name']).strip()
+                        if char_name:
+                            unique_char_names.add(char_name)
+
                     if 'bgm' in scene:
                         bgm_name = _extract_asset_name(scene['bgm'])
                         if bgm_name: unique_bgms.add(bgm_name)
                     if 'background' in scene:
                         bg_name = _extract_asset_name(scene['background'])
                         if bg_name: unique_bgs.add(bg_name)
-                    if 'print' in scene and 'name' in scene['print']:
-                        unique_chars.add(self.get_char_name(scene['print']['name']))
-            except Exception: continue
+            except Exception:
+                continue
         
         self.search_data = {
             'filenames': sorted(list(self.all_files.keys())),
-            'character_names': sorted(list(unique_chars)),
+            'character_names': sorted(list(unique_char_names)),
             'bgms': sorted(list(unique_bgms)),
             'backgrounds': sorted(list(unique_bgs)),
         }
@@ -393,9 +570,9 @@ class StoryViewerApp:
 
     def open_search_window(self):
         if not self.all_files:
-            messagebox.showinfo("알림", "먼저 파일이나 폴더를 열어주세요.")
+            messagebox.showinfo("알림", "먼저 storydata 파일이나 폴더를 열어주세요.")
             return
-        SearchWindow(self, self.all_files, self.character_map, self.update_file_list, self.search_data)
+        SearchWindow(self, self.all_files, self.update_file_list, self.search_data)
 
     def update_file_list(self, filenames):
         self.update_story_text([])
@@ -418,6 +595,9 @@ class StoryViewerApp:
             self.display_name_to_filename[display_name] = filename
             
         self.status_bar.config(text=f"{len(filenames)}개의 파일이 목록에 표시됩니다.")
+        if len(filenames) > 0:
+            self.file_listbox.selection_set(0)
+            self.file_listbox.event_generate("<<ListboxSelect>>")
 
     def on_file_select(self, event):
         sel_indices = self.file_listbox.curselection()
@@ -441,10 +621,7 @@ class StoryViewerApp:
             self.status_bar.config(text=f"'{os.path.basename(file_path)}' 로드 완료.")
         except Exception as e:
             messagebox.showerror("오류", f"파일 처리 중 오류 발생: {e}")
-
-    def get_char_name(self, char_id):
-        char_id_str = str(char_id)
-        return self.character_map.get(char_id_str, char_id_str)
+            self.status_bar.config(text=f"오류: '{os.path.basename(file_path)}' 로드 실패.")
 
     def _on_display_mode_change(self):
         self.update_file_list(self.current_filenames_in_list)
@@ -483,18 +660,18 @@ class StoryViewerApp:
         return (1, field_name)
 
     def _format_print(self, value, content_list):
-        name = self.get_char_name(value.get('name', '???'))
+        name = str(value.get('name', '???')) 
         text = value.get('text', '').replace('\n', '\n' + ' ' * 9)
         content_list.append((f"- name: {name}\n", 'print_sub_key'))
         content_list.append((f"- text: “{text}”\n", 'print_sub_key'))
 
-    def _format_chara_full(self, value, content_list): self._format_generic_char_list(value, content_list)
-    def _format_fadein(self, value, content_list): self._format_generic_char_list(value, content_list)
-    def _format_fadeout(self, value, content_list): self._format_generic_char_list(value, content_list)
-    def _format_face(self, value, content_list): self._format_generic_char_list(value, content_list)
-    def _format_nod(self, value, content_list): self._format_simple_char_list(value, content_list)
-    def _format_shake(self, value, content_list): self._format_simple_char_list(value, content_list)
-    def _format_focus(self, value, content_list): self._format_simple_char_list(value, content_list)
+    def _format_chara_full(self, value, content_list): self._format_generic_id_list(value, content_list)
+    def _format_fadein(self, value, content_list): self._format_generic_id_list(value, content_list)
+    def _format_fadeout(self, value, content_list): self._format_generic_id_list(value, content_list)
+    def _format_face(self, value, content_list): self._format_generic_id_list(value, content_list)
+    def _format_nod(self, value, content_list): self._format_simple_id_list(value, content_list)
+    def _format_shake(self, value, content_list): self._format_simple_id_list(value, content_list)
+    def _format_focus(self, value, content_list): self._format_simple_id_list(value, content_list)
 
     def _format_choice(self, value, content_list):
         for i, choice_item in enumerate(value, 1):
@@ -504,18 +681,24 @@ class StoryViewerApp:
     def _format_default(self, value, content_list):
         content_list.append((f"{str(value)}\n", 'value'))
     
-    def _format_generic_char_list(self, value, content_list):
+    def _format_generic_id_list(self, value, content_list):
+        if not isinstance(value, list):
+            self._format_default(value, content_list)
+            return
+
         for item in value:
             if isinstance(item, list) and item:
-                char_name = self.get_char_name(item[0])
+                char_id = str(item[0])
                 details = ", ".join(map(str, item[1:]))
-                content_list.append((f"- {char_name}", 'value'))
+                content_list.append((f"- {char_id}", 'value'))
                 content_list.append((f" ({details})\n" if details else "\n", 'value'))
+            else:
+                content_list.append((f"- {str(item)}\n", 'value'))
 
-    def _format_simple_char_list(self, value, content_list):
+    def _format_simple_id_list(self, value, content_list):
         if not isinstance(value, list): value = [value]
         for item in value:
-            content_list.append((f"- {self.get_char_name(item)}\n", 'value'))
+            content_list.append((f"- {str(item)}\n", 'value'))
 
     def update_story_text(self, content_list):
         self.story_text.config(state=tk.NORMAL)
