@@ -152,19 +152,20 @@ class StoryViewerApp:
         self.character_map = self.load_json_file("character_map.json")
         
         self.field_order = [
-            # {0} 그룹의 모든 데이터 (중복 제외)
-            'title', 'outline', 'bgm', 'place', 'situation', 'movie', 'black_out', 
-            'transition', 'background_color', 'background', 'jingle', 'env', 'ui_visible',
+            # 20250722 storydata 기준
+            # 파트 1: {0} 그룹의 모든 데이터 (중복 제외)
+            'title', 'outline', 'movie', 'shake_anime', 'place',
 
-            # {1} ~ {n} 그룹의 모든 데이터 (원본 순서 기준)
-            'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'jump', 
-            'eye_open', 'se', 'pop', 'shake', 'sway', 'fadeout', 'fadeout_all', 
-            'white_out', 'chara_full', 'fadein', 'voice_effect', 'focus', 'pan', 
-            'camera_zoom', 'emotion', 'effect', 'choice', 'tag', 'goto', 'still', 
-            'still_unit', 'still_move', 'still_normalize', 'out_l', 'in_r', 
-            'effect_delete', 'se_pause', 'ignore_bgm', 'env_stop', 'unknown', 
-            'multi_lipsync', 'change_window', 'text_size', 'bright_change', 
-            'character_up_down', 'background_blur', 'event_adv_move_horizontal'
+            # 파트 2: {1} ~ {n} 그룹의 모든 데이터 (원본 순서 기준)
+            'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
+            'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 
+            'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'se', 'fadein_all', 
+            'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 
+            'choice', 'goto', 'text_size', 'ui_visible', 'black_out', 'bright_change', 
+            'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 
+            'shake', 'sway', 'out_l', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
+            'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 
+            'unknown'
         ]
         
         self.setup_ui()
