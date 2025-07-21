@@ -70,7 +70,7 @@ class SearchWindow(tk.Toplevel):
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill="both", expand=True)
 
-        criteria_frame = ttk.LabelFrame(main_frame, text="기본 검색 조건", padding="10")
+        criteria_frame = ttk.LabelFrame(main_frame, text="기본 검색 조건", padding="5")
         criteria_frame.pack(fill="x", expand=False, anchor="n", pady=(0, 10))
         criteria_frame.columnconfigure(1, weight=1)
 
@@ -97,7 +97,7 @@ class SearchWindow(tk.Toplevel):
         ttk.Combobox(criteria_frame, textvariable=self.search_vars['background'], values=self.search_data.get('backgrounds', [])).grid(row=6, column=1, columnspan=2, sticky="ew")
 
 
-        event_search_frame = ttk.LabelFrame(main_frame, text="이벤트 스토리 검색", padding="10")
+        event_search_frame = ttk.LabelFrame(main_frame, text="이벤트 스토리 검색", padding="5")
         event_search_frame.pack(fill="x", expand=True, anchor="n")
         event_search_frame.columnconfigure(1, weight=1)
 
@@ -430,34 +430,25 @@ class StoryViewerApp:
     def setup_text_tags(self):
         default_font_family = font.nametofont("TkDefaultFont").cget("family")
 
+        # GUI 표시용 태그 설정 (텍스트 내용에 직접 공백을 추가했으므로 마진은 줄임)
         self.story_text.tag_configure('scene_header', font=(default_font_family, 14, 'bold'), foreground='#00008B')
-        self.story_text.tag_configure('key', font=(default_font_family, 10, 'bold'), foreground='#4A4A4A', lmargin1=20)
-        self.story_text.tag_configure('value', font=(default_font_family, 10), foreground='#333333', lmargin1=40, lmargin2=40)
-        self.story_text.tag_configure('print_sub_key', font=(default_font_family, 10), foreground='#333333', lmargin1=40, lmargin2=40)
-        self.story_text.tag_configure('choice', font=(default_font_family, 10, 'bold'), foreground='#8B0000', lmargin1=40, lmargin2=40)
-        self.story_text.tag_configure('choice_tag', font=(default_font_family, 10, 'italic'), foreground='#808080')
+        self.story_text.tag_configure('key', font=(default_font_family, 10, 'bold'), foreground='#4A4A4A') # Removed lmargin1 as spaces are added to string
+        self.story_text.tag_configure('value', font=(default_font_family, 10), foreground='#333333') # Removed lmargin as spaces are added to string
+        self.story_text.tag_configure('print_sub_key', font=(default_font_family, 10), foreground='#333333') # Removed lmargin as spaces are added to string
+        self.story_text.tag_configure('choice', font=(default_font_family, 10, 'bold'), foreground='#8B0000') # Removed lmargin as spaces are added to string
+        self.story_text.tag_configure('choice_tag', font=(default_font_family, 10, 'italic'), foreground='#808080') # Removed lmargin as spaces are added to string
     
     def create_menu(self):
         menu_bar = tk.Menu(self.master)
         file_menu = tk.Menu(menu_bar, tearoff=0)
-        file_menu.add_command(label="파일 열기...", command=self.open_files)
-        file_menu.add_command(label="폴더 열기...", command=self.open_folder)
+        file_menu.add_command(label="파일 열기", command=self.open_files)
+        file_menu.add_command(label="폴더 열기", command=self.open_folder)
+        file_menu.add_separator()
+        file_menu.add_command(label="내보내기", command=self.export_stories)
         file_menu.add_separator()
         file_menu.add_command(label="종료", command=self.master.quit)
-        menu_bar.add_cascade(label="파일", menu=file_menu)
+        menu_bar.add_cascade(label="메뉴(Menu)", menu=file_menu)
         self.master.config(menu=menu_bar)
-
-    def load_json_file(self, file_path, file_desc="JSON"):
-        try:
-            script_dir = os.path.dirname(__file__)
-            full_path = os.path.join(script_dir, file_path)
-            with open(full_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return {} 
-        except json.JSONDecodeError:
-            messagebox.showerror("오류", f"{file_desc} 파일('{file_path}')의 형식이 잘못되었습니다.")
-            return {}
             
     def _clear_workspace(self):
         self.update_story_text([])
@@ -616,7 +607,8 @@ class StoryViewerApp:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            content_list = self.format_story_data(data)
+            # format_story_data는 (텍스트, 태그) 튜플 리스트를 반환합니다.
+            content_list = self.format_story_data(data) 
             self.update_story_text(content_list)
             self.status_bar.config(text=f"'{os.path.basename(file_path)}' 로드 완료.")
         except Exception as e:
@@ -642,12 +634,14 @@ class StoryViewerApp:
             if view_mode == "간단히 표시":
                 simple_keys = ['title', 'outline', 'vo', 'print']
                 keys_to_display = [k for k in simple_keys if k in scene]
-            else:
+            else: # 자세히 표시
                 keys_to_display = sorted(scene.keys(), key=self._sort_key_func)
             
             for field in keys_to_display:
                 value = scene[field]
-                content_list.append((f"{field}\n", 'key'))
+                # 각 필드 이름 앞에 4칸의 공백을 추가하여 들여쓰기
+                content_list.append(("    " + f"{field}\n", 'key'))
+                # 각 포매터 메소드는 content_list에 직접 (텍스트, 태그) 튜플을 추가합니다.
                 formatter = getattr(self, f'_format_{field}', self._format_default)
                 formatter(value, content_list)
                 content_list.append(("\n", None))
@@ -659,11 +653,17 @@ class StoryViewerApp:
             return (0, self.field_order.index(field_name))
         return (1, field_name)
 
+    # 포매터 메소드들은 전달받은 content_list에 직접 내용을 추가하도록 구현되어 있습니다.
+    # 각 값 앞에 8칸의 공백을 추가하여 들여쓰기를 반영합니다.
     def _format_print(self, value, content_list):
+        indent = "        " # 8 spaces for value-level content
         name = str(value.get('name', '???')) 
-        text = value.get('text', '').replace('\n', '\n' + ' ' * 9)
-        content_list.append((f"- name: {name}\n", 'print_sub_key'))
-        content_list.append((f"- text: “{text}”\n", 'print_sub_key'))
+        text = value.get('text', '')
+        # 대사 내용 내의 줄바꿈 시에도 들여쓰기 유지
+        formatted_text = text.replace('\n', '\n' + indent)
+
+        content_list.append((indent + f"- name: {name}\n", 'print_sub_key'))
+        content_list.append((indent + f"- text: “{formatted_text}”\n", 'print_sub_key'))
 
     def _format_chara_full(self, value, content_list): self._format_generic_id_list(value, content_list)
     def _format_fadein(self, value, content_list): self._format_generic_id_list(value, content_list)
@@ -674,38 +674,135 @@ class StoryViewerApp:
     def _format_focus(self, value, content_list): self._format_simple_id_list(value, content_list)
 
     def _format_choice(self, value, content_list):
+        indent = "        " # 8 spaces for value-level content
         for i, choice_item in enumerate(value, 1):
-            content_list.append((f"{i}. {choice_item['text']}", 'choice'))
+            # 선택지 텍스트 앞에 들여쓰기 추가
+            content_list.append((indent + f"{i}. {choice_item['text']}", 'choice'))
+            # 태그는 같은 줄에 이어붙이므로 들여쓰기 추가 안 함
             content_list.append((f" (→ S# {choice_item['tag']})\n", 'choice_tag'))
 
     def _format_default(self, value, content_list):
-        content_list.append((f"{str(value)}\n", 'value'))
+        indent = "        " # 8 spaces for value-level content
+        # 기본값 앞에 8칸의 공백을 추가하여 들여쓰기
+        content_list.append((indent + f"{str(value)}\n", 'value'))
     
     def _format_generic_id_list(self, value, content_list):
+        indent = "        " # 8 spaces for value-level content
         if not isinstance(value, list):
-            self._format_default(value, content_list)
+            self._format_default(value, content_list) # 이 함수가 이미 들여쓰기를 추가함
             return
 
         for item in value:
             if isinstance(item, list) and item:
                 char_id = str(item[0])
                 details = ", ".join(map(str, item[1:]))
-                content_list.append((f"- {char_id}", 'value'))
+                # 리스트 항목 앞에 8칸의 공백을 추가하여 들여쓰기
+                content_list.append((indent + f"- {char_id}", 'value'))
+                # 세부 정보는 같은 줄에 이어붙이므로 들여쓰기 추가 안 함
                 content_list.append((f" ({details})\n" if details else "\n", 'value'))
             else:
-                content_list.append((f"- {str(item)}\n", 'value'))
+                content_list.append((indent + f"- {str(item)}\n", 'value'))
 
     def _format_simple_id_list(self, value, content_list):
+        indent = "        " # 8 spaces for value-level content
         if not isinstance(value, list): value = [value]
         for item in value:
-            content_list.append((f"- {str(item)}\n", 'value'))
+            content_list.append((indent + f"- {str(item)}\n", 'value'))
 
     def update_story_text(self, content_list):
         self.story_text.config(state=tk.NORMAL)
         self.story_text.delete('1.0', tk.END)
         for content, tag in content_list:
+            # content 문자열에 이미 들여쓰기 공백이 포함되어 있으므로,
+            # Tkinter 태그의 lmargin 옵션은 제거하거나 0으로 설정해도 무방합니다.
             self.story_text.insert(tk.END, content, (tag,) if tag else ())
         self.story_text.config(state=tk.DISABLED)
+
+    def export_stories(self):
+        if not self.all_files:
+            messagebox.showinfo("알림", "먼저 storydata 파일이나 폴더를 열어주세요.")
+            return
+
+        # 내보내기 범위 선택 메시지 박스
+        response = messagebox.askyesno(
+            "내보내기 옵션",
+            "현재 목록에 반환 된 파일만 저장하시겠습니까?\n\n"
+            "- 예(Y): 현재 목록에 반환 된 파일만 저장\n"
+            "- 아니요(N): 불러왔던 모든 파일 저장"
+        )
+
+        if response is None: # 사용자가 메시지 박스를 닫았을 경우
+            return
+
+        if response: # 예(Y) 선택: 현재 리스트에 있는 파일만 내보내기
+            filenames_to_export = self.current_filenames_in_list
+        else: # 아니요(N) 선택: 모든 불러온 파일 내보내기
+            filenames_to_export = sorted(list(self.all_files.keys()))
+        
+        if not filenames_to_export:
+            messagebox.showinfo("알림", "내보낼 파일이 없습니다.")
+            return
+
+        # 저장할 폴더 선택 대화 상자
+        output_folder = filedialog.askdirectory(title="스토리 파일을 저장할 폴더를 선택하세요")
+        if not output_folder:
+            self.status_bar.config(text="내보내기 취소.")
+            return
+
+        self.status_bar.config(text=f"{len(filenames_to_export)}개 파일 내보내기 중...")
+        self.master.update_idletasks() # UI 업데이트 강제
+
+        exported_count = 0
+        failed_count = 0
+        failed_files = []
+
+        for filename in filenames_to_export:
+            source_file_path = self.all_files.get(filename)
+            if not source_file_path:
+                failed_count += 1
+                failed_files.append(filename)
+                continue
+
+            # 파일 이름은 원본 그대로, 확장자는 txt로 변경
+            output_filename = os.path.splitext(filename)[0] + ".txt"
+            output_file_path = os.path.join(output_folder, output_filename)
+
+            try:
+                with open(source_file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                
+                # 현재 선택된 뷰 모드(간단히/자세히)에 따라 데이터 포맷
+                # format_story_data는 (텍스트, 태그) 튜플 리스트를 반환합니다.
+                formatted_content_list = self.format_story_data(data)
+                
+                # 텍스트 부분만 추출하여 하나의 문자열로 결합 (이미 들여쓰기 공백이 포함됨)
+                text_to_write = "".join([text for text, _ in formatted_content_list])
+
+                with open(output_file_path, 'w', encoding='utf-8') as outfile:
+                    outfile.write(text_to_write)
+                
+                exported_count += 1
+
+            except Exception as e:
+                failed_count += 1
+                failed_files.append(f"{filename} (오류: {e})")
+                continue
+        
+        # 내보내기 결과 메시지
+        if exported_count > 0:
+            messagebox.showinfo("내보내기 완료", f"{exported_count}개의 파일을 성공적으로 내보냈습니다.")
+            self.status_bar.config(text=f"{exported_count}개 파일 내보내기 완료. ({failed_count}개 실패)")
+        else:
+            messagebox.showwarning("내보내기 실패", f"내보낸 파일이 없습니다. {failed_count}개의 파일에서 오류가 발생했습니다.")
+            self.status_bar.config(text=f"모든 파일 내보내기 실패. ({failed_count}개 실패)")
+        
+        if failed_files:
+            # 실패한 파일이 많을 경우 일부만 표시
+            error_msg_detail = "\n".join(failed_files[:10])
+            if len(failed_files) > 10:
+                error_msg_detail += "\n..."
+            messagebox.showerror("내보내기 오류 상세", "다음 파일 내보내기 중 오류가 발생했습니다:\n" + error_msg_detail)
+
 
 if __name__ == "__main__":
     root = tk.Tk()
