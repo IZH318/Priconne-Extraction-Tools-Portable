@@ -147,7 +147,7 @@ class SearchWindow(tk.Toplevel):
             query_event_list = f"SELECT DISTINCT \"{db_info['event_name_col_list']}\" FROM \"{db_info['event_list_table']}\""
             cursor.execute(query_event_list)
             
-            event_names = sorted([row[0].replace('\\n', '') for row in cursor.fetchall() if row[0]])
+            event_names = [row[0].replace('\\n', '') for row in cursor.fetchall() if row[0]]
 
             self.event_combobox['values'] = event_names
             self.search_vars['event_name'].set('')
