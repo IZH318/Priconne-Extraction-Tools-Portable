@@ -35,7 +35,7 @@ LANGUAGES = {
         'list_group_title': "스토리 파일 목록", 'detail_group_title': "스토리 상세 정보",
         'search_button_text': "storydata 고급 검색",
         # --- 상태 표시줄 메시지 ---
-        'status_bar_initial': "폴더를 열어주세요.",
+        'status_bar_initial': "storydata 파일이나 폴더를 열어주세요.",
         'status_bar_loading_start': "파일 로딩 및 분석 시작...",
         'status_bar_analyzing': "파일 분석 중... ({i}/{t})",
         'status_bar_loading_done': "로드 완료: {loaded}개 성공, {failed}개 실패.",
@@ -108,7 +108,7 @@ LANGUAGES = {
         'view_simple': "Simple View (title, outline, vo, print)", 'view_detailed': "Detailed View",
         'list_group_title': "Story File List", 'detail_group_title': "Story Details",
         'search_button_text': "Advanced storydata Search",
-        'status_bar_initial': "Please open a folder.",
+        'status_bar_initial': "Please open a file or folder.",
         'status_bar_loading_start': "Starting to load and analyze files...",
         'status_bar_analyzing': "Analyzing files... ({i}/{t})",
         'status_bar_loading_done': "Loading complete: {loaded} succeeded, {failed} failed.",
@@ -180,7 +180,7 @@ LANGUAGES = {
         'view_simple': "簡易表示 (title, outline, vo, print)", 'view_detailed': "詳細表示",
         'list_group_title': "ストーリーファイルリスト", 'detail_group_title': "ストーリー詳細",
         'search_button_text': "storydata 高度な検索",
-        'status_bar_initial': "フォルダーを開いてください。",
+        'status_bar_initial': "storydata ファイルまたはフォルダーを開いてください。",
         'status_bar_loading_start': "ファイルの読み込みと分析を開始...",
         'status_bar_analyzing': "ファイルを分析中... ({i}/{t})",
         'status_bar_loading_done': "読み込み完了: {loaded}件成功, {failed}件失敗。",
@@ -292,7 +292,7 @@ class SearchWindow(tk.Toplevel):
         self._on_server_selection_change()
         
         self.focus_set()
-        self._center_window(420, 420)
+        self._center_window(480, 390)
 
     def _center_window(self, width, height):
         screen_width = self.winfo_screenwidth()
@@ -326,7 +326,7 @@ class SearchWindow(tk.Toplevel):
         self.char_name_label = ttk.Label(self.criteria_frame, text="")
         self.char_name_label.grid(row=3, column=0, sticky="w", pady=pady_value)
         ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['char_name'], values=self.search_data.get('character_names', [])).grid(row=3, column=1, sticky="ew")
-        self.char_type_combobox = ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['char_type'], width=12, state='readonly')
+        self.char_type_combobox = ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['char_type'], width=20, state='readonly')
         self.char_type_combobox.grid(row=3, column=2, sticky="e", padx=(5,0))
 
         self.content_label = ttk.Label(self.criteria_frame, text="")
