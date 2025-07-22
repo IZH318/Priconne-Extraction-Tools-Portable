@@ -7,6 +7,7 @@ import sqlite3
 import threading
 import queue
 from datetime import datetime
+import concurrent.futures
 
 # --- 프로그램 정보 ---
 ABOUT_INFO = {
@@ -43,6 +44,7 @@ LANGUAGES = {
         'status_bar_displaying': "'{filename}' 표시 완료.",
         'status_bar_cache_error': "오류: '{filename}' 캐시 데이터 없음.",
         'status_bar_list_updated': "{count}개의 파일이 목록에 표시됩니다.",
+        'status_bar_list_updating': "목록 업데이트 중... ({i}/{t})",
         'status_bar_export_prep': "내보내기 준비 중...",
         'status_bar_exporting': "내보내기 중... ({i}/{t})",
         'status_bar_export_done': "{exported}개 파일 내보내기 완료. ({failed}개 실패)",
@@ -116,6 +118,7 @@ LANGUAGES = {
         'status_bar_displaying': "Displaying '{filename}' done.",
         'status_bar_cache_error': "Error: Cached data for '{filename}' not found.",
         'status_bar_list_updated': "{count} files are displayed in the list.",
+        'status_bar_list_updating': "Updating list... ({i}/{t})",
         'status_bar_export_prep': "Preparing for export...",
         'status_bar_exporting': "Exporting... ({i}/{t})",
         'status_bar_export_done': "Export complete: {exported} files. ({failed} failed)",
@@ -188,6 +191,7 @@ LANGUAGES = {
         'status_bar_displaying': "'{filename}' の表示完了。",
         'status_bar_cache_error': "エラー: '{filename}' のキャッシュデータがありません。",
         'status_bar_list_updated': "リストに{count}個のファイルが表示されています。",
+        'status_bar_list_updating': "リストを更新中... ({i}/{t})",
         'status_bar_export_prep': "エクスポートの準備中...",
         'status_bar_exporting': "エクスポート中... ({i}/{t})",
         'status_bar_export_done': "{exported}件のエクスポート完了。({failed}件失敗)",
@@ -243,7 +247,7 @@ LANGUAGES = {
 }
 
 class SearchWindow(tk.Toplevel):
-    def __init__(self, app, all_files_dict, story_data_cache, search_callback, search_data):
+    def __init__(self, app, all_files_dict, story_data_cache, search_callback, search_data, db_status, server_db_info):
         super().__init__(app.master)
         
         self.app = app
@@ -251,6 +255,8 @@ class SearchWindow(tk.Toplevel):
         self.story_data_cache = story_data_cache
         self.search_callback = search_callback
         self.search_data = search_data
+        self.db_status = db_status
+        self.server_db_info = server_db_info # 메인 앱에서 전달받은 DB 정보
 
         self.search_vars = {
             'filename': tk.StringVar(),
@@ -265,26 +271,6 @@ class SearchWindow(tk.Toplevel):
         }
         self.server_var = tk.StringVar(value='JP')
 
-        # 각 서버별 DB 파일 경로 및 테이블/컬럼 정보 정의
-        self.server_db_info = {
-            'JP': {
-                'db_path': 'master_jp.db',
-                'event_list_table': 'v1_8931e2893a2d2290dbf498046bc66faafeebc40b6764dd69334ad51f5aca2e9f',
-                'event_name_col_list': 'e3f0f79d746654f52125f3c28eb487d9e102f02077fe104d1423f08e80e056e3', # 이벤트 목록 테이블의 이벤트 이름 컬럼 (2번째)
-                'event_details_table': 'v1_04d08b8c6bf704241326eca45b6d63cc1a6dd38d03ff256df15b8ec8d4cd2649',
-                'event_info_col_details': '20d0bf56a9ca7d14b3172ac4dd383fee10c010d4ecd30c9854302d10390d774e', # 이벤트 상세 테이블의 이벤트 이름+정보 컬럼 (11번째)
-                'event_id_col_details': '69d3bbead1844607ef41ecb520a4d5385cae02eddca377aa13721ec7fd01e0ec' # 이벤트 상세 테이블의 이벤트 고유 ID 컬럼 (12번째)
-            },
-            'KR': {
-                'db_path': 'master_kr.db',
-                'event_list_table': 'v1_4e380b72af2e31867844884ba838095ad9ea8f02bf83037a3c8ed47b8943f164',
-                'event_name_col_list': 'abb720eaefdc23b376dc5b817b683e633eb66fe9a3941025ae27413c56d56fad', # 이벤트 목록 테이블의 이벤트 이름 컬럼 (4번째)
-                'event_details_table': 'v1_ebabad5e41c1f71b3e5d705a8fe81411012e124827b4cbde3dfb2469674f598f',
-                'event_info_col_details': '45d39837db60a2b9aca5a03c3c17a9999201e08e97c3cff92bb95786dd344355', # 이벤트 상세 테이블의 이벤트 이름+정보 컬럼 (3번째)
-                'event_id_col_details': '6db6c11bbfa308b726f5f24bdee2bc75a2f805e2ae94ed4908aaa7444ce3e2eb' # 이벤트 상세 테이블의 이벤트 고유 ID 컬럼 (7번째)
-            }
-        }
-        
         self.transient(app.master)
         self.grab_set()
         
@@ -399,21 +385,15 @@ class SearchWindow(tk.Toplevel):
         selected_server = self.server_var.get()
         db_info = self.server_db_info.get(selected_server)
         lang_dict = LANGUAGES[self.app.lang.get()]
+        self.event_combobox['values'] = []
+        self.search_vars['event_name'].set('')
 
-        if not db_info:
-            self.event_combobox['values'] = []
-            self.search_vars['event_name'].set('')
+        if not db_info or not self.db_status.get(selected_server):
             return
 
         script_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(script_dir, db_info['db_path'])
         
-        if not os.path.exists(db_path):
-            messagebox.showwarning(lang_dict['db_not_found_title'], lang_dict['db_not_found_msg'].format(path=db_path), parent=self)
-            self.event_combobox['values'] = []
-            self.search_vars['event_name'].set('')
-            return
-
         try:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
@@ -421,15 +401,10 @@ class SearchWindow(tk.Toplevel):
                 cursor.execute(query_event_list)
                 event_names = [row[0].replace('\\n', '') for row in cursor.fetchall() if row[0]]
             self.event_combobox['values'] = sorted(event_names)
-            self.search_vars['event_name'].set('')
         except sqlite3.Error as e:
             messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
-            self.event_combobox['values'] = []
-            self.search_vars['event_name'].set('')
 
     def start_search(self):
-        self.search_button.config(state="disabled")
-        self.reset_button.config(state="disabled")
         self.app._update_status_bar('status_searching')
         
         criteria = {key: var.get().lower() for key, var in self.search_vars.items() if var.get()}
@@ -438,7 +413,9 @@ class SearchWindow(tk.Toplevel):
         thread = threading.Thread(target=self._search_thread, args=(criteria, server))
         thread.daemon = True
         thread.start()
-
+        
+        self.destroy() # 검색 시작과 동시에 창 닫기
+        
     def _search_thread(self, criteria, server):
         lang_dict = LANGUAGES[self.app.lang.get()]
         try:
@@ -450,49 +427,58 @@ class SearchWindow(tk.Toplevel):
 
             if event_name_for_db_query:
                 db_info = self.server_db_info.get(server)
-                if db_info:
+                if db_info and self.db_status.get(server):
                     script_dir = os.path.dirname(os.path.abspath(__file__))
                     db_path = os.path.join(script_dir, db_info['db_path'])
-                    if os.path.exists(db_path):
-                        try:
-                            with sqlite3.connect(db_path) as conn:
-                                cursor = conn.cursor()
-                                query = f"SELECT \"{db_info['event_id_col_details']}\" FROM \"{db_info['event_details_table']}\" WHERE \"{db_info['event_info_col_details']}\" LIKE ?"
-                                cursor.execute(query, (f"{event_name_for_db_query}%",))
-                                event_story_ids = {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
-                                initial_matched_files.intersection_update(event_story_ids)
-                        except sqlite3.Error as e:
-                            self.app.task_queue.put(lambda: messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self))
+                    try:
+                        with sqlite3.connect(db_path) as conn:
+                            cursor = conn.cursor()
+                            query = f"SELECT \"{db_info['event_id_col_details']}\" FROM \"{db_info['event_details_table']}\" WHERE \"{db_info['event_info_col_details']}\" LIKE ?"
+                            cursor.execute(query, (f"{event_name_for_db_query}%",))
+                            event_story_ids = {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
+                            initial_matched_files.intersection_update(event_story_ids)
+                    except sqlite3.Error as e:
+                        self.app.task_queue.put(lambda: messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self.app.master))
             
             final_matched_files = []
             if not criteria and not event_name_for_db_query:
                  final_matched_files = list(self.all_files_dict.keys())
             else:
-                for filename in initial_matched_files:
-                    if 'filename' in criteria and criteria['filename'] not in filename.lower():
-                        continue
-                    
-                    data = self.story_data_cache.get(filename)
-                    if not data: continue
-
-                    content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
-                    if not content_criteria or self._check_file_content(data, content_criteria):
-                        final_matched_files.append(filename)
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future_to_filename = {
+                        executor.submit(self._check_file_for_search, filename, criteria): filename 
+                        for filename in initial_matched_files
+                    }
+                    for future in concurrent.futures.as_completed(future_to_filename):
+                        if future.result():
+                            final_matched_files.append(future_to_filename[future])
             
-            self.app.task_queue.put(lambda: self._finish_search(sorted(list(set(final_matched_files)))))
+            # 검색 결과를 콜백 함수에 직접 전달
+            self.app.task_queue.put(lambda: self.search_callback(sorted(final_matched_files)))
 
         except Exception as e:
+            # 에러 발생 시 처리
             self.app.task_queue.put(lambda: self._finish_search_error(e))
 
-    def _finish_search(self, matched_files):
-        self.search_callback(matched_files)
-        self.destroy()
+    def _check_file_for_search(self, filename, criteria):
+        """병렬 검색을 위한 헬퍼 함수. 단일 파일이 모든 조건을 충족하는지 검사합니다."""
+        if 'filename' in criteria and criteria['filename'] not in filename.lower():
+            return False
+        
+        data = self.story_data_cache.get(filename)
+        if not data:
+            return False
+
+        content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
+        if not content_criteria:
+            return True
+            
+        return self._check_file_content(data, content_criteria)
 
     def _finish_search_error(self, error):
         lang_dict = LANGUAGES[self.app.lang.get()]
         messagebox.showerror(lang_dict['search_error_title'], lang_dict['search_error_msg'].format(e=error), parent=self.app.master)
-        self.search_button.config(state="normal")
-        self.reset_button.config(state="normal")
+        self.app._update_status_bar('status_bar_ready')
 
     def _check_file_content(self, data, criteria):
         scene_0 = data.get('0', {})
@@ -534,9 +520,7 @@ class SearchWindow(tk.Toplevel):
         return True
 
     def _reset(self):
-        for var in self.search_vars.values(): var.set('')
-        self.server_var.set('JP')
-        self._on_server_selection_change()
+        # 초기화 시에는 모든 파일을 다시 보여줌
         self.search_callback(list(self.all_files_dict.keys()))
         self.destroy()
 
@@ -558,22 +542,35 @@ class StoryViewerApp:
         
         self.display_mode_var = tk.StringVar(value="original")
         self.view_mode_var = tk.StringVar(value="simple")
-        
-        self.field_order = [
-            # 20250722 storydata 기준
-            # 파트 1: {0} 그룹의 모든 데이터 (중복 제외)
-            'title', 'outline', 'movie', 'shake_anime', 'place',
 
-            # 파트 2: {1} ~ {n} 그룹의 모든 데이터 (원본 순서 기준)
-            'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
-            'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 
-            'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'se', 'fadein_all', 
-            'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 
-            'choice', 'goto', 'text_size', 'ui_visible', 'black_out', 'bright_change', 
-            'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 
-            'shake', 'sway', 'out_l', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
-            'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 
-            'unknown'
+        self.db_status = {}
+        self.db_check_done = False
+        
+        self.server_db_info = {
+            'JP': {
+                'db_path': 'master_jp.db',
+                'event_list_table': 'v1_8931e2893a2d2290dbf498046bc66faafeebc40b6764dd69334ad51f5aca2e9f',
+                'event_name_col_list': 'e3f0f79d746654f52125f3c28eb487d9e102f02077fe104d1423f08e80e056e3',
+                'event_details_table': 'v1_04d08b8c6bf704241326eca45b6d63cc1a6dd38d03ff256df15b8ec8d4cd2649',
+                'event_info_col_details': '20d0bf56a9ca7d14b3172ac4dd383fee10c010d4ecd30c9854302d10390d774e',
+                'event_id_col_details': '69d3bbead1844607ef41ecb520a4d5385cae02eddca377aa13721ec7fd01e0ec'
+            },
+            'KR': {
+                'db_path': 'master_kr.db',
+                'event_list_table': 'v1_4e380b72af2e31867844884ba838095ad9ea8f02bf83037a3c8ed47b8943f164',
+                'event_name_col_list': 'abb720eaefdc23b376dc5b817b683e633eb66fe9a3941025ae27413c56d56fad',
+                'event_details_table': 'v1_ebabad5e41c1f71b3e5d705a8fe81411012e124827b4cbde3dfb2469674f598f',
+                'event_info_col_details': '45d39837db60a2b9aca5a03c3c17a9999201e08e97c3cff92bb95786dd344355',
+                'event_id_col_details': '6db6c11bbfa308b726f5f24bdee2bc75a2f805e2ae94ed4908aaa7444ce3e2eb'
+            }
+        }
+
+        self.field_order = [
+            'title', 'outline', 'movie', 'shake_anime', 'place', 'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
+            'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'se', 'fadein_all', 
+            'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 'choice', 'goto', 'text_size', 'ui_visible', 'black_out', 'bright_change', 
+            'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 'shake', 'sway', 'out_l', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
+            'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 'unknown'
         ]
         self.setup_ui()
         self.setup_text_tags()
@@ -783,19 +780,17 @@ class StoryViewerApp:
         self.current_file_path = None
         self.search_button.config(state="disabled")
         self.file_menu.entryconfig(3, state="disabled")
+        self.db_status.clear()
+        self.db_check_done = False
 
     def _is_valid_storydata(self, file_path):
-        """파일 유효성을 검사하고, 성공 시 (True, 데이터, None), 실패 시 (False, None, 실패 이유)를 반환합니다."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
-            
             if not isinstance(data, dict) or not data:
                 return False, None, "파일 내용이 비어있거나 딕셔너리 형식이 아님"
-                
             if not all(k.isdigit() and isinstance(v, dict) for k, v in data.items()):
                 return False, None, "데이터 구조 오류 (키는 숫자, 값은 딕셔너리여야 함)"
-                
             return True, data, None
         except json.JSONDecodeError as e:
             return False, None, f"JSON 형식 오류: {e}"
@@ -807,13 +802,11 @@ class StoryViewerApp:
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'])
             return
-
         self._clear_workspace()
         self.is_loading = True
         self._update_status_bar('status_bar_loading_start')
         self.file_menu.entryconfig(0, state="disabled")
         self.file_menu.entryconfig(1, state="disabled")
-
         thread = threading.Thread(target=self._load_and_analyze_thread, args=(paths, folder_path))
         thread.daemon = True
         thread.start()
@@ -822,27 +815,19 @@ class StoryViewerApp:
         lang_dict = LANGUAGES[self.lang.get()]
         file_paths = filedialog.askopenfilenames(
             title=lang_dict.get('dialog_title_open_files', "Select storydata file(s)"),
-            filetypes=[
-                (lang_dict.get('filetype_json', "JSON Files"), "*.json"),
-                (lang_dict.get('filetype_all', "All Files"), "*.*")
-            ]
+            filetypes=[(lang_dict.get('filetype_json', "JSON Files"), "*.json"), (lang_dict.get('filetype_all', "All Files"), "*.*")]
         )
         if file_paths:
             self._start_loading_task(paths=file_paths)
 
     def open_folder(self):
         lang_dict = LANGUAGES[self.lang.get()]
-        folder_path = filedialog.askdirectory(
-            title=lang_dict.get('dialog_title_open_folder', "Select the folder with storydata files")
-        )
+        folder_path = filedialog.askdirectory(title=lang_dict.get('dialog_title_open_folder', "Select the folder with storydata files"))
         if folder_path:
             self._start_loading_task(folder_path=folder_path)
 
     def _load_and_analyze_thread(self, paths, folder_path):
-        temp_all_files = {}
-        temp_story_cache = {}
-        invalid_files = []
-
+        temp_all_files, temp_story_cache, invalid_files = {}, {}, []
         file_list_to_process = []
         if paths:
             file_list_to_process = paths
@@ -856,7 +841,6 @@ class StoryViewerApp:
         total_files = len(file_list_to_process)
         for i, path in enumerate(file_list_to_process):
             self.task_queue.put(lambda i=i, t=total_files: self._update_status_bar('status_bar_analyzing', i=i+1, t=t))
-
             is_valid, data, error_reason = self._is_valid_storydata(path)
             filename = os.path.basename(path)
             if is_valid:
@@ -869,9 +853,7 @@ class StoryViewerApp:
             self.task_queue.put(lambda: self._finish_loading(None, invalid_files))
             return
 
-        unique_char_names, unique_bgms, unique_bgs = set(), set(), set()
-        temp_file_titles = {}
-        
+        unique_char_names, unique_bgms, unique_bgs, temp_file_titles = set(), set(), set(), {}
         def _extract_asset_name(value):
             if isinstance(value, str): return value
             if isinstance(value, list) and value and isinstance(value[0], str): return value[0]
@@ -881,24 +863,12 @@ class StoryViewerApp:
             title = data.get('0', {}).get('title', '').strip()
             temp_file_titles[filename] = title if title else filename
             for scene in data.values():
-                if 'print' in scene and 'name' in scene['print']:
-                    if name := str(scene['print']['name']).strip(): unique_char_names.add(name)
+                if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
                 if 'bgm' in scene and (bgm_name := _extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
                 if 'background' in scene and (bg_name := _extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
 
-        temp_search_data = {
-            'filenames': sorted(list(temp_all_files.keys())),
-            'character_names': sorted(list(unique_char_names)),
-            'bgms': sorted(list(unique_bgms)),
-            'backgrounds': sorted(list(unique_bgs)),
-        }
-        
-        results = {
-            "all_files": temp_all_files,
-            "cache": temp_story_cache,
-            "titles": temp_file_titles,
-            "search_data": temp_search_data,
-        }
+        temp_search_data = {'filenames': sorted(list(temp_all_files.keys())), 'character_names': sorted(list(unique_char_names)), 'bgms': sorted(list(unique_bgms)), 'backgrounds': sorted(list(unique_bgs))}
+        results = {"all_files": temp_all_files, "cache": temp_story_cache, "titles": temp_file_titles, "search_data": temp_search_data}
         self.task_queue.put(lambda: self._finish_loading(results, invalid_files))
 
     def _finish_loading(self, results, invalid_files):
@@ -906,21 +876,14 @@ class StoryViewerApp:
         self.is_loading = False
         self.file_menu.entryconfig(0, state="normal")
         self.file_menu.entryconfig(1, state="normal")
-
         if not results:
             messagebox.showwarning(lang_dict['msgbox_no_valid_files_title'], lang_dict['msgbox_no_valid_files_msg'])
             self._update_status_bar('status_bar_ready')
         else:
-            self.all_files = results['all_files']
-            self.story_data_cache = results['cache']
-            self.file_titles = results['titles']
-            self.search_data = results['search_data']
-            
+            self.all_files, self.story_data_cache, self.file_titles, self.search_data = results['all_files'], results['cache'], results['titles'], results['search_data']
             self.search_button.config(state="normal")
             self.file_menu.entryconfig(3, state="normal")
-
             self.update_file_list(list(self.all_files.keys()))
-            self._update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
         
         if invalid_files:
             msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files))
@@ -928,16 +891,24 @@ class StoryViewerApp:
                 log_filename = "invalid_storydata_log.txt"
                 try:
                     with open(log_filename, 'w', encoding='utf-8') as f:
-                        f.write(f"--- 로드 실패 로그 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n")
-                        f.write(f"총 {len(invalid_files)}개 파일 로드 실패\n")
-                        f.write("-" * 50 + "\n\n")
+                        f.write(f"--- 로드 실패 로그 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n총 {len(invalid_files)}개 파일 로드 실패\n" + "-"*50 + "\n\n")
                         for filename, reason in invalid_files:
-                            f.write(f"파일: {filename}\n")
-                            f.write(f"원인: {reason}\n")
-                            f.write("-" * 30 + "\n")
+                            f.write(f"파일: {filename}\n원인: {reason}\n" + "-"*30 + "\n")
                     messagebox.showinfo(lang_dict['msgbox_log_saved_title'], lang_dict['msgbox_log_saved_msg'].format(filename=log_filename))
                 except Exception as e:
                     messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e))
+
+    def _check_and_cache_db_status(self):
+        if self.db_check_done: return
+        lang_dict = LANGUAGES[self.lang.get()]
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        for server, info in self.server_db_info.items():
+            db_path = os.path.join(script_dir, info['db_path'])
+            exists = os.path.exists(db_path)
+            self.db_status[server] = exists
+            if not exists:
+                messagebox.showwarning(lang_dict['db_not_found_title'], lang_dict['db_not_found_msg'].format(path=db_path), parent=self.master)
+        self.db_check_done = True
 
     def open_search_window(self):
         lang_dict = LANGUAGES[self.lang.get()]
@@ -947,42 +918,49 @@ class StoryViewerApp:
         if not self.all_files:
             messagebox.showinfo(lang_dict['msgbox_search_before_load_title'], lang_dict['msgbox_search_before_load_msg'])
             return
-        SearchWindow(self, self.all_files, self.story_data_cache, self.update_file_list, self.search_data)
+        self._check_and_cache_db_status()
+        SearchWindow(app=self, all_files_dict=self.all_files, story_data_cache=self.story_data_cache, search_callback=self.update_file_list, search_data=self.search_data, db_status=self.db_status, server_db_info=self.server_db_info)
 
     def update_file_list(self, filenames):
         self.update_story_text([])
         self.current_file_path = None
         self.current_filenames_in_list = sorted(filenames)
-        self.file_listbox.delete(0, tk.END)
         self.display_name_to_filename.clear()
+        self.file_listbox.delete(0, tk.END)
+        total, chunk_size = len(self.current_filenames_in_list), 200
         
-        display_mode = self.display_mode_var.get()
-
-        for filename in self.current_filenames_in_list:
-            display_name = filename
-            if display_mode == 'title':
-                title = self.file_titles.get(filename, filename)
-                if title and title != filename:
-                    display_name = f"{title}"
-            self.file_listbox.insert(tk.END, display_name)
-            self.display_name_to_filename[display_name] = filename
-            
-        if not self.is_loading:
-            self._update_status_bar('status_bar_list_updated', count=len(filenames))
-        if filenames:
-            self.file_listbox.selection_set(0)
-            self.file_listbox.event_generate("<<ListboxSelect>>")
+        def _populate_list(index=0):
+            if index >= total:
+                self._update_status_bar('status_bar_list_updated', count=total)
+                if total > 0:
+                    self.file_listbox.selection_set(0)
+                    self.file_listbox.event_generate("<<ListboxSelect>>")
+                return
+            self._update_status_bar('status_bar_list_updating', i=index + 1, t=total)
+            end_index = min(index + chunk_size, total)
+            display_mode = self.display_mode_var.get()
+            display_chunk = []
+            for i in range(index, end_index):
+                filename = self.current_filenames_in_list[i]
+                display_name = filename
+                if display_mode == 'title':
+                    if title := self.file_titles.get(filename, filename):
+                        display_name = f"{title}"
+                display_chunk.append(display_name)
+                self.display_name_to_filename[display_name] = filename
+            self.file_listbox.insert(tk.END, *display_chunk)
+            self.master.after(1, lambda: _populate_list(end_index))
+        _populate_list()
 
     def on_file_select(self, event):
         if not self.file_listbox.curselection(): return
-        display_name = self.file_listbox.get(self.file_listbox.curselection()[0])
-        filename = self.display_name_to_filename.get(display_name)
-        if filename:
+        try:
+            display_name = self.file_listbox.get(self.file_listbox.curselection()[0])
+        except tk.TclError: return
+        if filename := self.display_name_to_filename.get(display_name):
             self.current_file_path = self.all_files.get(filename)
-            data = self.story_data_cache.get(filename)
-            if data:
-                content_list = self.format_story_data(data)
-                self.update_story_text(content_list)
+            if data := self.story_data_cache.get(filename):
+                self.update_story_text(self.format_story_data(data))
                 self._update_status_bar('status_bar_displaying', filename=filename)
             else:
                 self._update_status_bar('status_bar_cache_error', filename=filename)
@@ -991,24 +969,19 @@ class StoryViewerApp:
         if not force_update and self.is_loading: return
         self.update_file_list(self.current_filenames_in_list)
 
-
     def _on_view_mode_change(self, force_update=False):
         if not force_update and self.is_loading: return
         if self.current_file_path:
             filename = os.path.basename(self.current_file_path)
-            data = self.story_data_cache.get(filename)
-            if data:
-                content_list = self.format_story_data(data)
-                self.update_story_text(content_list)
+            if data := self.story_data_cache.get(filename):
+                self.update_story_text(self.format_story_data(data))
 
     def format_story_data(self, data):
         content_list = []
         view_mode = self.view_mode_var.get()
-
         for key in sorted(data.keys(), key=int):
             scene = data[key]
             content_list.append((f" S# {key} \n", 'scene_header'))
-            keys_to_display = []
             if view_mode == 'simple':
                 keys_to_display = [k for k in ['title', 'outline', 'vo', 'print'] if k in scene]
             else:
@@ -1024,23 +997,20 @@ class StoryViewerApp:
 
     def _format_print(self, value, content_list):
         indent = "        "
-        name = str(value.get('name', '???')) 
-        text = value.get('text', '')
+        name, text = str(value.get('name', '???')), value.get('text', '')
         formatted_text = text.replace('\n', '\n' + indent)
-        content_list.append((indent + f"- name: {name}\n", 'print_sub_key'))
-        content_list.append((indent + f"- text: “{formatted_text}”\n", 'print_sub_key'))
-    def _format_chara_full(self, value, content_list): self._format_generic_id_list(value, content_list)
-    def _format_fadein(self, value, content_list): self._format_generic_id_list(value, content_list)
-    def _format_fadeout(self, value, content_list): self._format_generic_id_list(value, content_list)
-    def _format_face(self, value, content_list): self._format_generic_id_list(value, content_list)
-    def _format_nod(self, value, content_list): self._format_simple_id_list(value, content_list)
-    def _format_shake(self, value, content_list): self._format_simple_id_list(value, content_list)
-    def _format_focus(self, value, content_list): self._format_simple_id_list(value, content_list)
+        content_list.extend([(indent + f"- name: {name}\n", 'print_sub_key'), (indent + f"- text: “{formatted_text}”\n", 'print_sub_key')])
+    def _format_chara_full(self, v, c): self._format_generic_id_list(v, c)
+    def _format_fadein(self, v, c): self._format_generic_id_list(v, c)
+    def _format_fadeout(self, v, c): self._format_generic_id_list(v, c)
+    def _format_face(self, v, c): self._format_generic_id_list(v, c)
+    def _format_nod(self, v, c): self._format_simple_id_list(v, c)
+    def _format_shake(self, v, c): self._format_simple_id_list(v, c)
+    def _format_focus(self, v, c): self._format_simple_id_list(v, c)
     def _format_choice(self, value, content_list):
         indent = "        "
-        for i, choice_item in enumerate(value, 1):
-            content_list.append((indent + f"{i}. {choice_item['text']}", 'choice'))
-            content_list.append((f" (→ S# {choice_item['tag']})\n", 'choice_tag'))
+        for i, item in enumerate(value, 1):
+            content_list.extend([(indent + f"{i}. {item['text']}", 'choice'), (f" (→ S# {item['tag']})\n", 'choice_tag')])
     def _format_default(self, value, content_list):
         content_list.append(("        " + f"{str(value)}\n", 'value'))
     def _format_generic_id_list(self, value, content_list):
@@ -1050,10 +1020,8 @@ class StoryViewerApp:
             return
         for item in value:
             if isinstance(item, list) and item:
-                char_id = str(item[0])
                 details = ", ".join(map(str, item[1:]))
-                content_list.append((indent + f"- {char_id}", 'value'))
-                content_list.append((f" ({details})\n" if details else "\n", 'value'))
+                content_list.extend([(indent + f"- {str(item[0])}", 'value'), (f" ({details})\n" if details else "\n", 'value')])
             else:
                 content_list.append((indent + f"- {str(item)}\n", 'value'))
     def _format_simple_id_list(self, value, content_list):
@@ -1074,30 +1042,23 @@ class StoryViewerApp:
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'])
             return
-
         response = messagebox.askyesnocancel(lang_dict['msgbox_export_options_title'], lang_dict['msgbox_export_options_msg'])
         if response is None: return
-
         filenames_to_export = self.current_filenames_in_list if response else sorted(list(self.all_files.keys()))
         if not filenames_to_export:
             messagebox.showinfo(lang_dict['msgbox_no_export_files_title'], lang_dict['msgbox_no_export_files_msg'])
             return
-
         output_folder = filedialog.askdirectory(title=lang_dict['msgbox_export_folder_title'])
         if not output_folder: return
-
         self._update_status_bar('status_bar_export_prep')
         self.file_menu.entryconfig(3, state="disabled")
-        
         thread = threading.Thread(target=self._export_thread, args=(filenames_to_export, output_folder))
         thread.daemon = True
         thread.start()
 
     def _export_thread(self, filenames, output_folder):
-        exported_count, failed_count = 0, 0
-        failed_files = []
+        exported_count, failed_count, failed_files = 0, 0, []
         total = len(filenames)
-
         for i, filename in enumerate(filenames):
             self.task_queue.put(lambda i=i, t=total: self._update_status_bar('status_bar_exporting', i=i+1, t=t))
             data = self.story_data_cache.get(filename)
@@ -1105,33 +1066,26 @@ class StoryViewerApp:
                 failed_count += 1
                 failed_files.append(filename)
                 continue
-            
-            output_filename = os.path.splitext(filename)[0] + ".txt"
-            output_path = os.path.join(output_folder, output_filename)
-
+            output_path = os.path.join(output_folder, os.path.splitext(filename)[0] + ".txt")
             try:
-                formatted_content_list = self.format_story_data(data)
-                text_to_write = "".join([text for text, _ in formatted_content_list])
+                text_to_write = "".join([text for text, _ in self.format_story_data(data)])
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(text_to_write)
                 exported_count += 1
             except Exception as e:
                 failed_count += 1
                 failed_files.append(f"{filename} (Error: {e})")
-
         self.task_queue.put(lambda: self._finish_export(exported_count, failed_count, failed_files))
 
     def _finish_export(self, exported, failed, failed_list):
         lang_dict = LANGUAGES[self.lang.get()]
         self.file_menu.entryconfig(3, state="normal")
-        
         if exported > 0:
             messagebox.showinfo(lang_dict['msgbox_export_complete_title'], lang_dict['msgbox_export_complete_msg'].format(count=exported))
             self._update_status_bar('status_bar_export_done', exported=exported, failed=failed)
         else:
             messagebox.showwarning(lang_dict['msgbox_export_failed_title'], lang_dict['msgbox_export_failed_msg'].format(count=failed))
             self._update_status_bar('status_bar_export_all_failed', failed=failed)
-        
         if failed_list:
             error_msg = "\n".join(failed_list[:10]) + ("\n..." if len(failed_list) > 10 else "")
             messagebox.showerror(lang_dict['msgbox_export_error_details_title'], lang_dict['msgbox_export_error_details_msg'].format(errors=error_msg))
