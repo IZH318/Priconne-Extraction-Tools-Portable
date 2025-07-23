@@ -342,7 +342,7 @@ class SearchWindow(tk.Toplevel):
 
         self.event_list_label = ttk.Label(self.event_search_frame, text="")
         self.event_list_label.grid(row=1, column=0, sticky="w", pady=3)
-        self.event_combobox = ttk.Combobox(self.event_search_frame, textvariable=self.search_vars['event_name'])
+        self.event_combobox = ttk.Combobox(self.event_search_frame, textvariable=self.search_vars['event_name'], state='readonly')
         self.event_combobox.grid(row=1, column=1, columnspan=2, sticky="ew")
 
         button_frame = ttk.Frame(main_frame)
@@ -385,29 +385,38 @@ class SearchWindow(tk.Toplevel):
         selected_server = self.server_var.get()
         db_info = self.server_db_info.get(selected_server)
         lang_dict = LANGUAGES[self.app.lang.get()]
+        
+        # 콤보박스 값과 선택된 값 초기화
         self.event_combobox['values'] = []
         self.search_vars['event_name'].set('')
 
         if not db_info or not self.db_status.get(selected_server):
+            self.event_combobox.config(state='disabled')
             return
-
+        
+        self.event_combobox.config(state='readonly')
         script_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(script_dir, db_info['db_path'])
         
         try:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
+                # f-string을 사용하여 테이블과 컬럼 이름을 동적으로 설정 (따옴표로 감싸서 안전하게 처리)
                 query_event_list = f"SELECT DISTINCT \"{db_info['event_name_col_list']}\" FROM \"{db_info['event_list_table']}\""
                 cursor.execute(query_event_list)
-                event_names = [row[0].replace('\\n', '') for row in cursor.fetchall() if row[0]]
+                # DB에서 가져온 값에서 '\n'을 공백으로 바꾸고, 앞뒤 공백 제거 후 비어있지 않은 값만 리스트에 추가
+                event_names = [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
+            
+            # 이벤트 목록을 가나다순/ABC순으로 정렬하여 콤보박스에 설정
             self.event_combobox['values'] = sorted(event_names)
         except sqlite3.Error as e:
             messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
+            self.event_combobox.config(state='disabled')
 
     def start_search(self):
         self.app._update_status_bar('status_searching')
         
-        criteria = {key: var.get().lower() for key, var in self.search_vars.items() if var.get()}
+        criteria = {key: var.get() for key, var in self.search_vars.items() if var.get()}
         server = self.server_var.get()
         
         thread = threading.Thread(target=self._search_thread, args=(criteria, server))
@@ -415,36 +424,44 @@ class SearchWindow(tk.Toplevel):
         thread.start()
         
         self.destroy() # 검색 시작과 동시에 창 닫기
-        
+
     def _search_thread(self, criteria, server):
         lang_dict = LANGUAGES[self.app.lang.get()]
         try:
-            event_name_for_db_query = ""
-            if 'event_name' in criteria:
-                event_name_for_db_query = criteria.pop('event_name').replace(' ', '\\n')
-
+            # 초기에 검색 대상 파일은 로드된 모든 파일로 설정
             initial_matched_files = set(self.all_files_dict.keys())
 
-            if event_name_for_db_query:
+            # 1. 이벤트 이름으로 파일 목록을 먼저 필터링
+            if 'event_name' in criteria:
+                selected_event_name = criteria.pop('event_name')
                 db_info = self.server_db_info.get(server)
+                
                 if db_info and self.db_status.get(server):
                     script_dir = os.path.dirname(os.path.abspath(__file__))
                     db_path = os.path.join(script_dir, db_info['db_path'])
                     try:
                         with sqlite3.connect(db_path) as conn:
                             cursor = conn.cursor()
+                            # SQL 쿼리: 이벤트 상세 정보 테이블에서, 스토리 제목이 선택된 이벤트 이름으로 시작하는 모든 항목 검색
                             query = f"SELECT \"{db_info['event_id_col_details']}\" FROM \"{db_info['event_details_table']}\" WHERE \"{db_info['event_info_col_details']}\" LIKE ?"
-                            cursor.execute(query, (f"{event_name_for_db_query}%",))
+                            # 파라미터 바인딩으로 SQL 인젝션 방지. '이벤트이름%' 형태로 부분 일치 검색
+                            cursor.execute(query, (f"{selected_event_name}%",))
+                            
+                            # 검색된 스토리 ID들을 'storydata_{ID}.json' 형식의 파일 이름으로 변환하여 집합으로 만듦
                             event_story_ids = {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
+                            
+                            # 기존 파일 목록과 이벤트 스토리 파일 목록의 교집합을 구하여 검색 대상을 한정
                             initial_matched_files.intersection_update(event_story_ids)
                     except sqlite3.Error as e:
                         self.app.task_queue.put(lambda: messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self.app.master))
             
+            # 2. 필터링된 파일 목록을 대상으로 나머지 조건 검색
             final_matched_files = []
-            if not criteria and not event_name_for_db_query:
-                 final_matched_files = list(self.all_files_dict.keys())
+            if not criteria: # 이벤트 이름만 선택했거나, 아무 조건도 선택하지 않은 경우
+                 final_matched_files = list(initial_matched_files)
             else:
                 with concurrent.futures.ThreadPoolExecutor() as executor:
+                    # 필터링된 initial_matched_files를 대상으로 병렬 검색 실행
                     future_to_filename = {
                         executor.submit(self._check_file_for_search, filename, criteria): filename 
                         for filename in initial_matched_files
@@ -453,7 +470,7 @@ class SearchWindow(tk.Toplevel):
                         if future.result():
                             final_matched_files.append(future_to_filename[future])
             
-            # 검색 결과를 콜백 함수에 직접 전달
+            # 검색 결과를 콜백 함수에 직접 전달하여 메인 창의 리스트 업데이트
             self.app.task_queue.put(lambda: self.search_callback(sorted(final_matched_files)))
 
         except Exception as e:
@@ -462,7 +479,8 @@ class SearchWindow(tk.Toplevel):
 
     def _check_file_for_search(self, filename, criteria):
         """병렬 검색을 위한 헬퍼 함수. 단일 파일이 모든 조건을 충족하는지 검사합니다."""
-        if 'filename' in criteria and criteria['filename'] not in filename.lower():
+        # 파일 이름 검색 시 소문자로 변환하여 비교
+        if 'filename' in criteria and criteria['filename'].lower() not in filename.lower():
             return False
         
         data = self.story_data_cache.get(filename)
@@ -481,10 +499,12 @@ class SearchWindow(tk.Toplevel):
         self.app._update_status_bar('status_bar_ready')
 
     def _check_file_content(self, data, criteria):
+        # 모든 검색어와 데이터 내용을 소문자로 변환하여 비교 (대소문자 구분 없음)
+        lower_criteria = {k: v.lower() for k, v in criteria.items()}
         scene_0 = data.get('0', {})
-        if 'title' in criteria and criteria['title'] not in scene_0.get('title', '').lower():
+        if 'title' in lower_criteria and lower_criteria['title'] not in scene_0.get('title', '').lower():
             return False
-        if 'outline' in criteria and criteria['outline'] not in scene_0.get('outline', '').lower():
+        if 'outline' in lower_criteria and lower_criteria['outline'] not in scene_0.get('outline', '').lower():
             return False
 
         has_scene_level_criteria = any(k in criteria for k in ['char_name', 'content', 'bgm', 'background'])
@@ -492,7 +512,7 @@ class SearchWindow(tk.Toplevel):
             return True
 
         for scene in data.values():
-            if self._check_scene(scene, criteria):
+            if self._check_scene(scene, lower_criteria):
                 return True
         return False
 
@@ -506,6 +526,7 @@ class SearchWindow(tk.Toplevel):
             return False
         if 'char_name' in criteria:
             char_name_crit = criteria['char_name']
+            # 검색 타입은 원본 값을 사용해야 하므로 self.search_vars에서 직접 가져옴
             char_type_search = self.search_vars['char_type'].get()
             char_type_speaker = lang_dict['char_type_speaker']
             
@@ -549,19 +570,19 @@ class StoryViewerApp:
         self.server_db_info = {
             'JP': {
                 'db_path': 'master_jp.db',
-                'event_list_table': 'v1_8931e2893a2d2290dbf498046bc66faafeebc40b6764dd69334ad51f5aca2e9f',
-                'event_name_col_list': 'e3f0f79d746654f52125f3c28eb487d9e102f02077fe104d1423f08e80e056e3',
-                'event_details_table': 'v1_04d08b8c6bf704241326eca45b6d63cc1a6dd38d03ff256df15b8ec8d4cd2649',
-                'event_info_col_details': '20d0bf56a9ca7d14b3172ac4dd383fee10c010d4ecd30c9854302d10390d774e',
-                'event_id_col_details': '69d3bbead1844607ef41ecb520a4d5385cae02eddca377aa13721ec7fd01e0ec'
+                'event_list_table': 'v1_8931e2893a2d2290dbf498046bc66faafeebc40b6764dd69334ad51f5aca2e9f', # 1. 일본 서버 이벤트 목록 정보가 있는 테이블 이름
+                'event_name_col_list': 'e3f0f79d746654f52125f3c28eb487d9e102f02077fe104d1423f08e80e056e3', # 1-1. 일본 서버 이벤트 목록의 이름이 있는 열
+                'event_details_table': 'v1_04d08b8c6bf704241326eca45b6d63cc1a6dd38d03ff256df15b8ec8d4cd2649', # 2. 일본 서버 이벤트의 스토리 데이터 정보가 있는 테이블 이름
+                'event_info_col_details': '20d0bf56a9ca7d14b3172ac4dd383fee10c010d4ecd30c9854302d10390d774e', # 2-1. 일본 서버 이벤트 스토리의 이름이 있는 열
+                'event_id_col_details': '69d3bbead1844607ef41ecb520a4d5385cae02eddca377aa13721ec7fd01e0ec' # 2-2. 일본 서버 이벤트 스토리의 고유 ID값이 있는 열
             },
             'KR': {
                 'db_path': 'master_kr.db',
-                'event_list_table': 'v1_4e380b72af2e31867844884ba838095ad9ea8f02bf83037a3c8ed47b8943f164',
-                'event_name_col_list': 'abb720eaefdc23b376dc5b817b683e633eb66fe9a3941025ae27413c56d56fad',
-                'event_details_table': 'v1_ebabad5e41c1f71b3e5d705a8fe81411012e124827b4cbde3dfb2469674f598f',
-                'event_info_col_details': '45d39837db60a2b9aca5a03c3c17a9999201e08e97c3cff92bb95786dd344355',
-                'event_id_col_details': '6db6c11bbfa308b726f5f24bdee2bc75a2f805e2ae94ed4908aaa7444ce3e2eb'
+                'event_list_table': 'v1_4e380b72af2e31867844884ba838095ad9ea8f02bf83037a3c8ed47b8943f164', # 1. 한국 서버 이벤트 목록 정보가 있는 테이블 이름
+                'event_name_col_list': 'abb720eaefdc23b376dc5b817b683e633eb66fe9a3941025ae27413c56d56fad', # 1-1. 한국 서버 이벤트 목록의 이름이 있는 열
+                'event_details_table': 'v1_ebabad5e41c1f71b3e5d705a8fe81411012e124827b4cbde3dfb2469674f598f', # 2. 한국 서버 이벤트의 스토리 데이터 정보가 있는 테이블 이름
+                'event_info_col_details': '45d39837db60a2b9aca5a03c3c17a9999201e08e97c3cff92bb95786dd344355', # 2-1. 한국 서버 이벤트 스토리의 이름이 있는 열
+                'event_id_col_details': '9a0ef39c5ee7f28590676ed2b6b857c10aad6d01983252fa6b978b0cb3991880' # 2-2. 한국 서버 이벤트 스토리의 고유 ID값이 있는 열
             }
         }
 
