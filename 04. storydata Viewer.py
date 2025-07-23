@@ -1,19 +1,25 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, font
-import os
-import json
-import re
-import sqlite3
-import threading
-import queue
-from datetime import datetime
-import concurrent.futures
+# --- 필수 모듈 임포트 ---
+# GUI 관련 모듈
+import tkinter as tk                                  # GUI 라이브러리
+from tkinter import ttk, filedialog, messagebox, font # GUI 확장 위젯 및 대화상자
+
+# 시스템 및 운영체제 관련 모듈
+import os               # OS 기능 (경로, 파일 확인)
+import json             # JSON 데이터 처리
+import re               # 정규 표현식 (파일명 필터링)
+import sqlite3          # SQLite 데이터베이스 연동
+
+# 동시성 및 병렬 처리 관련 모듈
+import threading              # 스레드 생성/관리
+import queue                  # 스레드 간 데이터 통신
+from datetime import datetime # 현재 시간 (로그 타임스탬프용)
+import concurrent.futures     # 병렬 처리 (스레드 풀)
 
 # --- 프로그램 정보 ---
 ABOUT_INFO = {
     'program': "storydata Viewer",
-    'version': "1.0.1",
-    'updated': "2025-07-23",
+    'version': "1.0.0",
+    'updated': "2025-07-24",
     'license': "MIT License",
     'developer': "(Github) IZH318",
     'website': "https://github.com/IZH318",
@@ -261,10 +267,34 @@ LANGUAGES = {
     }
 }
 
+# ##################################################################
+# Class: SearchWindow
+#
+# 목적: storydata 고급 검색 기능을 위한 별도의 Toplevel 창.
+#
+# 주요 기능:
+# 1. 다양한 조건(파일명, 제목, 캐릭터, 내용 등)으로 storydata를 검색.
+# 2. 서버별 이벤트 스토리 검색을 위해 SQLite 데이터베이스와 연동.
+# 3. 검색 실행 시 메인 앱의 파일 목록을 필터링된 결과로 업데이트.
+# 4. 모든 UI 요소는 다국어를 지원.
+# ##################################################################
 class SearchWindow(tk.Toplevel):
     def __init__(self, app, all_files_dict, story_data_cache, search_callback, search_data, db_status, server_db_info):
+        """
+        SearchWindow 인스턴스를 초기화합니다.
+
+        Args:
+            app (StoryViewerApp): 메인 애플리케이션 인스턴스.
+            all_files_dict (dict): 로드된 모든 파일의 {파일명: 경로} 딕셔너리.
+            story_data_cache (dict): 로드된 모든 storydata의 {파일명: JSON 데이터} 캐시.
+            search_callback (function): 검색 완료 후 결과를 전달할 콜백 함수.
+            search_data (dict): 검색 필드(Combobox)를 채울 데이터.
+            db_status (dict): 서버별 DB 파일 존재 여부 상태.
+            server_db_info (dict): 서버별 DB 설정 정보.
+        """
         super().__init__(app.master)
         
+        # 메인 앱 및 데이터 참조
         self.app = app
         self.all_files_dict = all_files_dict
         self.story_data_cache = story_data_cache
@@ -273,6 +303,7 @@ class SearchWindow(tk.Toplevel):
         self.db_status = db_status
         self.server_db_info = server_db_info
 
+        # 검색 조건 입력을 위한 UI 변수
         self.search_vars = {
             'filename': tk.StringVar(),
             'title': tk.StringVar(),
@@ -284,18 +315,19 @@ class SearchWindow(tk.Toplevel):
             'background': tk.StringVar(),
             'event_name': tk.StringVar()
         }
-        self.server_var = tk.StringVar(value='JP')
+        self.server_var = tk.StringVar(value='JP') # 기본 서버 선택
 
-        self.transient(app.master)
-        self.grab_set()
+        self.transient(app.master) # 부모 창 위에 항상 표시
+        self.grab_set() # 모달 창으로 동작
         
-        self._setup_ui()
-        self._on_server_selection_change()
+        self._setup_ui() # UI 구성
+        self._on_server_selection_change() # 초기 서버 선택에 따른 이벤트 목록 로드
         
-        self.focus_set()
-        self._center_window(480, 390)
+        self.focus_set() # 창에 포커스 설정
+        self._center_window(480, 390) # 창 중앙 정렬
 
     def _center_window(self, width, height):
+        """윈도우를 화면 중앙에 배치합니다."""
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x = (screen_width // 2) - (width // 2)
@@ -303,49 +335,60 @@ class SearchWindow(tk.Toplevel):
         self.geometry(f'{width}x{height}+{x}+{y}')
 
     def _setup_ui(self):
+        """검색 창의 UI 위젯들을 생성하고 배치합니다."""
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill="both", expand=True)
 
+        # 기본 검색 조건 프레임
         self.criteria_frame = ttk.LabelFrame(main_frame, text="", padding=5)
         self.criteria_frame.pack(fill="x", expand=False, anchor="n", pady=(0, 10))
         self.criteria_frame.columnconfigure(1, weight=1)
 
         pady_value = 4
         
+        # 파일 이름
         self.filename_label = ttk.Label(self.criteria_frame, text="")
         self.filename_label.grid(row=0, column=0, sticky="w", pady=pady_value)
         ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['filename'], values=self.search_data.get('filenames', [])).grid(row=0, column=1, columnspan=2, sticky="ew")
 
+        # 제목
         self.title_label = ttk.Label(self.criteria_frame, text="")
         self.title_label.grid(row=1, column=0, sticky="w", pady=pady_value)
         ttk.Entry(self.criteria_frame, textvariable=self.search_vars['title']).grid(row=1, column=1, columnspan=2, sticky="ew")
 
+        # 개요
         self.outline_label = ttk.Label(self.criteria_frame, text="")
         self.outline_label.grid(row=2, column=0, sticky="w", pady=pady_value)
         ttk.Entry(self.criteria_frame, textvariable=self.search_vars['outline']).grid(row=2, column=1, columnspan=2, sticky="ew")
 
+        # 캐릭터
         self.char_name_label = ttk.Label(self.criteria_frame, text="")
         self.char_name_label.grid(row=3, column=0, sticky="w", pady=pady_value)
         ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['char_name'], values=self.search_data.get('character_names', [])).grid(row=3, column=1, sticky="ew")
         self.char_type_combobox = ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['char_type'], width=20, state='readonly')
         self.char_type_combobox.grid(row=3, column=2, sticky="e", padx=(5,0))
 
+        # 내용(대사)
         self.content_label = ttk.Label(self.criteria_frame, text="")
         self.content_label.grid(row=4, column=0, sticky="w", pady=pady_value)
         ttk.Entry(self.criteria_frame, textvariable=self.search_vars['content']).grid(row=4, column=1, columnspan=2, sticky="ew")
 
+        # BGM
         self.bgm_label = ttk.Label(self.criteria_frame, text="")
         self.bgm_label.grid(row=5, column=0, sticky="w", pady=pady_value)
         ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['bgm'], values=self.search_data.get('bgms', [])).grid(row=5, column=1, columnspan=2, sticky="ew")
 
+        # 배경
         self.background_label = ttk.Label(self.criteria_frame, text="")
         self.background_label.grid(row=6, column=0, sticky="w", pady=pady_value)
         ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['background'], values=self.search_data.get('backgrounds', [])).grid(row=6, column=1, columnspan=2, sticky="ew")
 
+        # 이벤트 스토리 검색 프레임
         self.event_search_frame = ttk.LabelFrame(main_frame, text="", padding="5")
         self.event_search_frame.pack(fill="x", expand=True, anchor="n")
         self.event_search_frame.columnconfigure(1, weight=1)
 
+        # 서버 선택
         server_frame = ttk.Frame(self.event_search_frame, padding="5")
         server_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0,5))
         server_frame.columnconfigure(0, weight=1)
@@ -355,11 +398,13 @@ class SearchWindow(tk.Toplevel):
         self.kr_radio = ttk.Radiobutton(server_frame, text="", variable=self.server_var, value="KR", command=self._on_server_selection_change)
         self.kr_radio.grid(row=0, column=1, padx=5, sticky="w")
 
+        # 이벤트 목록
         self.event_list_label = ttk.Label(self.event_search_frame, text="")
         self.event_list_label.grid(row=1, column=0, sticky="w", pady=3)
         self.event_combobox = ttk.Combobox(self.event_search_frame, textvariable=self.search_vars['event_name'], state='readonly')
         self.event_combobox.grid(row=1, column=1, columnspan=2, sticky="ew")
 
+        # 하단 버튼 프레임
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side="bottom", fill="x", pady=(10, 0))
         
@@ -368,9 +413,10 @@ class SearchWindow(tk.Toplevel):
         self.reset_button = ttk.Button(button_frame, text="", command=self._reset)
         self.reset_button.pack(side="right", padx=(0, 5))
         
-        self._update_ui_text()
+        self._update_ui_text() # UI 텍스트 초기화
 
     def _update_ui_text(self):
+        """UI의 모든 텍스트 요소를 현재 선택된 언어로 갱신합니다."""
         lang_dict = LANGUAGES[self.app.lang.get()]
         
         self.title(lang_dict['search_window_title'])
@@ -397,10 +443,12 @@ class SearchWindow(tk.Toplevel):
         self.reset_button.config(text=lang_dict['reset_button'])
 
     def _on_server_selection_change(self):
+        """서버 선택(라디오 버튼)이 변경될 때 호출되어 해당 서버의 이벤트 목록을 DB에서 로드합니다."""
         selected_server = self.server_var.get()
         db_info = self.server_db_info.get(selected_server)
         lang_dict = LANGUAGES[self.app.lang.get()]
         
+        # 이벤트 목록 초기화
         self.event_combobox['values'] = []
         self.search_vars['event_name'].set('')
 
@@ -408,6 +456,7 @@ class SearchWindow(tk.Toplevel):
             self.event_combobox.config(state='disabled')
             return
         
+        # DB 연결 및 데이터 로드
         self.event_combobox.config(state='readonly')
         script_dir = os.path.dirname(os.path.abspath(__file__))
         db_path = os.path.join(script_dir, db_info['db_path'])
@@ -417,6 +466,7 @@ class SearchWindow(tk.Toplevel):
                 cursor = conn.cursor()
                 query_event_list = f"SELECT DISTINCT \"{db_info['event_name_col_list']}\" FROM \"{db_info['event_list_table']}\""
                 cursor.execute(query_event_list)
+                # 줄바꿈 문자를 공백으로 바꾸고 양 끝 공백 제거
                 event_names = [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
             
             self.event_combobox['values'] = sorted(event_names)
@@ -425,22 +475,28 @@ class SearchWindow(tk.Toplevel):
             self.event_combobox.config(state='disabled')
 
     def start_search(self):
+        """'검색' 버튼 클릭 시, 검색 작업을 백그라운드 스레드에서 시작합니다."""
         self.app._update_status_bar('status_searching')
         
+        # 입력된 검색 조건 수집
         criteria = {key: var.get() for key, var in self.search_vars.items() if var.get()}
         server = self.server_var.get()
         
+        # 스레드 생성 및 시작
         thread = threading.Thread(target=self._search_thread, args=(criteria, server))
         thread.daemon = True
         thread.start()
         
-        self.destroy()
+        self.destroy() # 검색 창 닫기
 
     def _search_thread(self, criteria, server):
+        """백그라운드에서 실제 검색 로직을 수행하는 스레드 함수."""
         lang_dict = LANGUAGES[self.app.lang.get()]
         try:
+            # 초기 파일 목록: 로드된 모든 파일
             initial_matched_files = set(self.all_files_dict.keys())
 
+            # 1. 이벤트 이름으로 필터링 (DB 쿼리)
             if 'event_name' in criteria:
                 selected_event_name = criteria.pop('event_name')
                 db_info = self.server_db_info.get(server)
@@ -454,16 +510,19 @@ class SearchWindow(tk.Toplevel):
                             query = f"SELECT \"{db_info['event_id_col_details']}\" FROM \"{db_info['event_details_table']}\" WHERE \"{db_info['event_info_col_details']}\" LIKE ?"
                             cursor.execute(query, (f"{selected_event_name}%",))
                             
+                            # DB에서 찾은 스토리 ID를 파일명 형식으로 변환
                             event_story_ids = {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
                             
+                            # 현재 파일 목록과 교집합
                             initial_matched_files.intersection_update(event_story_ids)
                     except sqlite3.Error as e:
                         self.app.task_queue.put(lambda: messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self.app.master))
             
+            # 2. 나머지 조건으로 필터링 (파일 내용 분석)
             final_matched_files = []
-            if not criteria:
+            if not criteria: # 추가 조건이 없으면 현재까지 필터링된 결과 사용
                  final_matched_files = list(initial_matched_files)
-            else:
+            else: # 추가 조건이 있으면 병렬로 파일 내용 검사
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future_to_filename = {
                         executor.submit(self._check_file_for_search, filename, criteria): filename 
@@ -473,20 +532,29 @@ class SearchWindow(tk.Toplevel):
                         if future.result():
                             final_matched_files.append(future_to_filename[future])
             
+            # 최종 결과를 콜백 함수를 통해 메인 앱으로 전달
             self.app.task_queue.put(lambda: self.search_callback(sorted(final_matched_files)))
 
         except Exception as e:
             self.app.task_queue.put(lambda: self._finish_search_error(e))
 
     def _check_file_for_search(self, filename, criteria):
-        """병렬 검색을 위한 헬퍼 함수. 단일 파일이 모든 조건을 충족하는지 검사합니다."""
+        """
+        병렬 검색을 위한 헬퍼 함수. 단일 파일이 모든 조건을 충족하는지 검사합니다.
+
+        Returns:
+            bool: 모든 조건을 만족하면 True, 그렇지 않으면 False.
+        """
+        # 파일명 조건 검사
         if 'filename' in criteria and criteria['filename'].lower() not in filename.lower():
             return False
         
+        # 파일 데이터 캐시에서 로드
         data = self.story_data_cache.get(filename)
         if not data:
             return False
 
+        # 파일명 외의 내용 관련 조건
         content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
         if not content_criteria:
             return True
@@ -494,35 +562,44 @@ class SearchWindow(tk.Toplevel):
         return self._check_file_content(data, content_criteria)
 
     def _finish_search_error(self, error):
+        """검색 중 오류 발생 시 처리합니다."""
         lang_dict = LANGUAGES[self.app.lang.get()]
         messagebox.showerror(lang_dict['search_error_title'], lang_dict['search_error_msg'].format(e=error), parent=self.app.master)
         self.app._update_status_bar('status_bar_ready')
 
     def _check_file_content(self, data, criteria):
+        """파일 내용(JSON)이 주어진 검색 조건과 일치하는지 확인합니다."""
         lower_criteria = {k: v.lower() for k, v in criteria.items()}
-        scene_0 = data.get('0', {})
+        scene_0 = data.get('0', {}) # 스토리의 메타 정보가 담긴 첫 번째 씬
+        
+        # title, outline은 scene 0에만 존재
         if 'title' in lower_criteria and lower_criteria['title'] not in scene_0.get('title', '').lower():
             return False
         if 'outline' in lower_criteria and lower_criteria['outline'] not in scene_0.get('outline', '').lower():
             return False
 
+        # 씬 단위로 검사해야 하는 조건들
         has_scene_level_criteria = any(k in criteria for k in ['char_name', 'content', 'bgm', 'background'])
         if not has_scene_level_criteria:
             return True
 
+        # 모든 씬을 순회하며 조건 중 하나라도 만족하면 True 반환
         for scene in data.values():
             if self._check_scene(scene, lower_criteria):
                 return True
         return False
 
     def _check_scene(self, scene, criteria):
+        """단일 씬이 주어진 검색 조건과 일치하는지 확인합니다."""
         lang_dict = LANGUAGES[self.app.lang.get()]
+        # 각 조건 불일치 시 즉시 False 반환
         if 'content' in criteria and not ('print' in scene and criteria['content'] in scene['print'].get('text', '').lower()):
             return False
         if 'bgm' in criteria and not ('bgm' in scene and criteria['bgm'] in str(scene.get('bgm', '')).lower()):
             return False
         if 'background' in criteria and not ('background' in scene and criteria['background'] in str(scene.get('background', '')).lower()):
             return False
+        # 캐릭터 이름 검색 로직
         if 'char_name' in criteria:
             char_name_crit = criteria['char_name']
             char_type_search = self.search_vars['char_type'].get()
@@ -530,40 +607,65 @@ class SearchWindow(tk.Toplevel):
             
             char_found = False
             if 'print' in scene:
+                # 검색 타입이 '화자'일 때
                 if char_type_search == char_type_speaker and char_name_crit in str(scene['print'].get('name', '')).lower():
                     char_found = True
+                # 검색 타입이 '피호명자'일 때 (대사 내용에서 검색)
                 elif char_type_search != char_type_speaker and char_name_crit in scene['print'].get('text', '').lower():
                     char_found = True
             if not char_found:
                 return False
+        # 모든 조건을 통과하면 True 반환
         return True
 
     def _reset(self):
+        """'초기화' 버튼 클릭 시, 검색 필터를 해제하고 모든 파일을 다시 표시합니다."""
         self.search_callback(list(self.all_files_dict.keys()))
         self.destroy()
 
+# ##################################################################
+# Class: StoryViewerApp
+#
+# 목적: storydata JSON 파일을 보고 검색하는 메인 애플리케이션 클래스.
+#
+# 주요 기능:
+# 1. 파일/폴더를 열어 storydata(.json) 파일들을 로드 및 분석.
+# 2. 로드된 파일 목록을 UI에 표시 (파일명 또는 스토리 제목 기준).
+# 3. 선택된 스토리의 상세 내용을 포맷팅하여 뷰어에 표시 (간단/상세 보기).
+# 4. 고급 검색 창(SearchWindow)을 통해 다양한 조건으로 스토리 필터링.
+# 5. 표시된 스토리를 텍스트 파일로 내보내기.
+# 6. 모든 작업은 비동기적으로 처리하여 UI 멈춤 현상 방지.
+# ##################################################################
 class StoryViewerApp:
     def __init__(self, master):
-        self.master = master
-        self.all_files = {}
-        self.story_data_cache = {}
-        self.search_data = {}
-        self.file_titles = {}
-        self.display_name_to_filename = {}
-        self.current_filenames_in_list = []
-        self.current_file_path = None
-        self.is_loading = False
-        self.task_queue = queue.Queue()
+        """
+        StoryViewerApp 인스턴스를 초기화합니다.
 
+        Args:
+            master (tk.Tk): Tkinter의 최상위 창(root 윈도우).
+        """
+        self.master = master # Tkinter의 최상위 창(root 윈도우)
+        self.all_files = {} # {파일명: 전체 경로}
+        self.story_data_cache = {} # {파일명: JSON 데이터}
+        self.search_data = {} # {검색 필드: [값 목록]}
+        self.file_titles = {} # {파일명: 스토리 제목}
+        self.display_name_to_filename = {} # {표시 이름: 원본 파일명}
+        self.current_filenames_in_list = [] # 현재 리스트에 표시된 파일명 목록
+        self.current_file_path = None # 현재 선택된 파일의 전체 경로
+        self.is_loading = False # 파일 로딩 중 여부 플래그
+        self.task_queue = queue.Queue() # UI 업데이트 작업을 위한 큐
+
+        # UI 상태 변수
         self.lang = tk.StringVar(value='ko')
         self.lang.trace_add('write', self._on_language_change)
-        
-        self.display_mode_var = tk.StringVar(value="original")
-        self.view_mode_var = tk.StringVar(value="simple")
+        self.display_mode_var = tk.StringVar(value="original") # 파일 목록 표시 모드 (파일명/제목)
+        self.view_mode_var = tk.StringVar(value="simple") # 스토리 상세 보기 모드 (간단/상세)
 
-        self.db_status = {}
+        # DB 관련 상태
+        self.db_status = {} # {서버: 존재 여부(bool)}
         self.db_check_done = False
         
+        # 서버별 DB 정보
         self.server_db_info = {
             'JP': {
                 'db_path': 'master_jp.db',
@@ -583,6 +685,7 @@ class StoryViewerApp:
             }
         }
 
+        # 상세 보기 시 필드 정렬 순서
         self.field_order = [
             # 20250722 storydata 기준
             # 파트 1: {0} 그룹의 모든 데이터 (중복 제외)
@@ -599,14 +702,15 @@ class StoryViewerApp:
             'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 
             'unknown'
         ]
-        self.setup_ui()
-        self.setup_text_tags()
-        self._center_window(800, 600)
-        self.master.after(100, self._process_queue)
-        self._update_ui_text()
-        self._update_status_bar('status_bar_initial')
+        self.setup_ui() # UI 구성
+        self.setup_text_tags() # 텍스트 뷰어 스타일 설정
+        self._center_window(800, 600) # 창 중앙 정렬
+        self.master.after(100, self._process_queue) # 비동기 작업 큐 처리 시작
+        self._update_ui_text() # UI 텍스트 초기화
+        self._update_status_bar('status_bar_initial') # 상태 표시줄 초기 메시지 설정
 
     def _center_window(self, width, height):
+        """윈도우를 화면 중앙에 배치합니다."""
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
         x = (screen_width // 2) - (width // 2)
@@ -614,16 +718,19 @@ class StoryViewerApp:
         self.master.geometry(f'{width}x{height}+{x}+{y}')
 
     def setup_ui(self):
+        """메인 창의 UI 위젯들을 생성하고 배치합니다."""
         self.master.geometry("800x600")
         self.create_menu()
         self.master.grid_rowconfigure(1, weight=1)
         self.master.grid_columnconfigure(0, weight=1)
         
+        # 옵션 그룹
         self.options_group = ttk.LabelFrame(self.master, text="")
         self.options_group.grid(row=0, column=0, sticky="ew", padx=10, pady=(5,0))
         self.options_group.columnconfigure(0, weight=1)
         self.options_group.columnconfigure(1, weight=1)
 
+        # 파일 목록 옵션
         self.file_options_group = ttk.LabelFrame(self.options_group, text="", padding=5)
         self.file_options_group.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
         
@@ -632,6 +739,7 @@ class StoryViewerApp:
         self.display_title_radio = ttk.Radiobutton(self.file_options_group, text="", variable=self.display_mode_var, value="title", command=self._on_display_mode_change)
         self.display_title_radio.grid(row=0, column=1, padx=5)
 
+        # 상세 정보 옵션
         self.detail_options_group = ttk.LabelFrame(self.options_group, text="", padding=5)
         self.detail_options_group.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
 
@@ -640,6 +748,7 @@ class StoryViewerApp:
         self.view_detailed_radio = ttk.Radiobutton(self.detail_options_group, text="", variable=self.view_mode_var, value="detailed", command=self._on_view_mode_change)
         self.view_detailed_radio.grid(row=0, column=1, padx=5)
 
+        # 메인 프레임 (PanedWindow)
         main_frame = ttk.Frame(self.master, padding=(10, 5, 10, 0)) 
         main_frame.grid(row=1, column=0, sticky="nsew")
         main_frame.grid_rowconfigure(0, weight=1)
@@ -649,6 +758,7 @@ class StoryViewerApp:
         self.paned_window.pack(fill="both", expand=True)
         left_weight, right_weight = 1, 2
 
+        # 왼쪽 패널 (파일 목록)
         self.left_group = ttk.LabelFrame(self.paned_window, text="", padding=5)
         self.paned_window.add(self.left_group, weight=left_weight) 
         self.left_group.grid_rowconfigure(1, weight=1)
@@ -669,6 +779,7 @@ class StoryViewerApp:
         self.file_listbox.config(yscrollcommand=list_scrollbar.set)
         self.file_listbox.bind("<<ListboxSelect>>", self.on_file_select)
         
+        # 오른쪽 패널 (스토리 상세 정보)
         self.right_group = ttk.LabelFrame(self.paned_window, text="", padding=5)
         self.paned_window.add(self.right_group, weight=right_weight)
         self.right_group.grid_rowconfigure(0, weight=1)
@@ -685,19 +796,22 @@ class StoryViewerApp:
         text_scrollbar.grid(row=0, column=1, sticky="ns")
         self.story_text.config(yscrollcommand=text_scrollbar.set)
 
+        # 상태 표시줄
         self.status_bar = ttk.Label(self.master, text="", anchor=tk.W, padding=5)
         self.status_bar.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         
+        # PanedWindow 비율 유지를 위한 이벤트 바인딩
         def reapply_weights(event=None):
             try:
                 total_width = self.paned_window.winfo_width()
                 sash_position = int(total_width * left_weight / (left_weight + right_weight))
                 self.paned_window.sashpos(0, sash_position)
-                self.paned_window.unbind("<Configure>")
+                self.paned_window.unbind("<Configure>") # 한 번만 실행
             except tk.TclError: pass
         self.paned_window.bind("<Configure>", reapply_weights)
 
     def setup_text_tags(self):
+        """스토리 상세 정보 뷰어의 텍스트 스타일(태그)을 설정합니다."""
         default_font_family = font.nametofont("TkDefaultFont").cget("family")
         self.story_text.tag_configure('scene_header', font=(default_font_family, 14, 'bold'), foreground='#00008B')
         self.story_text.tag_configure('key', font=(default_font_family, 10, 'bold'), foreground='#4A4A4A')
@@ -707,6 +821,7 @@ class StoryViewerApp:
         self.story_text.tag_configure('choice_tag', font=(default_font_family, 10, 'italic'), foreground='#808080')
     
     def create_menu(self):
+        """메인 메뉴 바를 생성하고 설정합니다."""
         self.menu_bar = tk.Menu(self.master)
         
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
@@ -730,12 +845,14 @@ class StoryViewerApp:
         self.master.config(menu=self.menu_bar)
 
     def _on_language_change(self, *args):
+        """언어 변경 시 UI 텍스트 업데이트 및 표시 내용 재구성을 호출합니다."""
         self._update_ui_text()
-        self._on_display_mode_change(force_update=True)
-        self._on_view_mode_change(force_update=True)
+        self._on_display_mode_change(force_update=True) # 파일 목록 다시 그리기
+        self._on_view_mode_change(force_update=True) # 상세 정보 다시 그리기
 
 
     def _update_ui_text(self):
+        """UI의 모든 텍스트 요소를 현재 선택된 언어로 갱신합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
 
         self.master.title(lang_dict['window_title'])
@@ -759,10 +876,12 @@ class StoryViewerApp:
         self.right_group.config(text=lang_dict['detail_group_title'])
         self.search_button.config(text=lang_dict['search_button_text'])
         
+        # 현재 목록이 있으면 언어 변경에 맞춰 다시 표시
         self.update_file_list(self.current_filenames_in_list)
 
 
     def _update_status_bar(self, key, **kwargs):
+        """상태 표시줄의 메시지를 업데이트합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         message = lang_dict.get(key, "...")
         if kwargs:
@@ -773,6 +892,7 @@ class StoryViewerApp:
         self.status_bar.config(text=message)
         
     def _show_about_dialog(self):
+        """'정보' 대화상자를 표시합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         title = lang_dict['about_header']
         
@@ -786,6 +906,7 @@ class StoryViewerApp:
         messagebox.showinfo(title, message, parent=self.master)
 
     def _process_queue(self):
+        """주기적으로 태스크 큐를 확인하고, UI 관련 작업을 메인 스레드에서 실행합니다."""
         try:
             while True:
                 task = self.task_queue.get_nowait()
@@ -793,9 +914,10 @@ class StoryViewerApp:
         except queue.Empty:
             pass
         finally:
-            self.master.after(100, self._process_queue)
+            self.master.after(100, self._process_queue) # 다음 확인 예약
 
     def _clear_workspace(self):
+        """새로운 파일을 로드하기 전에 모든 데이터와 UI 상태를 초기화합니다."""
         self.update_story_text([])
         self.all_files.clear()
         self.story_data_cache.clear()
@@ -811,11 +933,22 @@ class StoryViewerApp:
         self.db_check_done = False
 
     def _is_valid_storydata(self, file_path):
+        """
+        주어진 파일이 유효한 storydata JSON 형식인지 검사합니다.
+
+        Returns:
+            tuple: (is_valid, data, error_reason)
+                   - is_valid (bool): 유효성 여부.
+                   - data (dict | None): 유효한 경우 파싱된 JSON 데이터.
+                   - error_reason (str | None): 유효하지 않은 경우 원인.
+        """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            # 데이터가 비어있거나 딕셔너리 형태가 아니면 유효하지 않음
             if not isinstance(data, dict) or not data:
                 return False, None, "File content is empty or not in dictionary format"
+            # 모든 키가 숫자이고 값이 딕셔너리인지 검사 (storydata 구조)
             if not all(k.isdigit() and isinstance(v, dict) for k, v in data.items()):
                 return False, None, "Data structure error (keys must be numbers, values must be dictionaries)"
             return True, data, None
@@ -825,6 +958,7 @@ class StoryViewerApp:
             return False, None, f"File read/other error: {e}"
 
     def _start_loading_task(self, paths=None, folder_path=None):
+        """파일 로딩 및 분석을 위한 백그라운드 스레드를 시작합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'])
@@ -832,13 +966,16 @@ class StoryViewerApp:
         self._clear_workspace()
         self.is_loading = True
         self._update_status_bar('status_bar_loading_start')
+        # 로딩 중 메뉴 비활성화
         self.file_menu.entryconfig(0, state="disabled")
         self.file_menu.entryconfig(1, state="disabled")
+        # 스레드 생성 및 시작
         thread = threading.Thread(target=self._load_and_analyze_thread, args=(paths, folder_path))
         thread.daemon = True
         thread.start()
 
     def open_files(self):
+        """'파일 열기' 메뉴를 통해 storydata 파일들을 선택하고 로딩을 시작합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         file_paths = filedialog.askopenfilenames(
             title=lang_dict.get('dialog_title_open_files', "Select storydata file(s)"),
@@ -848,23 +985,26 @@ class StoryViewerApp:
             self._start_loading_task(paths=file_paths)
 
     def open_folder(self):
+        """'폴더 열기' 메뉴를 통해 폴더 내의 storydata 파일들을 로딩합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         folder_path = filedialog.askdirectory(title=lang_dict.get('dialog_title_open_folder', "Select the folder with storydata files"))
         if folder_path:
             self._start_loading_task(folder_path=folder_path)
 
     def _load_and_analyze_thread(self, paths, folder_path):
+        """백그라운드에서 파일 로드, 유효성 검사, 내용 분석을 수행하는 스레드 함수."""
         temp_all_files, temp_story_cache, invalid_files = {}, {}, []
         file_list_to_process = []
         if paths:
             file_list_to_process = paths
         elif folder_path:
-            pattern = re.compile(r'^storydata_\d+\.json$')
+            pattern = re.compile(r'^storydata_\d+\.json$') # storydata_1234.json 형식
             for dirpath, _, filenames in os.walk(folder_path):
                 for filename in sorted(filenames):
                     if pattern.match(filename):
                         file_list_to_process.append(os.path.join(dirpath, filename))
         
+        # 파일 유효성 검사
         total_files = len(file_list_to_process)
         for i, path in enumerate(file_list_to_process):
             self.task_queue.put(lambda i=i, t=total_files: self._update_status_bar('status_bar_analyzing', i=i+1, t=t))
@@ -877,10 +1017,12 @@ class StoryViewerApp:
             else:
                 invalid_files.append((path, error_reason))
         
+        # 유효한 파일이 없는 경우 즉시 종료
         if not temp_all_files:
             self.task_queue.put(lambda: self._finish_loading(None, invalid_files))
             return
 
+        # 검색 데이터(Combobox 목록) 추출
         unique_char_names, unique_bgms, unique_bgs, temp_file_titles = set(), set(), set(), {}
         def _extract_asset_name(value):
             if isinstance(value, str): return value
@@ -888,18 +1030,23 @@ class StoryViewerApp:
             return None
 
         for filename, data in temp_story_cache.items():
+            # 파일 제목 추출
             title = data.get('0', {}).get('title', '').strip()
             temp_file_titles[filename] = title if title else filename
+            # 캐릭터 이름, BGM, 배경 추출
             for scene in data.values():
                 if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
                 if 'bgm' in scene and (bgm_name := _extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
                 if 'background' in scene and (bg_name := _extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
 
+        # 최종 결과 정리
         temp_search_data = {'filenames': sorted(list(temp_all_files.keys())), 'character_names': sorted(list(unique_char_names)), 'bgms': sorted(list(unique_bgms)), 'backgrounds': sorted(list(unique_bgs))}
         results = {"all_files": temp_all_files, "cache": temp_story_cache, "titles": temp_file_titles, "search_data": temp_search_data}
+        # 결과를 UI 스레드로 전달
         self.task_queue.put(lambda: self._finish_loading(results, invalid_files))
 
     def _finish_loading(self, results, invalid_files):
+        """파일 로딩 스레드 종료 후, UI에 결과를 반영하고 상태를 업데이트합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         self.is_loading = False
         self.file_menu.entryconfig(0, state="normal")
@@ -908,12 +1055,14 @@ class StoryViewerApp:
             self._update_status_bar('status_bar_loading_done', loaded=0, failed=len(invalid_files))
             messagebox.showwarning(lang_dict['msgbox_no_valid_files_title'], lang_dict['msgbox_no_valid_files_msg'])
         else:
+            # 로드된 데이터 저장
             self.all_files, self.story_data_cache, self.file_titles, self.search_data = results['all_files'], results['cache'], results['titles'], results['search_data']
             self._update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
             self.search_button.config(state="normal")
             self.file_menu.entryconfig(3, state="normal")
             self.update_file_list(list(self.all_files.keys()))
         
+        # 유효하지 않은 파일이 있었을 경우 로그 저장 여부 확인
         if invalid_files:
             msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files))
             if messagebox.askyesno(lang_dict['msgbox_load_fail_title'], msg):
@@ -932,6 +1081,7 @@ class StoryViewerApp:
                     messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e))
 
     def _check_and_cache_db_status(self):
+        """이벤트 검색에 필요한 DB 파일의 존재 여부를 확인하고 결과를 캐시합니다."""
         if self.db_check_done: return
         lang_dict = LANGUAGES[self.lang.get()]
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -944,6 +1094,7 @@ class StoryViewerApp:
         self.db_check_done = True
 
     def open_search_window(self):
+        """'고급 검색' 버튼 클릭 시 검색 창을 엽니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'])
@@ -955,19 +1106,20 @@ class StoryViewerApp:
         SearchWindow(app=self, all_files_dict=self.all_files, story_data_cache=self.story_data_cache, search_callback=self.update_file_list, search_data=self.search_data, db_status=self.db_status, server_db_info=self.server_db_info)
 
     def update_file_list(self, filenames):
+        """주어진 파일명 목록으로 파일 리스트 UI(Listbox)를 업데이트합니다."""
         self.update_story_text([])
         self.current_file_path = None
         self.current_filenames_in_list = sorted(filenames)
         self.display_name_to_filename.clear()
         self.file_listbox.delete(0, tk.END)
-        total, chunk_size = len(self.current_filenames_in_list), 200
+        total, chunk_size = len(self.current_filenames_in_list), 200 # 대용량 목록 성능을 위한 청크 처리
         
         def _populate_list(index=0):
             if index >= total:
                 self._update_status_bar('status_bar_list_updated', count=total)
                 if total > 0:
-                    self.file_listbox.selection_set(0)
-                    self.file_listbox.event_generate("<<ListboxSelect>>")
+                    self.file_listbox.selection_set(0) # 첫 항목 자동 선택
+                    self.file_listbox.event_generate("<<ListboxSelect>>") # 선택 이벤트 강제 발생
                 else:
                     self._update_status_bar('status_bar_ready')
                 return
@@ -984,10 +1136,11 @@ class StoryViewerApp:
                 display_chunk.append(display_name)
                 self.display_name_to_filename[display_name] = filename
             self.file_listbox.insert(tk.END, *display_chunk)
-            self.master.after(1, lambda: _populate_list(end_index))
+            self.master.after(1, lambda: _populate_list(end_index)) # 다음 청크 처리 예약
         _populate_list()
 
     def on_file_select(self, event):
+        """파일 리스트에서 항목을 선택했을 때 호출되어 상세 정보를 표시합니다."""
         if not self.file_listbox.curselection(): return
         try:
             display_name = self.file_listbox.get(self.file_listbox.curselection()[0])
@@ -1001,10 +1154,12 @@ class StoryViewerApp:
                 self._update_status_bar('status_bar_cache_error', filename=filename)
 
     def _on_display_mode_change(self, force_update=False):
+        """파일 목록 표시 모드(파일명/제목) 변경 시 호출됩니다."""
         if not force_update and self.is_loading: return
         self.update_file_list(self.current_filenames_in_list)
 
     def _on_view_mode_change(self, force_update=False):
+        """상세 정보 보기 모드(간단/상세) 변경 시 호출됩니다."""
         if not force_update and self.is_loading: return
         if self.current_file_path:
             filename = os.path.basename(self.current_file_path)
@@ -1012,6 +1167,12 @@ class StoryViewerApp:
                 self.update_story_text(self.format_story_data(data))
 
     def format_story_data(self, data):
+        """
+        JSON 데이터를 UI에 표시하기 좋은 형태의 (텍스트, 태그) 튜플 리스트로 포맷팅합니다.
+
+        Returns:
+            list: [(text, tag), (text, tag), ...] 형태의 리스트.
+        """
         content_list = []
         view_mode = self.view_mode_var.get()
         for key in sorted(data.keys(), key=int):
@@ -1019,17 +1180,19 @@ class StoryViewerApp:
             content_list.append((f" S# {key} \n", 'scene_header'))
             if view_mode == 'simple':
                 keys_to_display = [k for k in ['title', 'outline', 'vo', 'print'] if k in scene]
-            else:
+            else: # 상세 보기 시 정의된 순서대로 정렬
                 keys_to_display = sorted(scene.keys(), key=lambda k: (self.field_order.index(k) if k in self.field_order else len(self.field_order), k))
             for field in keys_to_display:
                 value = scene[field]
                 content_list.append(("    " + f"{field}\n", 'key'))
+                # 필드 이름에 따라 적절한 포맷터 호출
                 formatter = getattr(self, f'_format_{field}', self._format_default)
                 formatter(value, content_list)
                 content_list.append(("\n", None))
             content_list.append(("-"*60 + "\n\n", None))
         return content_list
 
+    # --- 각 필드별 포맷터 함수들 ---
     def _format_print(self, value, content_list):
         indent = "        "
         name, text = str(value.get('name', '???')), value.get('text', '')
@@ -1066,6 +1229,7 @@ class StoryViewerApp:
             content_list.append((indent + f"- {str(item)}\n", 'value'))
 
     def update_story_text(self, content_list):
+        """포맷팅된 콘텐츠 리스트를 받아 텍스트 뷰어에 렌더링합니다."""
         self.story_text.config(state=tk.NORMAL)
         self.story_text.delete('1.0', tk.END)
         for content, tag in content_list:
@@ -1073,25 +1237,30 @@ class StoryViewerApp:
         self.story_text.config(state=tk.DISABLED)
 
     def export_stories(self):
+        """'내보내기' 메뉴를 통해 현재 표시된 스토리를 텍스트 파일로 저장합니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'])
             return
+        # 내보내기 범위 확인 (현재 목록 / 전체)
         response = messagebox.askyesnocancel(lang_dict['msgbox_export_options_title'], lang_dict['msgbox_export_options_msg'])
         if response is None: return
         filenames_to_export = self.current_filenames_in_list if response else sorted(list(self.all_files.keys()))
         if not filenames_to_export:
             messagebox.showinfo(lang_dict['msgbox_no_export_files_title'], lang_dict['msgbox_no_export_files_msg'])
             return
+        # 저장 폴더 선택
         output_folder = filedialog.askdirectory(title=lang_dict['msgbox_export_folder_title'])
         if not output_folder: return
         self._update_status_bar('status_bar_export_prep')
         self.file_menu.entryconfig(3, state="disabled")
+        # 내보내기 스레드 시작
         thread = threading.Thread(target=self._export_thread, args=(filenames_to_export, output_folder))
         thread.daemon = True
         thread.start()
 
     def _export_thread(self, filenames, output_folder):
+        """백그라운드에서 실제 파일 내보내기 작업을 수행합니다."""
         exported_count, failed_count, failed_files = 0, 0, []
         total = len(filenames)
         for i, filename in enumerate(filenames):
@@ -1103,6 +1272,7 @@ class StoryViewerApp:
                 continue
             output_path = os.path.join(output_folder, os.path.splitext(filename)[0] + ".txt")
             try:
+                # 포맷팅된 텍스트를 하나의 문자열로 결합
                 text_to_write = "".join([text for text, _ in self.format_story_data(data)])
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(text_to_write)
@@ -1110,9 +1280,11 @@ class StoryViewerApp:
             except Exception as e:
                 failed_count += 1
                 failed_files.append(f"{filename} (Error: {e})")
+        # UI 스레드로 완료 정보 전달
         self.task_queue.put(lambda: self._finish_export(exported_count, failed_count, failed_files))
 
     def _finish_export(self, exported, failed, failed_list):
+        """내보내기 작업 완료 후 결과를 메시지 박스로 알립니다."""
         lang_dict = LANGUAGES[self.lang.get()]
         self.file_menu.entryconfig(3, state="normal")
         if exported > 0:
@@ -1121,10 +1293,12 @@ class StoryViewerApp:
         else:
             messagebox.showwarning(lang_dict['msgbox_export_failed_title'], lang_dict['msgbox_export_failed_msg'].format(count=failed))
             self._update_status_bar('status_bar_export_all_failed', failed=failed)
+        # 실패한 파일이 있으면 상세 정보 표시
         if failed_list:
             error_msg = "\n".join(failed_list[:10]) + ("\n..." if len(failed_list) > 10 else "")
             messagebox.showerror(lang_dict['msgbox_export_error_details_title'], lang_dict['msgbox_export_error_details_msg'].format(errors=error_msg))
 
+# --- 프로그램 실행 진입점 ---
 if __name__ == "__main__":
     root = tk.Tk()
     app = StoryViewerApp(root)
