@@ -469,7 +469,7 @@ class SearchWindow(tk.Toplevel):
                 # 줄바꿈 문자를 공백으로 바꾸고 양 끝 공백 제거
                 event_names = [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
             
-            self.event_combobox['values'] = sorted(event_names)
+            self.event_combobox['values'] = event_names
         except sqlite3.Error as e:
             messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
             self.event_combobox.config(state='disabled')
@@ -994,17 +994,47 @@ class StoryViewerApp:
     def _load_and_analyze_thread(self, paths, folder_path):
         """백그라운드에서 파일 로드, 유효성 검사, 내용 분석을 수행하는 스레드 함수."""
         temp_all_files, temp_story_cache, invalid_files = {}, {}, []
-        file_list_to_process = []
-        if paths:
-            file_list_to_process = paths
-        elif folder_path:
-            pattern = re.compile(r'^storydata_\d+\.json$') # storydata_1234.json 형식
-            for dirpath, _, filenames in os.walk(folder_path):
-                for filename in sorted(filenames):
-                    if pattern.match(filename):
-                        file_list_to_process.append(os.path.join(dirpath, filename))
         
-        # 파일 유효성 검사
+        # 중복 파일명 처리 로직
+        file_candidates = {} # {파일명: [경로1, 경로2, ...]} 형식으로 후보 수집
+        pattern = re.compile(r'^storydata_\d{7}\.json$')
+
+        # 1. '파일 열기'로 선택된 경로 수집 (단일 파일 선택도 중복 처리 로직에 포함)
+        if paths:
+            for path in paths:
+                filename = os.path.basename(path)
+                if pattern.match(filename):
+                    if filename not in file_candidates:
+                        file_candidates[filename] = []
+                    file_candidates[filename].append(path)
+
+        # 2. '폴더 열기'로 선택된 경로 수집
+        if folder_path:
+            for dirpath, _, filenames in os.walk(folder_path):
+                for filename in filenames:
+                    if pattern.match(filename):
+                        full_path = os.path.join(dirpath, filename)
+                        if filename not in file_candidates:
+                            file_candidates[filename] = []
+                        file_candidates[filename].append(full_path)
+        
+        # 3. 후보군 중에서 최종 처리할 파일 목록 선택 (중복 시 파일 크기가 큰 것으로)
+        file_list_to_process = []
+        for filename, path_list in file_candidates.items():
+            if len(path_list) > 1:
+                try:
+                    # 파일 크기가 가장 큰 경로를 선택
+                    winner_path = max(path_list, key=os.path.getsize)
+                    file_list_to_process.append(winner_path)
+                except FileNotFoundError:
+                    # 파일 검색과 처리 사이에 파일이 삭제될 경우를 대비한 예외 처리
+                    pass 
+            elif path_list:
+                file_list_to_process.append(path_list[0])
+        
+        file_list_to_process.sort() # 일관된 순서를 위해 정렬
+        
+        # 파일 유효성 검사 및 분석
         total_files = len(file_list_to_process)
         for i, path in enumerate(file_list_to_process):
             self.task_queue.put(lambda i=i, t=total_files: self._update_status_bar('status_bar_analyzing', i=i+1, t=t))
