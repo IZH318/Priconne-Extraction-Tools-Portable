@@ -12,8 +12,8 @@ import concurrent.futures
 # --- 프로그램 정보 ---
 ABOUT_INFO = {
     'program': "storydata Viewer",
-    'version': "1.0.0",
-    'updated': "2025-07-22",
+    'version': "1.0.1",
+    'updated': "2025-07-23",
     'license': "MIT License",
     'developer': "(Github) IZH318",
     'website': "https://github.com/IZH318",
@@ -97,6 +97,11 @@ LANGUAGES = {
         'db_error_title': "데이터베이스 오류", 'db_error_msg': "데이터베이스 처리 중 오류 발생:\n{e}",
         'status_searching': "고급 검색 중...",
         'search_error_title': "검색 오류", 'search_error_msg': "검색 중 오류가 발생했습니다:\n{e}",
+        # --- 로그 파일 ---
+        'log_header': "--- 로드 실패 로그 ({timestamp}) ---\n",
+        'log_total_failed': "총 {count}개 파일 로드 실패\n",
+        'log_file_label': "파일",
+        'log_reason_label': "원인",
     },
     'en': {
         'window_title': "storydata Viewer",
@@ -170,6 +175,11 @@ LANGUAGES = {
         'db_error_title': "Database Error", 'db_error_msg': "An error occurred during database processing:\n{e}",
         'status_searching': "Advanced searching...",
         'search_error_title': "Search Error", 'search_error_msg': "An error occurred during search:\n{e}",
+        # --- Log File ---
+        'log_header': "--- Load Failure Log ({timestamp}) ---\n",
+        'log_total_failed': "Total {count} files failed to load.\n",
+        'log_file_label': "File",
+        'log_reason_label': "Reason",
     },
     'ja': {
         'window_title': "storydata Viewer",
@@ -243,6 +253,11 @@ LANGUAGES = {
         'db_error_title': "データベースエラー", 'db_error_msg': "データベース処理中にエラーが発生しました:\n{e}",
         'status_searching': "高度な検索を実行中...",
         'search_error_title': "検索エラー", 'search_error_msg': "検索中にエラーが発生しました:\n{e}",
+        # --- ログファイル ---
+        'log_header': "--- 読み込み失敗ログ ({timestamp}) ---\n",
+        'log_total_failed': "合計{count}個のファイルの読み込みに失敗しました\n",
+        'log_file_label': "ファイル",
+        'log_reason_label': "原因",
     }
 }
 
@@ -256,7 +271,7 @@ class SearchWindow(tk.Toplevel):
         self.search_callback = search_callback
         self.search_data = search_data
         self.db_status = db_status
-        self.server_db_info = server_db_info # 메인 앱에서 전달받은 DB 정보
+        self.server_db_info = server_db_info
 
         self.search_vars = {
             'filename': tk.StringVar(),
@@ -386,7 +401,6 @@ class SearchWindow(tk.Toplevel):
         db_info = self.server_db_info.get(selected_server)
         lang_dict = LANGUAGES[self.app.lang.get()]
         
-        # 콤보박스 값과 선택된 값 초기화
         self.event_combobox['values'] = []
         self.search_vars['event_name'].set('')
 
@@ -401,13 +415,10 @@ class SearchWindow(tk.Toplevel):
         try:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
-                # f-string을 사용하여 테이블과 컬럼 이름을 동적으로 설정 (따옴표로 감싸서 안전하게 처리)
                 query_event_list = f"SELECT DISTINCT \"{db_info['event_name_col_list']}\" FROM \"{db_info['event_list_table']}\""
                 cursor.execute(query_event_list)
-                # DB에서 가져온 값에서 '\n'을 공백으로 바꾸고, 앞뒤 공백 제거 후 비어있지 않은 값만 리스트에 추가
                 event_names = [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
             
-            # 이벤트 목록을 가나다순/ABC순으로 정렬하여 콤보박스에 설정
             self.event_combobox['values'] = sorted(event_names)
         except sqlite3.Error as e:
             messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
@@ -423,15 +434,13 @@ class SearchWindow(tk.Toplevel):
         thread.daemon = True
         thread.start()
         
-        self.destroy() # 검색 시작과 동시에 창 닫기
+        self.destroy()
 
     def _search_thread(self, criteria, server):
         lang_dict = LANGUAGES[self.app.lang.get()]
         try:
-            # 초기에 검색 대상 파일은 로드된 모든 파일로 설정
             initial_matched_files = set(self.all_files_dict.keys())
 
-            # 1. 이벤트 이름으로 파일 목록을 먼저 필터링
             if 'event_name' in criteria:
                 selected_event_name = criteria.pop('event_name')
                 db_info = self.server_db_info.get(server)
@@ -442,26 +451,20 @@ class SearchWindow(tk.Toplevel):
                     try:
                         with sqlite3.connect(db_path) as conn:
                             cursor = conn.cursor()
-                            # SQL 쿼리: 이벤트 상세 정보 테이블에서, 스토리 제목이 선택된 이벤트 이름으로 시작하는 모든 항목 검색
                             query = f"SELECT \"{db_info['event_id_col_details']}\" FROM \"{db_info['event_details_table']}\" WHERE \"{db_info['event_info_col_details']}\" LIKE ?"
-                            # 파라미터 바인딩으로 SQL 인젝션 방지. '이벤트이름%' 형태로 부분 일치 검색
                             cursor.execute(query, (f"{selected_event_name}%",))
                             
-                            # 검색된 스토리 ID들을 'storydata_{ID}.json' 형식의 파일 이름으로 변환하여 집합으로 만듦
                             event_story_ids = {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
                             
-                            # 기존 파일 목록과 이벤트 스토리 파일 목록의 교집합을 구하여 검색 대상을 한정
                             initial_matched_files.intersection_update(event_story_ids)
                     except sqlite3.Error as e:
                         self.app.task_queue.put(lambda: messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self.app.master))
             
-            # 2. 필터링된 파일 목록을 대상으로 나머지 조건 검색
             final_matched_files = []
-            if not criteria: # 이벤트 이름만 선택했거나, 아무 조건도 선택하지 않은 경우
+            if not criteria:
                  final_matched_files = list(initial_matched_files)
             else:
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    # 필터링된 initial_matched_files를 대상으로 병렬 검색 실행
                     future_to_filename = {
                         executor.submit(self._check_file_for_search, filename, criteria): filename 
                         for filename in initial_matched_files
@@ -470,16 +473,13 @@ class SearchWindow(tk.Toplevel):
                         if future.result():
                             final_matched_files.append(future_to_filename[future])
             
-            # 검색 결과를 콜백 함수에 직접 전달하여 메인 창의 리스트 업데이트
             self.app.task_queue.put(lambda: self.search_callback(sorted(final_matched_files)))
 
         except Exception as e:
-            # 에러 발생 시 처리
             self.app.task_queue.put(lambda: self._finish_search_error(e))
 
     def _check_file_for_search(self, filename, criteria):
         """병렬 검색을 위한 헬퍼 함수. 단일 파일이 모든 조건을 충족하는지 검사합니다."""
-        # 파일 이름 검색 시 소문자로 변환하여 비교
         if 'filename' in criteria and criteria['filename'].lower() not in filename.lower():
             return False
         
@@ -499,7 +499,6 @@ class SearchWindow(tk.Toplevel):
         self.app._update_status_bar('status_bar_ready')
 
     def _check_file_content(self, data, criteria):
-        # 모든 검색어와 데이터 내용을 소문자로 변환하여 비교 (대소문자 구분 없음)
         lower_criteria = {k: v.lower() for k, v in criteria.items()}
         scene_0 = data.get('0', {})
         if 'title' in lower_criteria and lower_criteria['title'] not in scene_0.get('title', '').lower():
@@ -526,7 +525,6 @@ class SearchWindow(tk.Toplevel):
             return False
         if 'char_name' in criteria:
             char_name_crit = criteria['char_name']
-            # 검색 타입은 원본 값을 사용해야 하므로 self.search_vars에서 직접 가져옴
             char_type_search = self.search_vars['char_type'].get()
             char_type_speaker = lang_dict['char_type_speaker']
             
@@ -541,7 +539,6 @@ class SearchWindow(tk.Toplevel):
         return True
 
     def _reset(self):
-        # 초기화 시에는 모든 파일을 다시 보여줌
         self.search_callback(list(self.all_files_dict.keys()))
         self.destroy()
 
@@ -587,11 +584,20 @@ class StoryViewerApp:
         }
 
         self.field_order = [
-            'title', 'outline', 'movie', 'shake_anime', 'place', 'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
-            'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'se', 'fadein_all', 
-            'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 'choice', 'goto', 'text_size', 'ui_visible', 'black_out', 'bright_change', 
-            'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 'shake', 'sway', 'out_l', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
-            'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 'unknown'
+            # 20250722 storydata 기준
+            # 파트 1: {0} 그룹의 모든 데이터 (중복 제외)
+            'title', 'outline', 'movie', 'shake_anime', 'place',
+
+            # 파트 2: {1} ~ {n} 그룹의 모든 데이터 (원본 순서 기준)
+            'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
+            'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 
+            'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'se', 'fadein_all', 
+            'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 
+            'choice', 'goto', 'text_size', 'ui_visible', 'black_out', 'bright_change', 
+            'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 
+            'shake', 'sway', 'out_l', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
+            'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 
+            'unknown'
         ]
         self.setup_ui()
         self.setup_text_tags()
@@ -809,14 +815,14 @@ class StoryViewerApp:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             if not isinstance(data, dict) or not data:
-                return False, None, "파일 내용이 비어있거나 딕셔너리 형식이 아님"
+                return False, None, "File content is empty or not in dictionary format"
             if not all(k.isdigit() and isinstance(v, dict) for k, v in data.items()):
-                return False, None, "데이터 구조 오류 (키는 숫자, 값은 딕셔너리여야 함)"
+                return False, None, "Data structure error (keys must be numbers, values must be dictionaries)"
             return True, data, None
         except json.JSONDecodeError as e:
-            return False, None, f"JSON 형식 오류: {e}"
+            return False, None, f"JSON format error: {e}"
         except Exception as e:
-            return False, None, f"파일 읽기/기타 오류: {e}"
+            return False, None, f"File read/other error: {e}"
 
     def _start_loading_task(self, paths=None, folder_path=None):
         lang_dict = LANGUAGES[self.lang.get()]
@@ -863,12 +869,13 @@ class StoryViewerApp:
         for i, path in enumerate(file_list_to_process):
             self.task_queue.put(lambda i=i, t=total_files: self._update_status_bar('status_bar_analyzing', i=i+1, t=t))
             is_valid, data, error_reason = self._is_valid_storydata(path)
-            filename = os.path.basename(path)
+            
             if is_valid:
+                filename = os.path.basename(path)
                 temp_all_files[filename] = path
                 temp_story_cache[filename] = data
             else:
-                invalid_files.append((filename, error_reason))
+                invalid_files.append((path, error_reason))
         
         if not temp_all_files:
             self.task_queue.put(lambda: self._finish_loading(None, invalid_files))
@@ -898,10 +905,11 @@ class StoryViewerApp:
         self.file_menu.entryconfig(0, state="normal")
         self.file_menu.entryconfig(1, state="normal")
         if not results:
+            self._update_status_bar('status_bar_loading_done', loaded=0, failed=len(invalid_files))
             messagebox.showwarning(lang_dict['msgbox_no_valid_files_title'], lang_dict['msgbox_no_valid_files_msg'])
-            self._update_status_bar('status_bar_ready')
         else:
             self.all_files, self.story_data_cache, self.file_titles, self.search_data = results['all_files'], results['cache'], results['titles'], results['search_data']
+            self._update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
             self.search_button.config(state="normal")
             self.file_menu.entryconfig(3, state="normal")
             self.update_file_list(list(self.all_files.keys()))
@@ -912,9 +920,13 @@ class StoryViewerApp:
                 log_filename = "invalid_storydata_log.txt"
                 try:
                     with open(log_filename, 'w', encoding='utf-8') as f:
-                        f.write(f"--- 로드 실패 로그 ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}) ---\n총 {len(invalid_files)}개 파일 로드 실패\n" + "-"*50 + "\n\n")
-                        for filename, reason in invalid_files:
-                            f.write(f"파일: {filename}\n원인: {reason}\n" + "-"*30 + "\n")
+                        f.write(lang_dict['log_header'].format(timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+                        f.write(lang_dict['log_total_failed'].format(count=len(invalid_files)))
+                        f.write("-" * 50 + "\n\n")
+                        for path, reason in invalid_files:
+                            f.write(f"{lang_dict['log_file_label']}: {path}\n")
+                            f.write(f"{lang_dict['log_reason_label']}: {reason}\n")
+                            f.write("-" * 30 + "\n")
                     messagebox.showinfo(lang_dict['msgbox_log_saved_title'], lang_dict['msgbox_log_saved_msg'].format(filename=log_filename))
                 except Exception as e:
                     messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e))
@@ -956,6 +968,8 @@ class StoryViewerApp:
                 if total > 0:
                     self.file_listbox.selection_set(0)
                     self.file_listbox.event_generate("<<ListboxSelect>>")
+                else:
+                    self._update_status_bar('status_bar_ready')
                 return
             self._update_status_bar('status_bar_list_updating', i=index + 1, t=total)
             end_index = min(index + chunk_size, total)
