@@ -19,9 +19,7 @@ from tkinter import scrolledtext, messagebox, ttk     # GUI 확장 위젯 (스�
 # 서드파티(Third-Party) 라이브러리: 별도 설치 필요 모듈
 import xxhash                 # xxHash64 해시 계산
 
-# --- 다국어 지원을 위한 텍스트 리소스 ---
-# 프로그램에서 사용되는 모든 문자열을 언어별로 정의한 딕셔너리.
-# 이를 통해 언어 변경 시 UI의 모든 텍스트를 손쉽게 교체할 수 있음.
+# --- 다국어 리소스 ---
 LANGUAGES = {
     'ko': {
         'window_title': "Manifest File Renamer", 'menu_language': "언어(Language)", 'menu_about': "정보(About)",
@@ -164,7 +162,7 @@ class FileRenamerGUI:
     ABOUT_INFO = {
         'program': "Manifest File Renamer",
         'version': "2.0.0",
-        'updated': "2025-07-18",
+        'updated': "2025-07-25",
         'license': "MIT License",
         'developer': "(Github) IZH318",
         'website': "https://github.com/IZH318",
