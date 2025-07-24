@@ -1,19 +1,21 @@
 # --- 필수 모듈 임포트 ---
-# GUI 관련 모듈
-import tkinter as tk                                  # GUI 라이브러리
-from tkinter import ttk, filedialog, messagebox, font # GUI 확장 위젯 및 대화상자
-
 # 시스템 및 운영체제 관련 모듈
-import os               # OS 기능 (경로, 파일 확인)
-import json             # JSON 데이터 처리
-import re               # 정규 표현식 (파일명 필터링)
-import sqlite3          # SQLite 데이터베이스 연동
+import os                     # OS 기능 (경로, 파일 확인)
+
+# 데이터 처리 관련 모듈
+from datetime import datetime # 현재 시간 (로그 타임스탬프용)
+import json                   # JSON 데이터 처리
+import re                     # 정규 표현식 (파일명 필터링)
+import sqlite3                # SQLite 데이터베이스 연동
 
 # 동시성 및 병렬 처리 관련 모듈
-import threading              # 스레드 생성/관리
-import queue                  # 스레드 간 데이터 통신
-from datetime import datetime # 현재 시간 (로그 타임스탬프용)
 import concurrent.futures     # 병렬 처리 (스레드 풀)
+import queue                  # 스레드 간 데이터 통신
+import threading              # 스레드 생성/관리
+
+# 그래픽 사용자 인터페이스(GUI) 관련 모듈
+import tkinter as tk                                  # GUI 라이브러리
+from tkinter import ttk, filedialog, messagebox, font # GUI 확장 위젯 및 대화상자
 
 # --- 프로그램 정보 ---
 ABOUT_INFO = {
