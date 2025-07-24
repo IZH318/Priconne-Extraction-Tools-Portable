@@ -21,7 +21,6 @@ import tkinter as tk          # GUI 라이브러리
 from tkinter import ttk, filedialog, scrolledtext, Listbox, Menu # GUI 확장 위젯
 
 # --- 다국어 리소스 ---
-# UI 텍스트, 언어별 딕셔너리
 LANGUAGES = {
     'ko': {
         'program_started': "프로그램이 시작되었습니다.",
@@ -278,7 +277,7 @@ LANGUAGES = {
 }
 
 # --- 상수 정의 ---
-# 로그 영역 구분선
+# 로그 영역에서 내용 구분을 위해 사용되는 수평선 문자열.
 SEPARATOR = "-" * 50
 
 # ##################################################################
@@ -393,7 +392,7 @@ class ConversionLogic:
                             log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_log_lines])
                     
                     # 변환 과정에서 생성된 임시 파일 삭제
-                    temp_file_extensions = ['.m2v', '.wav', '.adx']
+                    temp_file_extensions = ['.adx', '.bin', '.m2v', '.wav']
                     temp_file_dir = usm_file.parent
                     for ext in temp_file_extensions:
                         temp_file = temp_file_dir / (usm_file.stem + ext)
@@ -668,8 +667,12 @@ class FFmpegDownloader:
 class App(tk.Tk):
     # 프로그램 정보
     ABOUT_INFO = {
-        'program': "Audio Video Converter", 'version': "2.0.0", 'updated': "2025-07-18",
-        'license': "MIT License", 'developer': "(Github) IZH318", 'website': "https://github.com/IZH318",
+        'program': "Audio Video Converter",
+        'version': "2.0.0",
+        'updated': "2025-07-25",
+        'license': "MIT License",
+        'developer': "(Github) IZH318",
+        'website': "https://github.com/IZH318",
     }
 
     def __init__(self):
