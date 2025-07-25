@@ -21,8 +21,8 @@ from tkinter import ttk, filedialog, messagebox, font # GUI 확장 위젯 및 �
 ABOUT_INFO = {
     'program': "storydata Viewer",
     'version': "1.0.0",
-    'updated': "2025-07-26",
-    'license': "GNU General Public License v3.0",
+    'updated': "2025-07-25",
+    'license': "MIT License",
     'developer': "(Github) IZH318",
     'website': "https://github.com/IZH318",
 }
@@ -997,7 +997,7 @@ class StoryViewerApp:
 
         # 상세 보기 시 필드 정렬 순서
         self.field_order = [
-            # 2025-07-22 storydata 기준 (JP, KR 검증 완료)
+            # 20250722 storydata 기준 (JP, KR 검증 완료)
             # 파트 1: {0} 그룹의 모든 데이터 (중복 제외)
             'title', 'outline', 'movie', 'shake_anime', 'place',
 

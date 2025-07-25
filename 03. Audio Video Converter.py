@@ -669,8 +669,8 @@ class App(tk.Tk):
     ABOUT_INFO = {
         'program': "Audio Video Converter",
         'version': "2.0.0",
-        'updated': "2025-07-26",
-        'license': "GNU General Public License v3.0",
+        'updated': "2025-07-25",
+        'license': "MIT License",
         'developer': "(Github) IZH318",
         'website': "https://github.com/IZH318",
     }
