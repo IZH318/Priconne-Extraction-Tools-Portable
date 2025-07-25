@@ -162,8 +162,8 @@ class FileRenamerGUI:
     ABOUT_INFO = {
         'program': "Manifest File Renamer",
         'version': "2.0.0",
-        'updated': "2025-07-25",
-        'license': "MIT License",
+        'updated': "2025-07-26",
+        'license': "GNU General Public License v3.0",
         'developer': "(Github) IZH318",
         'website': "https://github.com/IZH318",
     }
