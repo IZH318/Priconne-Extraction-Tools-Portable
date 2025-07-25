@@ -110,7 +110,7 @@
 
 
 ## 💾 다운로드 및 요구사항
-[<img width="128" height="128" alt="icon_item_91001" src="https://github.com/user-attachments/assets/68d9bbc3-3203-4890-ab47-edf1d01b982a" />](https://github.com/IZH318/PRICONNE_EXTRACTION_TOOLS_Portable/releases)
+[<img width="128" height="128" alt="icon_item_91001" src="https://github.com/user-attachments/assets/68d9bbc3-3203-4890-ab47-edf1d01b982a" />](https://github.com/IZH318/Priconne-Extraction-Tools-Portable/releases)
 
 ### ※ 추출 도구는 상단 쥬얼 아이콘을 클릭 또는 본 저장소의 Releases 페이지로 이동하여 다운로드 하십시오. <br><br>
 
