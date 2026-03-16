@@ -81,7 +81,10 @@
         "ffmpeg_prepare_fail": "[오류] FFmpeg이 준비되지 않아 비디오 변환을 시작할 수 없습니다.",
         "ffmpeg_no_usm_path": "[오류] UsmToolkit.exe 경로를 알 수 없어 FFmpeg을 다운로드할 위치를 결정할 수 없습니다. 변환을 중단합니다.",
         "ffmpeg_zip_structure_error": "FFmpeg ZIP 파일 내부에 예상되는 폴더 구조를 찾을 수 없습니다.",
-        "ffmpeg_exe_not_found_in_zip": "압축 해제 후 '{path}'를 찾을 수 없습니다. ZIP 파일 구조를 확인해주세요."
+        "ffmpeg_exe_not_found_in_zip": "압축 해제 후 '{path}'를 찾을 수 없습니다. ZIP 파일 구조를 확인해주세요.",
+        "dialog_select_files": "파일을 선택하세요",
+        "dialog_select_folder": "폴더를 선택하세요",
+        "dialog_select_output": "저장할 폴더를 선택하세요"
     },
     "en": {
         "program_started": "Program started.",
@@ -165,7 +168,10 @@
         "ffmpeg_prepare_fail": "[Error] Cannot start video conversion because FFmpeg is not ready.",
         "ffmpeg_no_usm_path": "[Error] Cannot determine where to download FFmpeg because UsmToolkit.exe path is unknown. Aborting.",
         "ffmpeg_zip_structure_error": "Could not find the expected folder structure within the FFmpeg ZIP file.",
-        "ffmpeg_exe_not_found_in_zip": "Could not find '{path}' after extraction. Please check the ZIP file structure."
+        "ffmpeg_exe_not_found_in_zip": "Could not find '{path}' after extraction. Please check the ZIP file structure.",
+        "dialog_select_files": "Select files",
+        "dialog_select_folder": "Select a folder",
+        "dialog_select_output": "Select an output folder"
     },
     "ja": {
         "program_started": "プログラムが起動しました。",
@@ -249,6 +255,9 @@
         "ffmpeg_prepare_fail": "[エラー] FFmpegの準備ができていないため、ビデオ変換を開始できません。",
         "ffmpeg_no_usm_path": "[エラー] UsmToolkit.exeのパスが不明なため、FFmpegのダウンロード先を決定できません。変換を中止します。",
         "ffmpeg_zip_structure_error": "FFmpegのZIPファイル内に予期されるフォルダ構造が見つかりません。",
-        "ffmpeg_exe_not_found_in_zip": "展開後、'{path}'が見つかりませんでした。ZIPファイルの構造を確認してください。"
+        "ffmpeg_exe_not_found_in_zip": "展開後、'{path}'が見つかりませんでした。ZIPファイルの構造を確認してください。",
+        "dialog_select_files": "ファイルを選択してください",
+        "dialog_select_folder": "フォルダを選択してください",
+        "dialog_select_output": "保存先フォルダを選択してください"
     }
 }

@@ -3,7 +3,7 @@ import os
 import re
 import json
 import base64
-from struct import unpack
+from struct import unpack, error as struct_error
 from enum import Enum
 import UnityPy
 
@@ -158,8 +158,8 @@ class StoryDataDeserializer:
             try:
                 # 2바이트(Big-endian)를 읽어 명령어 인덱스 파싱
                 index = int(unpack(">H", bytes_[fs : fs + 2])[0])
-            except Exception:
-                break 
+            except (struct_error, IndexError):
+                break  # 바이너리 버퍼가 소진되었거나 형식이 맞지 않음
             fs += 2
             args.append(index)
             num = i
@@ -167,7 +167,7 @@ class StoryDataDeserializer:
                 try:
                     # 4바이트(Big-endian)를 읽어 인자의 길이 파싱
                     length = int(unpack(">l", bytes_[fs : fs + 4])[0])
-                except Exception:
+                except (struct_error, IndexError):
                     length = 0
                 fs += 4
                 if length == 0: # 길이가 0이면 명령어의 끝

@@ -6,17 +6,19 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font
 from datetime import datetime
 
-from .languages import LANGUAGES, ABOUT_INFO
+from .languages import LANGUAGES
 from .windows_search import SearchWindow
 from .windows_export import ExportWindow
 from .logic import StoryDataLoader, StoryFormatter
+from . import db_helper
 
 class StoryViewerApp(ttk.Frame):
-    def __init__(self, master, app_lang_var=None):
+    def __init__(self, master, app_lang_var=None, about_info=None):
         super().__init__(master)
         self.pack(fill=tk.BOTH, expand=True)
 
         self.master = master
+        self.about_info = about_info or {}
         self.all_files = {}
         self.story_data_cache = {}
         self.search_data = {}
@@ -205,7 +207,7 @@ class StoryViewerApp(ttk.Frame):
         title = lang_dict['about_header']
         
         info_lines = []
-        for key, value in ABOUT_INFO.items():
+        for key, value in self.about_info.items():
             label_key = f'about_label_{key}'
             label_text = lang_dict.get(label_key, key.capitalize())
             info_lines.append(f"{label_text}: {value}")
@@ -623,15 +625,11 @@ class StoryViewerApp(ttk.Frame):
             def get_event_list(server_key):
                 db_info = self.server_db_info.get(server_key)
                 if not db_info or not self.db_status.get(server_key): return []
-                script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                db_path = os.path.join(script_dir, db_info['db_path'])
                 try:
-                    import sqlite3
-                    with sqlite3.connect(db_path) as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(f"SELECT DISTINCT \"{db_info['event_name_col_list']}\" FROM \"{db_info['event_list_table']}\"")
-                        return sorted([row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]])
-                except: return []
+                    return sorted(db_helper.fetch_event_names(db_info))
+                except Exception as e:
+                    print(f"[Warning] Failed to fetch event list for {server_key}: {e}")
+                    return []
 
             event_list_tasks = [
                 {'type': 'event_list_jp', 'name_key': 'export_type_event_list_jp', 'data_func': lambda: get_event_list('JP'), 'file_suffix': 'event_list_jp', 'header_key': 'export_type_event_list_jp'},

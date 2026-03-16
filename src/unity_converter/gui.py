@@ -16,17 +16,7 @@ from .extractor import process_single_file, AssetProcessor
 SUPPORTED_EXTENSIONS = ('.unity3d',)
 
 class AssetExtractorApp(ttk.Frame):
-    # 프로그램 정보
-    ABOUT_INFO = {
-        'program': "unity3d File Converter",
-        'version': "2.0.0",
-        'updated': "2025-07-26",
-        'license': "GNU General Public License v3.0",
-        'developer': "(Github) IZH318",
-        'website': "https://github.com/IZH318",
-    }
-
-    def __init__(self, master, app_lang_var=None):
+    def __init__(self, master, app_lang_var=None, about_info=None):
         """
         AssetExtractorApp 인스턴스 초기화.
 
@@ -46,6 +36,7 @@ class AssetExtractorApp(ttk.Frame):
         self.log_events = [] # 로그 재표시를 위한 이벤트 저장소
         self.unity_version_var = tk.StringVar(value="2021.3.20f1") # 유니티 강제 버전 값
         self.version_combo_var = tk.StringVar(value="2021.3.20f1") # 드롭다운 선택 값
+        self.about_info = about_info or {}
         
         # 에셋 타입별 체크박스 변수 초기화
         self.asset_type_vars = {}
@@ -57,17 +48,32 @@ class AssetExtractorApp(ttk.Frame):
             
         self.lang.trace_add('write', self._on_language_change)
 
-        # 멀티프로세싱 통신을 위한 Manager 큐
-        self.manager = Manager()
-        self.log_queue = self.manager.Queue()
-        self.completion_queue = self.manager.Queue()
+        # 멀티프로세싱 통신을 위한 Manager 큐 (Lazy 초기화)
+        self._manager = None
+        self._log_queue = None
+        self._completion_queue = None
 
         self._setup_ui()
         self.root.after(100, self._process_queues)
-        
-        # 시스템 표준 출력을 GUI로 리다이렉트 (UnityPy 내부 출력 등)
-        sys.stdout = TextRedirector(self, "INFO")
-        sys.stderr = TextRedirector(self, "ERROR")
+
+    @property
+    def manager(self):
+        """멀티프로세싱 Manager를 지연 초기화하여 불필요한 프로세스 생성을 방지합니다."""
+        if self._manager is None:
+            self._manager = Manager()
+        return self._manager
+
+    @property
+    def log_queue(self):
+        if self._log_queue is None:
+            self._log_queue = self.manager.Queue()
+        return self._log_queue
+
+    @property
+    def completion_queue(self):
+        if self._completion_queue is None:
+            self._completion_queue = self.manager.Queue()
+        return self._completion_queue
 
     def _setup_ui(self):
         """Tkinter 위젯들을 생성하고 배치합니다."""
@@ -225,7 +231,7 @@ class AssetExtractorApp(ttk.Frame):
             is_first_group = False
 
             # 그룹 레이블
-            group_label = ttk.Label(self.filter_inner_frame, text="", font=("TkDefaultFont", 9, "bold"))
+            group_label = ttk.Label(self.filter_inner_frame, text="", font=("", 9, "bold"))
             group_label.pack(anchor="w", pady=(4, 1))
             self._type_group_labels[group_key] = group_label
 
@@ -373,7 +379,7 @@ class AssetExtractorApp(ttk.Frame):
         widget.insert(tk.END, header_text, "INFO")
         
         about_lines = []
-        for key, value in self.ABOUT_INFO.items():
+        for key, value in self.about_info.items():
             label_key = f'about_label_{key}'
             label_text = d.get(label_key, key.capitalize())
             about_lines.append(f"  - {label_text} : {value}")

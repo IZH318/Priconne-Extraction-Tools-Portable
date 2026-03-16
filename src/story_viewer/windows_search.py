@@ -160,18 +160,12 @@ class SearchWindow(tk.Toplevel):
             return
         
         self.event_combobox.config(state='readonly')
-        script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        db_path = os.path.join(script_dir, db_info['db_path'])
         
         try:
-            with sqlite3.connect(db_path) as conn:
-                cursor = conn.cursor()
-                query_event_list = f"SELECT DISTINCT \"{db_info['event_name_col_list']}\" FROM \"{db_info['event_list_table']}\""
-                cursor.execute(query_event_list)
-                event_names = [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
-            
+            from . import db_helper
+            event_names = db_helper.fetch_event_names(db_info)
             self.event_combobox['values'] = event_names
-        except sqlite3.Error as e:
+        except Exception as e:
             messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
             self.event_combobox.config(state='disabled')
 

@@ -12,17 +12,7 @@ from .languages import LANGUAGES
 from .logic import ConversionLogic, FFmpegDownloader, SEPARATOR
 
 class App(ttk.Frame):
-    # 프로그램 정보
-    ABOUT_INFO = {
-        'program': "Audio Video Converter",
-        'version': "2.0.0",
-        'updated': "2025-07-26",
-        'license': "GNU General Public License v3.0",
-        'developer': "(Github) IZH318",
-        'website': "https://github.com/IZH318",
-    }
-
-    def __init__(self, master, app_lang_var=None):
+    def __init__(self, master, app_lang_var=None, about_info=None):
         # 초기화 (사용하지 않는 언어 키 정리)
         for lang in LANGUAGES.values(): lang.pop('env_check_footer', None)
         super().__init__(master)
@@ -40,6 +30,7 @@ class App(ttk.Frame):
         self.base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent.parent)) # PyInstaller 호환 경로
         self.log_queue = queue.Queue()
         self.logic = ConversionLogic(self.log_queue, self.base_path)
+        self.about_info = about_info or {}
 
         if app_lang_var:
             self.lang_var = app_lang_var
@@ -147,7 +138,7 @@ class App(ttk.Frame):
         # 정보 표시 이벤트를 큐에 넣음 (언어 변경에 대응하기 위해 키를 전송)
         self.log_queue.put(('log_un-timestamped', target_tab, 'raw', {'text': f"\n{SEPARATOR}"}))
         self.log_queue.put(('log_un-timestamped', target_tab, 'about_header', {}))
-        for key, value in self.ABOUT_INFO.items():
+        for key, value in self.about_info.items():
             self.log_queue.put(('log_un-timestamped', target_tab, 'about_line_key', {'label_key': f'about_label_{key}', 'value': value}))
         self.log_queue.put(('log_un-timestamped', target_tab, 'raw', {'text': f"{SEPARATOR}\n"}))
 
@@ -361,15 +352,15 @@ class App(ttk.Frame):
         self.audio_widgets['progress']['value'] = 0
 
     # --- 파일/폴더 선택 및 목록 관리 헬퍼 함수들 ---
-    def _select_files(self, ft): 
-        return list(filedialog.askopenfilenames(title="파일을 선택하세요", filetypes=ft) or [])
+    def _select_files(self, file_types): 
+        return list(filedialog.askopenfilenames(title=self.lang_data.get('dialog_select_files', '파일을 선택하세요'), filetypes=file_types) or [])
     
-    def _select_folder_and_search(self, ft):
-        folder = filedialog.askdirectory(title="폴더를 선택하세요")
+    def _select_folder_and_search(self, file_types):
+        folder = filedialog.askdirectory(title=self.lang_data.get('dialog_select_folder', '폴더를 선택하세요'))
         if not folder: 
             return []
         
-        exts = [ext.strip('*.') for _, p in ft for ext in p.split()]
+        exts = [ext.strip('*.') for _, p in file_types for ext in p.split()]
         found_files = []
         for r, _, fs in os.walk(folder):
             for f in fs:
@@ -378,7 +369,7 @@ class App(ttk.Frame):
         return found_files
     
     def _select_output_folder(self, entry_widget):
-        folder = filedialog.askdirectory(title="저장할 폴더를 선택하세요")
+        folder = filedialog.askdirectory(title=self.lang_data.get('dialog_select_output', '저장할 폴더를 선택하세요'))
         if folder:
             entry_widget.config(state='normal')
             entry_widget.delete(0, tk.END)
@@ -406,36 +397,36 @@ class App(ttk.Frame):
         self._add_log_entry(tab_type, 'log_total_files', total=len(full_paths))
         self._add_spacing(tab_type)
         
-    def _add_files(self, ft, fp, fv, tt): 
-        self._add_paths_to_list(self._select_files(ft), fp, tt, fv)
+    def _add_files(self, file_types, full_paths, filenames_var, tab_type): 
+        self._add_paths_to_list(self._select_files(file_types), full_paths, tab_type, filenames_var)
         
-    def _add_folder(self, ft, fp, fv, tt): 
-        self._add_paths_to_list(self._select_folder_and_search(ft), fp, tt, fv)
+    def _add_folder(self, file_types, full_paths, filenames_var, tab_type): 
+        self._add_paths_to_list(self._select_folder_and_search(file_types), full_paths, tab_type, filenames_var)
         
-    def _remove_selected_from_list(self, lb, fp, fv, tt):
-        sel_idx = lb.curselection()
+    def _remove_selected_from_list(self, listbox, full_paths, filenames_var, tab_type):
+        sel_idx = listbox.curselection()
         if not sel_idx: 
             return
         
         for i in sorted(sel_idx, reverse=True): 
-            del fp[i]
+            del full_paths[i]
             
-        self._update_listbox(fp, fv)
-        self._add_spacing(tt)
-        self._add_log_entry(tt, 'log_files_removed', count=len(sel_idx))
-        self._add_spacing(tt)
+        self._update_listbox(full_paths, filenames_var)
+        self._add_spacing(tab_type)
+        self._add_log_entry(tab_type, 'log_files_removed', count=len(sel_idx))
+        self._add_spacing(tab_type)
         
-    def _clear_list(self, fp, fv, tt):
-        if not fp: 
+    def _clear_list(self, full_paths, filenames_var, tab_type):
+        if not full_paths: 
             return
         
-        count = len(fp)
-        fp.clear()
+        count = len(full_paths)
+        full_paths.clear()
         
-        self._update_listbox(fp, fv)
-        self._add_spacing(tt)
-        self._add_log_entry(tt, 'log_all_files_removed', count=count)
-        self._add_spacing(tt)
+        self._update_listbox(full_paths, filenames_var)
+        self._add_spacing(tab_type)
+        self._add_log_entry(tab_type, 'log_all_files_removed', count=count)
+        self._add_spacing(tab_type)
 
     # --- 변환 시작 로직 ---
     def start_video_conversion(self, output_dir):
