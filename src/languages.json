@@ -1,0 +1,53 @@
+{
+    "ko": {
+        "window_title": "Princess Connect! Re:Dive Extraction Tools (Unified)",
+        "menu_file": "파일",
+        "menu_exit": "종료",
+        "menu_lang": "언어 / Language",
+        "menu_lang_ko": "한국어",
+        "menu_lang_en": "English",
+        "menu_lang_ja": "日本語",
+        "menu_info": "정보",
+        "tab_renamer": "Manifest Renamer",
+        "tab_unity": ".unity3d File Converter",
+        "tab_av": "Audio / Video Converter",
+        "tab_story": "Story Viewer",
+        "tab_remover": "Resource Remover",
+        "about_title": "프로그램 정보",
+        "about_msg": "Princess Connect! Re:Dive Extraction Tools\n\n통합 런처 버전: 1.0.0\n개발: (Github) IZH318\n\n이 프로그램은 5개의 개별 도구를 하나의 인터페이스로 통합합니다."
+    },
+    "en": {
+        "window_title": "Princess Connect! Re:Dive Extraction Tools (Unified)",
+        "menu_file": "File",
+        "menu_exit": "Exit",
+        "menu_lang": "Language / 언어",
+        "menu_lang_ko": "한국어",
+        "menu_lang_en": "English",
+        "menu_lang_ja": "日本語",
+        "menu_info": "About",
+        "tab_renamer": "Manifest Renamer",
+        "tab_unity": ".unity3d File Converter",
+        "tab_av": "Audio / Video Converter",
+        "tab_story": "Story Viewer",
+        "tab_remover": "Resource Remover",
+        "about_title": "About Program",
+        "about_msg": "Princess Connect! Re:Dive Extraction Tools\n\nUnified Launcher Version: 1.0.0\nDeveloper: (Github) IZH318\n\nThis application unifies 5 individual tools into one interface."
+    },
+    "ja": {
+        "window_title": "Princess Connect! Re:Dive Extraction Tools (Unified)",
+        "menu_file": "ファイル",
+        "menu_exit": "終了",
+        "menu_lang": "言語 / Language",
+        "menu_lang_ko": "한국어",
+        "menu_lang_en": "English",
+        "menu_lang_ja": "日本語",
+        "menu_info": "情報",
+        "tab_renamer": "Manifest Renamer",
+        "tab_unity": ".unity3d File Converter",
+        "tab_av": "Audio / Video Converter",
+        "tab_story": "Story Viewer",
+        "tab_remover": "Resource Remover",
+        "about_title": "プログラム情報",
+        "about_msg": "Princess Connect! Re:Dive Extraction Tools\n\n統合ランチャーバージョン: 1.0.0\n開発: (Github) IZH318\n\nこのプログラムは5つの個別ツールを1つのインターフェースに統合します。"
+    }
+}
