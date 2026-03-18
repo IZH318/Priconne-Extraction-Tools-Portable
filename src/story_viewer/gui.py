@@ -394,7 +394,7 @@ class StoryViewerApp(ttk.Frame):
                     messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e))
 
     def _check_and_cache_db_status(self):
-        if self.db_check_done: return
+        if self.db_check_done: return False
         
         try:
             lang_dict = LANGUAGES[self.lang_var.get()]
@@ -402,25 +402,105 @@ class StoryViewerApp(ttk.Frame):
             lang_dict = LANGUAGES['ko']
             
         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        missing_db_paths = []
+        missing_db_files = []
         
         for server, info in self.server_db_info.items():
             db_path = os.path.join(script_dir, info['db_path'])
             exists = os.path.exists(db_path)
             self.db_status[server] = exists
             if not exists:
-                missing_db_paths.append(info['db_path'])
+                missing_db_files.append(info['db_path'])
 
-        if missing_db_paths and not self.db_warning_shown:
-            paths_str = "\n".join(missing_db_paths)
-            messagebox.showwarning(
-                lang_dict['db_not_found_title'], 
-                lang_dict['db_not_found_msg'].format(paths=paths_str),
-                parent=self.master
-            )
-            self.db_warning_shown = True
+        if missing_db_files and not self.db_warning_shown:
+            paths_str = "\n".join(missing_db_files)
+            
+            is_online = False
+            try:
+                import urllib.request
+                urllib.request.urlopen("https://github.com", timeout=2)
+                is_online = True
+            except Exception:
+                pass
+                
+            if is_online:
+                if messagebox.askyesno(
+                    lang_dict.get('db_download_prompt_title', 'Download DB'), 
+                    lang_dict.get('db_download_prompt_msg', 'Missing:\n{paths}').format(paths=paths_str), 
+                    parent=self.master
+                ):
+                    self._start_db_download(missing_db_files, script_dir)
+                    return True
+                else:
+                    self._show_offline_warning(paths_str, lang_dict, reason='cancel')
+            else:
+                self._show_offline_warning(paths_str, lang_dict, reason='offline')
 
         self.db_check_done = True
+        return False
+        
+    def _show_offline_warning(self, paths_str, lang_dict, reason='offline'):
+        if reason == 'cancel':
+            extra_msg = lang_dict.get('db_download_cancel_msg', '')
+        else:
+            extra_msg = lang_dict.get('db_download_offline_msg', '')
+            
+        messagebox.showwarning(
+            lang_dict.get('db_not_found_title', 'DB Not Found'), 
+            lang_dict.get('db_not_found_msg', '{paths}').format(paths=paths_str) + "\n\n" + extra_msg,
+            parent=self.master
+        )
+        self.db_warning_shown = True
+
+    def _start_db_download(self, files_to_download, dest_dir):
+        lang_dict = LANGUAGES[self.lang_var.get()]
+        self.search_button.config(state="disabled")
+        self.btn_export.config(state="disabled")
+        
+        top = tk.Toplevel(self.master)
+        top.title(lang_dict.get('db_download_prompt_title', 'Downloading DB...'))
+        top.geometry("300x100")
+        top.transient(self.master)
+        top.grab_set()
+        
+        lbl = ttk.Label(top, text="Downloading...")
+        lbl.pack(pady=10)
+        
+        pb = ttk.Progressbar(top, mode='indeterminate')
+        pb.pack(fill=tk.X, padx=20)
+        pb.start(10)
+        
+        def _download_thread():
+            import urllib.request
+            base_url = "https://raw.githubusercontent.com/Expugn/priconne-database/master/"
+            try:
+                for f in files_to_download:
+                    url = base_url + f
+                    dest_path = os.path.join(dest_dir, f)
+                    urllib.request.urlretrieve(url, dest_path)
+                    
+                self.task_queue.put(lambda: self._on_download_success(top))
+            except Exception as e:
+                self.task_queue.put(lambda: self._on_download_error(top, e))
+                
+        t = threading.Thread(target=_download_thread, daemon=True)
+        t.start()
+        
+    def _on_download_success(self, top):
+        top.destroy()
+        lang_dict = LANGUAGES[self.lang_var.get()]
+        messagebox.showinfo(lang_dict.get('db_download_prompt_title', 'Complete'), lang_dict.get('db_download_success_msg', 'Success'), parent=self.master)
+        self.db_warning_shown = False
+        self.db_check_done = False
+        self._check_and_cache_db_status()
+        self.search_button.config(state="normal" if self.all_files else "disabled")
+        self.btn_export.config(state="normal" if self.all_files else "disabled")
+        
+    def _on_download_error(self, top, err):
+        top.destroy()
+        messagebox.showerror('Download Error', str(err), parent=self.master)
+        self.db_check_done = True
+        self.search_button.config(state="normal" if self.all_files else "disabled")
+        self.btn_export.config(state="normal" if self.all_files else "disabled")
 
     def open_search_window(self):
         try:
@@ -435,7 +515,8 @@ class StoryViewerApp(ttk.Frame):
             messagebox.showinfo(lang_dict['msgbox_search_before_load_title'], lang_dict['msgbox_search_before_load_msg'], parent=self)
             return
         
-        self._check_and_cache_db_status()
+        is_downloading = self._check_and_cache_db_status()
+        if is_downloading: return
         
         SearchWindow(app=self, all_files_dict=self.all_files, story_data_cache=self.story_data_cache, search_callback=self.update_file_list, search_data=self.search_data, db_status=self.db_status, server_db_info=self.server_db_info)
 
@@ -452,7 +533,8 @@ class StoryViewerApp(ttk.Frame):
             messagebox.showinfo(lang_dict['msgbox_no_export_files_title'], lang_dict['msgbox_no_export_files_msg'], parent=self)
             return
             
-        self._check_and_cache_db_status()
+        is_downloading = self._check_and_cache_db_status()
+        if is_downloading: return
         
         ExportWindow(app=self, all_files_dict=self.all_files, story_data_cache=self.story_data_cache, search_data=self.search_data, db_status=self.db_status, server_db_info=self.server_db_info)
 

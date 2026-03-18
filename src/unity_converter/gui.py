@@ -8,6 +8,7 @@ from multiprocessing import Manager, cpu_count
 from datetime import datetime
 import os
 import sys
+from tkinterdnd2 import DND_FILES
 
 from .languages import LANGUAGES
 from .extractor import process_single_file, AssetProcessor
@@ -36,6 +37,7 @@ class AssetExtractorApp(ttk.Frame):
         self.log_events = [] # 로그 재표시를 위한 이벤트 저장소
         self.unity_version_var = tk.StringVar(value="2021.3.20f1") # 유니티 강제 버전 값
         self.version_combo_var = tk.StringVar(value="2021.3.20f1") # 드롭다운 선택 값
+        self.cancel_event = threading.Event()
         self.about_info = about_info or {}
         
         # 에셋 타입별 체크박스 변수 초기화
@@ -231,7 +233,7 @@ class AssetExtractorApp(ttk.Frame):
             is_first_group = False
 
             # 그룹 레이블
-            group_label = ttk.Label(self.filter_inner_frame, text="", font=("", 9, "bold"))
+            group_label = ttk.Label(self.filter_inner_frame, text="", font=("TkDefaultFont", 10, "bold"))
             group_label.pack(anchor="w", pady=(4, 1))
             self._type_group_labels[group_key] = group_label
 
@@ -444,7 +446,15 @@ class AssetExtractorApp(ttk.Frame):
     def _toggle_controls(self, enabled):
         """작업 시작/종료 시 UI 컨트롤들의 활성화/비활성화 상태를 전환합니다."""
         state = 'normal' if enabled else 'disabled'
-        self.start_button.config(state=state)
+        
+        # 만약 시작하는 중이면(enabled=False) 취소 버튼 기능으로 변경
+        if not enabled:
+            d = LANGUAGES[self.lang.get()]
+            self.start_button.config(state='normal', text=d.get('cancel_extraction', 'Cancel'), command=self.cancel_event.set)
+        else:
+            d = LANGUAGES[self.lang.get()]
+            self.start_button.config(state='normal', text=d['start_extraction'], command=self._start_extraction)
+            
         self.output_button.config(state=state)
         self.btn_open_file.config(state=state)
         self.btn_open_folder.config(state=state)
@@ -488,6 +498,28 @@ class AssetExtractorApp(ttk.Frame):
             else:
                 self._log('no_files_to_process', "WARNING")
             
+    def _on_dnd_drop(self, event):
+        """드래그 앤 드롭 이벤트를 처리하여 파싱된 경로를 목록에 추가합니다."""
+        if self.is_running: return
+        try:
+            paths = self.master.root.tk.splitlist(event.data) if hasattr(self.master, 'root') else self.tk.splitlist(event.data)
+        except AttributeError:
+            import re
+            paths = [p.strip() for p in re.findall(r'\{[^{}]*\}|[^ ]+', event.data) if p.strip()]
+            
+        found_paths = []
+        for path in paths:
+            if os.path.isfile(path) and path.lower().endswith(SUPPORTED_EXTENSIONS):
+                found_paths.append(path)
+            elif os.path.isdir(path):
+                self.base_input_path = path if not self.base_input_path else self.base_input_path
+                found_paths.extend([os.path.join(r, f) for r, _, fs in os.walk(path) for f in fs if f.lower().endswith(SUPPORTED_EXTENSIONS)])
+                
+        if found_paths:
+            self._add_files_to_list(found_paths)
+        else:
+            self._log('no_files_to_process', "WARNING")
+
     def _add_files_to_list(self, new_paths):
         """새 파일들을 중복 없이 정렬하여 목록과 리스트 박스에 추가합니다."""
         current_paths_set = set(self.file_paths)
@@ -558,6 +590,7 @@ class AssetExtractorApp(ttk.Frame):
             return
             
         self.is_running = True
+        self.cancel_event.clear()
         self._toggle_controls(False)
         self.processed_files_count = 0
         self.progress_bar.config(maximum=len(self.file_paths))
@@ -580,10 +613,17 @@ class AssetExtractorApp(ttk.Frame):
         enabled_types = self._current_enabled_types
 
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-            for file_path in self.file_paths:
-                executor.submit(process_single_file, file_path, self.output_path, self.base_input_path, self.log_queue, self.completion_queue, unity_version, enabled_types)
+            future_to_path = {
+                executor.submit(process_single_file, file_path, self.output_path, self.base_input_path, self.log_queue, self.completion_queue, unity_version, enabled_types): file_path 
+                for file_path in self.file_paths
+            }
+            for future in concurrent.futures.as_completed(future_to_path):
+                if self.cancel_event.is_set():
+                    self._log('extraction_cancelled', "ERROR")
+                    break
         
-        executor.shutdown(wait=True)
+        # 취소 시 진행 중인 작업을 종료시키기 위해 wait=True로 남은 future를 취소(실행 중 자식 프로세스는 즉시 종료 안됨)
+        executor.shutdown(wait=True, cancel_futures=True)
 
         self.root.after(0, self._on_extraction_complete)
 

@@ -138,7 +138,7 @@ class ConversionLogic:
         log_entries.append(('raw', {'text': SEPARATOR}))
         return status, log_entries
 
-    def run_video_conversion(self, input_paths, output_dir, usmtoolkit_path):
+    def run_video_conversion(self, input_paths, output_dir, usmtoolkit_path, cancel_event):
         """비디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
         target_tab = 'video'
         self._log_entry(target_tab, 'conv_start_video')
@@ -157,6 +157,12 @@ class ConversionLogic:
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             future_to_path = {executor.submit(self._convert_single_video_task, path, output_dir, usmtoolkit_path): path for path in input_paths}
             for future in concurrent.futures.as_completed(future_to_path):
+                if cancel_event and cancel_event.is_set():
+                    # 취소 요청된 상태면 pending 중인 future를 cancel 시도 (이미 실행 중인 것은 계속 끝남)
+                    for f in future_to_path: f.cancel()
+                    self._log_entry(target_tab, 'status_cancelled')
+                    break
+
                 try:
                     status, log_entries = future.result()
                     self.log_queue.put(('log_block', target_tab, log_entries))
@@ -174,7 +180,7 @@ class ConversionLogic:
         self._log_entry(target_tab, 'conv_summary_video', total=total_files, success=success_count, skipped=skipped_count, error=error_count)
         self.log_queue.put(('__VIDEO_DONE__',))
 
-    def run_audio_conversion(self, input_paths, output_dir, vgmstream_path, overwrite):
+    def run_audio_conversion(self, input_paths, output_dir, vgmstream_path, overwrite, cancel_event):
         """오디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
         target_tab = 'audio'
         self._log_entry(target_tab, 'conv_start_audio')
@@ -194,6 +200,11 @@ class ConversionLogic:
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             future_to_path = {executor.submit(self._convert_audio_container, path, output_dir, vgmstream_path, overwrite): path for path in input_paths}
             for future in concurrent.futures.as_completed(future_to_path):
+                if cancel_event and cancel_event.is_set():
+                    for f in future_to_path: f.cancel()
+                    self._log_entry(target_tab, 'status_cancelled')
+                    break
+
                 try:
                     converted_count, log_entries = future.result()
                     self.log_queue.put(('log_block', target_tab, log_entries))

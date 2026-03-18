@@ -2,6 +2,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
+from tkinterdnd2 import TkinterDnD, DND_FILES
 
 # 모듈 임포트
 from src.renamer import FileRenamerGUI
@@ -20,7 +21,7 @@ APP_COPYRIGHT_YEAR = "2026"
 
 # 모든 모듈이 공유하는 중앙 프로그램 정보 (DRY 원칙)
 APP_ABOUT_INFO = {
-    'program': "Princess Connect! Re:Dive Extraction Tools",
+    'program': "Priconne Extraction Tools (Portable)",
     'version': APP_VERSION,
     'updated': APP_LAST_UPDATE,
     'license': "GNU General Public License v3.0",
@@ -35,7 +36,7 @@ import os
 with open(os.path.join(os.path.dirname(__file__), 'src', 'languages.json'), 'r', encoding='utf-8') as _f:
     LANGUAGES = json.load(_f)
 
-class MainLauncher(tk.Tk):
+class MainLauncher(TkinterDnD.Tk):
     def __init__(self):
         super().__init__()
         
@@ -48,6 +49,15 @@ class MainLauncher(tk.Tk):
 
         # 기본 셋팅 먼저 (로거에 전송하기 위함)
         self.app_lang_var = tk.StringVar(value='ko')
+
+        # 전역 기본 폰트 크기 10으로 강제
+        from tkinter import font as tkfont
+        default_font = tkfont.nametofont("TkDefaultFont")
+        default_font.configure(size=10)
+        text_font = tkfont.nametofont("TkTextFont")
+        text_font.configure(size=10)
+        fixed_font = tkfont.nametofont("TkFixedFont")
+        fixed_font.configure(size=10)
 
         # Initialize Global Logging Safety Net
         setup_global_logging(self, app_info, self.app_lang_var, LANGUAGES)

@@ -1,6 +1,6 @@
 {
     "ko": {
-        "window_title": "Princess Connect! Re:Dive Extraction Tools (Portable)",
+        "window_title": "Priconne Extraction Tools (Portable)",
         "menu_file": "파일",
         "menu_exit": "종료",
         "menu_lang": "언어 / Language",
@@ -14,13 +14,13 @@
         "tab_story": "Story Viewer",
         "tab_remover": "Resource Remover",
         "about_title": "프로그램 정보",
-        "about_msg": "Princess Connect! Re:Dive Extraction Tools (Portable)\n\n버전: {version}\n업데이트: {update}\n\n개발자: {developer}\n웹사이트: {website}\n\n© {year} IZH318. All rights reserved.",
+        "about_msg": "Priconne Extraction Tools (Portable)\n\n버전: {version}\n업데이트: {update}\n\n개발자: {developer}\n웹사이트: {website}\n\n© {year} IZH318. All rights reserved.",
         "error_title": "오류 발생",
         "error_msg_success": "프로세스 실행 중 오류가 발생했습니다.\n\n상세 정보가 다음 로그 파일에 저장되었습니다:\n\n{log_path}",
         "error_msg_fail": "프로세스 실행 중 오류가 발생했으나 로그 파일 생성에 실패했습니다.\n\n{e}"
     },
     "en": {
-        "window_title": "Princess Connect! Re:Dive Extraction Tools (Portable)",
+        "window_title": "Priconne Extraction Tools (Portable)",
         "menu_file": "File",
         "menu_exit": "Exit",
         "menu_lang": "Language / 언어",
@@ -34,13 +34,13 @@
         "tab_story": "Story Viewer",
         "tab_remover": "Resource Remover",
         "about_title": "About Program",
-        "about_msg": "Princess Connect! Re:Dive Extraction Tools (Portable)\n\nVersion: {version}\nUpdate: {update}\n\nDeveloper: {developer}\nWebsite: {website}\n\n© {year} IZH318. All rights reserved.",
+        "about_msg": "Priconne Extraction Tools (Portable)\n\nVersion: {version}\nUpdate: {update}\n\nDeveloper: {developer}\nWebsite: {website}\n\n© {year} IZH318. All rights reserved.",
         "error_title": "Error",
         "error_msg_success": "An error occurred during process execution.\n\nDetails have been saved to the following log file:\n\n{log_path}",
         "error_msg_fail": "An error occurred, but the log file could not be created.\n\n{e}"
     },
     "ja": {
-        "window_title": "Princess Connect! Re:Dive Extraction Tools (Portable)",
+        "window_title": "Priconne Extraction Tools (Portable)",
         "menu_file": "ファイル",
         "menu_exit": "終了",
         "menu_lang": "言語 / Language",
@@ -54,7 +54,7 @@
         "tab_story": "Story Viewer",
         "tab_remover": "Resource Remover",
         "about_title": "プログラム情報",
-        "about_msg": "Princess Connect! Re:Dive Extraction Tools (Portable)\n\nバージョン: {version}\nアップデート: {update}\n\n開発者: {developer}\nウェブサイト: {website}\n\n© {year} IZH318. All rights reserved.",
+        "about_msg": "Priconne Extraction Tools (Portable)\n\nバージョン: {version}\nアップデート: {update}\n\n開発者: {developer}\nウェブサイト: {website}\n\n© {year} IZH318. All rights reserved.",
         "error_title": "エラー発生",
         "error_msg_success": "プロセス実行中にエラーが発生しました。\n\n詳細情報は以下のログファイルに保存されました:\n\n{log_path}",
         "error_msg_fail": "エラーが発生しましたが、ログファイルの作成に失敗しました。\n\n{e}"

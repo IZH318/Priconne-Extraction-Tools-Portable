@@ -109,7 +109,7 @@ class FileRenamerGUI(ttk.Frame):
         self.progress_bar = ttk.Progressbar(control_frame, orient='horizontal', mode='determinate')
         self.progress_bar.pack(side=tk.LEFT, expand=True, fill=tk.X)
         
-        self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, font=("Consolas", 9), state='disabled')
+        self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, font=("TkFixedFont", 10), state='disabled')
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
     def show_initial_message(self):

@@ -7,9 +7,9 @@ from datetime import datetime
 import queue
 import threading
 from pathlib import Path
-
-from .languages import LANGUAGES
+from tkinterdnd2 import DND_FILES
 from .logic import ConversionLogic, FFmpegDownloader, SEPARATOR
+from .languages import LANGUAGES
 
 class App(ttk.Frame):
     def __init__(self, master, app_lang_var=None, about_info=None):
@@ -29,6 +29,7 @@ class App(ttk.Frame):
         self.video_log_history, self.audio_log_history = [], []
         self.base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent.parent)) # PyInstaller 호환 경로
         self.log_queue = queue.Queue()
+        self.cancel_event = threading.Event()
         self.logic = ConversionLogic(self.log_queue, self.base_path)
         self.about_info = about_info or {}
 
@@ -187,12 +188,20 @@ class App(ttk.Frame):
         scrollbar.pack(side='right', fill='y')
         
         listbox.config(yscrollcommand=scrollbar.set)
+
+        # 드래그 앤 드롭 바인딩
+        try:
+            listbox.drop_target_register(DND_FILES)
+            listbox.dnd_bind('<<Drop>>', lambda e, lb=listbox, fp=full_paths, fv=filenames_var, tt=tab_type: self._on_dnd_drop(e, lb, fp, fv, tt))
+        except Exception as ex:
+            self.log_queue.put(('log_entry', tab_type, 'raw', {'text': f"Drag & Drop disabled: {ex}\n"}))
+
         self._create_right_click_menu(listbox, full_paths, filenames_var, tab_type)
         
         log_frame_container = ttk.LabelFrame(right_pane_frame, text=d['log_section'])
         log_frame_container.pack(fill="both", expand=True, padx=5, pady=5)
         
-        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state='disabled', font=("Consolas", 9))
+        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state='disabled', font=("TkFixedFont", 10))
         log_text_widget.pack(fill="both", expand=True, padx=5, pady=(5,0))
         
         status_frame = ttk.Frame(log_frame_container)
@@ -352,6 +361,23 @@ class App(ttk.Frame):
         self.audio_widgets['progress']['value'] = 0
 
     # --- 파일/폴더 선택 및 목록 관리 헬퍼 함수들 ---
+    def _on_dnd_drop(self, event, listbox, full_paths, filenames_var, tab_type):
+        """드래그 앤 드롭 이벤트를 처리하여 파싱된 경로를 목록에 추가합니다."""
+        if self.audio_widgets.get('action_btn', tk.Button).cget('state') == 'disabled': return # 실행 중 방지
+        paths = self._parse_dnd_files(event.data)
+        if not paths: return
+        file_types = getattr(self.logic, f"supported_{tab_type}_extensions")
+        self._add_paths_to_list(paths, file_types, full_paths, filenames_var, tab_type)
+
+    def _parse_dnd_files(self, data):
+        """TkinterDnD의 Drop 데이터를 파싱하여 리스트로 반환합니다."""
+        try:
+            return self.master.root.tk.splitlist(data) if hasattr(self.master, 'root') else self.tk.splitlist(data)
+        except AttributeError:
+            # Fallback parsing for curly braced paths
+            import re
+            return [p.strip() for p in re.findall(r'\{[^{}]*\}|[^ ]+', data) if p.strip()]
+
     def _select_files(self, file_types): 
         return list(filedialog.askopenfilenames(title=self.lang_data.get('dialog_select_files', '파일을 선택하세요'), filetypes=file_types) or [])
     
@@ -470,11 +496,18 @@ class App(ttk.Frame):
     def _start_actual_video_conversion(self, output_dir):
         """백그라운드 스레드에서 실제 비디오 변환 로직을 실행합니다."""
         self._add_spacing('video')
+        self.cancel_event.clear()
+        
+        self.video_widgets['action_btn'].config(
+            state='normal', 
+            text=self.lang_data.get('cancel_conversion', 'Cancel'),
+            command=self.cancel_event.set
+        )
         
         thread = threading.Thread(
             target=self.logic.run_video_conversion, 
             daemon=True, 
-            args=(self.video_full_paths[:], output_dir, self.usmtoolkit_path)
+            args=(self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.cancel_event)
         )
         thread.start()
 
@@ -489,11 +522,18 @@ class App(ttk.Frame):
 
         self._add_spacing('audio')
         self._set_ui_state(self.audio_widgets, 'disabled')
+        self.cancel_event.clear()
+
+        self.audio_widgets['action_btn'].config(
+            state='normal', 
+            text=self.lang_data.get('cancel_conversion', 'Cancel'),
+            command=self.cancel_event.set
+        )
         
         thread = threading.Thread(
             target=self.logic.run_audio_conversion, 
             daemon=True, 
-            args=(self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite)
+            args=(self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.cancel_event)
         )
         thread.start()
 

@@ -90,7 +90,7 @@
         "search_button": "검색",
         "reset_button": "초기화",
         "db_not_found_title": "데이터베이스 파일 없음",
-        "db_not_found_msg": "다음 데이터베이스 파일을 찾을 수 없습니다:\n\n{paths}\n\n해당 서버의 이벤트 목록을 로드할 수 없습니다.",
+        "db_not_found_msg": "다음 데이터베이스 파일을 찾을 수 없습니다:\n\n{paths}\n\n해당 파일이 없으면 storydata 고급 검색의 '이벤트 스토리 검색' 기능을 사용할 수 없습니다.",
         "db_error_title": "데이터베이스 오류",
         "db_error_msg": "데이터베이스 처리 중 오류 발생:\n{e}",
         "status_searching": "고급 검색 중...",
@@ -116,7 +116,12 @@
         "export_scope_current_list": "현재 목록에 있는 파일만",
         "export_scope_all_loaded": "불러온 모든 파일",
         "export_type_event_list_frame": "이벤트 스토리 서버",
-        "export_type_event_list_master": "이벤트 스토리 목록"
+        "export_type_event_list_master": "이벤트 스토리 목록",
+        "db_download_prompt_title": "DB 파일 다운로드",
+        "db_download_prompt_msg": "다음 데이터베이스 파일이 없습니다:\n\n{paths}\n\n스토리 뷰어 사용을 위해 지금 자동으로 다운로드 하시겠습니까?",
+        "db_download_success_msg": "데이터베이스 파일 다운로드가 완료되었습니다.",
+        "db_download_offline_msg": "인터넷 연결을 확인할 수 없거나 다운로드에 실패했습니다.\n\n기능을 사용하시려면 다음 링크에서 수동으로 다운로드하여 프로그램 폴더에 넣어주세요:\n\nhttps://github.com/Expugn/priconne-database",
+        "db_download_cancel_msg": "자동 다운로드를 취소하셨습니다.\n\n나중에 수동으로 적용하시려면 다음 링크에서 파일을 다운로드하여 프로그램 폴더에 넣어주세요:\n\nhttps://github.com/Expugn/priconne-database"
     },
     "en": {
         "window_title": "storydata Viewer",
@@ -209,7 +214,7 @@
         "search_button": "Search",
         "reset_button": "Reset",
         "db_not_found_title": "Database File Not Found",
-        "db_not_found_msg": "The following database files could not be found:\n\n{paths}\n\nCannot load event list for the corresponding server(s).",
+        "db_not_found_msg": "The following database files could not be found:\n\n{paths}\n\nWithout these files, the 'Event Story Search' feature in Advanced storydata Search will not be available.",
         "db_error_title": "Database Error",
         "db_error_msg": "An error occurred during database processing:\n{e}",
         "status_searching": "Advanced searching...",
@@ -235,7 +240,12 @@
         "export_scope_current_list": "Files in current list only",
         "export_scope_all_loaded": "All loaded files",
         "export_type_event_list_frame": "Event Story Servers",
-        "export_type_event_list_master": "Event Story Lists"
+        "export_type_event_list_master": "Event Story Lists",
+        "db_download_prompt_title": "Download DB Files",
+        "db_download_prompt_msg": "The following database files are missing:\n{paths}\nDo you want to automatically download them now?",
+        "db_download_success_msg": "Database files have been downloaded successfully.",
+        "db_download_offline_msg": "No internet connection or download failed.\n\nTo use these features, please download the files manually from the link below and place them in the program folder:\n\nhttps://github.com/Expugn/priconne-database",
+        "db_download_cancel_msg": "Auto-download canceled.\n\nIf you want to add them manually later, please download the files from the link below and place them in the program folder:\n\nhttps://github.com/Expugn/priconne-database"
     },
     "ja": {
         "window_title": "storydata Viewer",
@@ -328,7 +338,7 @@
         "search_button": "検索",
         "reset_button": "リセット",
         "db_not_found_title": "データベースファイルが見つかりません",
-        "db_not_found_msg": "次のデータベースファイルが見つかりません:\n\n{paths}\n\n該当サーバーのイベントリストを読み込めません。",
+        "db_not_found_msg": "次のデータベースファイルが見つかりません:\n\n{paths}\n\n該当ファイルがない場合、storydata高度な検索の「イベントストーリー検索」機能が利用できません。",
         "db_error_title": "データベースエラー",
         "db_error_msg": "データベース処理中にエラーが発生しました:\n{e}",
         "status_searching": "高度な検索を実行中...",
@@ -354,6 +364,11 @@
         "export_scope_current_list": "現在のリストのファイルのみ",
         "export_scope_all_loaded": "読み込まれたすべてのファイル",
         "export_type_event_list_frame": "イベントストーリーサーバー",
-        "export_type_event_list_master": "イベントストーリーリスト"
+        "export_type_event_list_master": "イベントストーリーリスト",
+        "db_download_prompt_title": "DBファイルダウンロード",
+        "db_download_prompt_msg": "次のデータベースファイルが見つかりません:\n{paths}\n今すぐ自動的にダウンロードしますか？",
+        "db_download_success_msg": "データベースファイルのダウンロードが完了しました。",
+        "db_download_offline_msg": "インターネットに接続されていないか、ダウンロードに失敗しました。\n\n該当機能を利用するには、以下のリンクから手動でダウンロードし、プログラムのフォルダに入れてください:\n\nhttps://github.com/Expugn/priconne-database",
+        "db_download_cancel_msg": "自動ダウンロードをキャンセルしました。\n\n後で追加するには、以下のリンクから手動でダウンロードし、プログラムのフォルダに入れてください:\n\nhttps://github.com/Expugn/priconne-database"
     }
 }
