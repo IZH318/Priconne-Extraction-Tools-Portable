@@ -1,3 +1,4 @@
+from __future__ import annotations
 import sys
 import logging
 import threading
@@ -8,7 +9,10 @@ import multiprocessing
 from datetime import datetime
 from pathlib import Path
 
-def write_error_log(app_info, context_name, exc_type, exc_value, exc_traceback):
+from typing import Any, Dict, Optional, Type
+from types import TracebackType
+
+def write_error_log(app_info: dict[str, Any], context_name: str, exc_type: type[BaseException] | None, exc_value: BaseException | None, exc_traceback: TracebackType | None) -> str:
     """
     Generates a new timestamped log file and writes the error details in the standard format.
     Returns the absolute path of the generated log file.
@@ -18,7 +22,8 @@ def write_error_log(app_info, context_name, exc_type, exc_value, exc_traceback):
     log_filename = f"ErrorLog_{timestamp_str}.log"
     log_filepath = Path(log_filename).resolve()
 
-    separator = "-" * 64
+    from src.constants import SEPARATOR_LONG
+    separator = SEPARATOR_LONG
 
     # Prepare standard fields
     app_version = app_info.get('APP_VERSION', 'Unknown')
@@ -63,7 +68,7 @@ def write_error_log(app_info, context_name, exc_type, exc_value, exc_traceback):
         
     return str(log_filepath)
 
-def setup_global_logging(tk_root=None, app_info=None, lang_var=None, lang_data_map=None):
+def setup_global_logging(tk_root: Any = None, app_info: dict[str, Any] | None = None, lang_var: Any = None, lang_data_map: dict[str, Any] | None = None) -> None:
     """
     Sets up a global logging system catching all unhandled Python exceptions,
     including those buried inside background threading.Threads and Tkinter callbacks.

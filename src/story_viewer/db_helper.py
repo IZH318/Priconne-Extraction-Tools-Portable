@@ -3,17 +3,19 @@
 Story Viewer의 DB 접근 로직을 집중 관리하는 모듈.
 이벤트 목록 조회, 이벤트 ID 검색 등 sqlite3 관련 작업을 캡슐화합니다.
 """
+from __future__ import annotations
 import os
 import sqlite3
+from typing import Any
 
 
-def _get_db_path(db_info):
+def _get_db_path(db_info: dict[str, Any]) -> str:
     """DB 정보 딕셔너리에서 절대 경로를 반환합니다."""
     script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     return os.path.join(script_dir, db_info['db_path'])
 
 
-def fetch_event_names(db_info):
+def fetch_event_names(db_info: dict[str, Any]) -> list[str]:
     """
     이벤트 이름 목록을 DB에서 조회하여 반환합니다.
     
@@ -34,7 +36,7 @@ def fetch_event_names(db_info):
         return [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
 
 
-def fetch_event_story_ids(db_info, event_name):
+def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
     """
     특정 이벤트 이름에 속하는 스토리 ID 세트를 반환합니다.
     
@@ -56,7 +58,7 @@ def fetch_event_story_ids(db_info, event_name):
         return {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
 
 
-def fetch_event_list_for_export(db_info):
+def fetch_event_list_for_export(db_info: dict[str, Any]) -> tuple[list[str], list[tuple]]:
     """
     내보내기용 이벤트 목록 데이터를 반환합니다.
     

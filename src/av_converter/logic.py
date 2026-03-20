@@ -1,22 +1,28 @@
-# src/av_converter/logic.py
+from __future__ import annotations
 import os
 import sys
 import subprocess
 import shutil
 import urllib.request
 import zipfile
+import threading
 import concurrent.futures
+import queue
 from pathlib import Path
+from typing import Any, Callable
 
-# 로그 영역에서 내용 구분을 위해 사용되는 수평선 문자열.
-SEPARATOR = "-" * 50
+from src.constants import (
+    SEPARATOR_SHORT, AV_TEMP_EXTENSIONS, FFMPEG_URL, 
+    FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME
+)
+from src.subprocess_runner import SubprocessRunner
 
 class ConversionLogic:
     # 시스템 CPU 코어 수의 절반을 최대 작업자 수로 설정 (과도한 부하 방지)
-    cpu_threads = os.cpu_count() or 1
-    MAX_WORKERS = max(1, cpu_threads // 2)
+    cpu_threads: int = os.cpu_count() or 1
+    MAX_WORKERS: int = max(1, cpu_threads // 2)
 
-    def __init__(self, log_queue, base_path):
+    def __init__(self, log_queue: queue.Queue, base_path: Path) -> None:
         """
         ConversionLogic 인스턴스 초기화.
 
@@ -36,16 +42,11 @@ class ConversionLogic:
         try: return os.path.relpath(full_path, self.base_path)
         except (ValueError, TypeError): return str(full_path)
 
-    def _run_subprocess(self, command):
+    def _run_subprocess(self, command: list[str]) -> subprocess.CompletedProcess[str]:
         """외부 프로세스를 실행하고 출력을 캡처하는 헬퍼 함수입니다."""
-        return subprocess.run(
-            command, capture_output=True, text=True,
-            errors='ignore', check=False,
-            # Windows에서 콘솔 창이 뜨는 것을 방지
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
-        )
+        return SubprocessRunner.run(command)
 
-    def _convert_single_video_task(self, usm_file_str, output_dir, usmtoolkit_path):
+    def _convert_single_video_task(self, usm_file_str: str, output_dir: str, usmtoolkit_path: Path) -> tuple[str, list[tuple[str, dict]]]:
         """
         단일 비디오(.usm) 파일을 변환하는 작업자(worker) 태스크.
 
@@ -62,8 +63,7 @@ class ConversionLogic:
         output_path = Path(output_dir)
         final_mp4_path = output_path / (usm_file.stem + ".mp4")
 
-        # 작업 단위별 로그를 리스트에 수집하여 한 번에 GUI로 전송
-        log_entries = [('raw', {'text': SEPARATOR}),
+        log_entries = [('raw', {'text': SEPARATOR_SHORT}),
                        ('conv_log_source', {'path': self._get_relative_path(usm_file)})]
         status = "unknown"
 
@@ -78,14 +78,7 @@ class ConversionLogic:
             command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(output_path.resolve())]
             try:
                 # UsmToolkit 프로세스 실행
-                result = subprocess.run(
-                    command,
-                    cwd=usmtoolkit_dir,
-                    capture_output=True,
-                    text=True,
-                    errors='ignore',
-                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
-                )
+                result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir))
 
                 log_entries.append(('conv_log_result_header', {}))
                 
@@ -110,9 +103,8 @@ class ConversionLogic:
                             log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_log_lines])
                     
                     # 변환 과정에서 생성된 임시 파일 삭제
-                    temp_file_extensions = ['.adx', '.bin', '.m2v', '.wav']
                     temp_file_dir = usm_file.parent
-                    for ext in temp_file_extensions:
+                    for ext in AV_TEMP_EXTENSIONS:
                         temp_file = temp_file_dir / (usm_file.stem + ext)
                         if temp_file.exists():
                             try:
@@ -135,10 +127,10 @@ class ConversionLogic:
                 log_entries.append(('conv_log_result_header', {}))
                 log_entries.append(('conv_log_error_exception', {'error': str(e)}))
 
-        log_entries.append(('raw', {'text': SEPARATOR}))
+        log_entries.append(('raw', {'text': SEPARATOR_SHORT}))
         return status, log_entries
 
-    def run_video_conversion(self, input_paths, output_dir, usmtoolkit_path, cancel_event):
+    def run_video_conversion(self, input_paths: list[str], output_dir: str, usmtoolkit_path: Path | None, cancel_event: threading.Event | None) -> None:
         """비디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
         target_tab = 'video'
         self._log_entry(target_tab, 'conv_start_video')
@@ -180,7 +172,7 @@ class ConversionLogic:
         self._log_entry(target_tab, 'conv_summary_video', total=total_files, success=success_count, skipped=skipped_count, error=error_count)
         self.log_queue.put(('__VIDEO_DONE__',))
 
-    def run_audio_conversion(self, input_paths, output_dir, vgmstream_path, overwrite, cancel_event):
+    def run_audio_conversion(self, input_paths: list[str], output_dir: str, vgmstream_path: Path | None, overwrite: bool, cancel_event: threading.Event | None) -> None:
         """오디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
         target_tab = 'audio'
         self._log_entry(target_tab, 'conv_start_audio')
@@ -219,7 +211,7 @@ class ConversionLogic:
         self._log_entry(target_tab, 'conv_audio_summary_combined', tracks=total_converted_tracks)
         self.log_queue.put(('__AUDIO_DONE__',))
 
-    def _get_stream_count(self, file_path, vgmstream_path):
+    def _get_stream_count(self, file_path: Path | str, vgmstream_path: Path | str) -> int:
         """vgmstream을 이용해 AWB 파일 내의 오디오 스트림 개수를 확인합니다."""
         result = self._run_subprocess([str(vgmstream_path), "-m", str(file_path)])
         if result.returncode != 0: return 0
@@ -229,16 +221,19 @@ class ConversionLogic:
                 except (ValueError, IndexError): return 1
         return 1
 
-    def _get_stream_name(self, file_path, stream_num, vgmstream_path):
+    def _get_stream_name(self, file_path: Path | str, stream_num: int, vgmstream_path: Path | str) -> str:
         """vgmstream을 이용해 특정 스트림의 이름을 가져옵니다."""
         result = self._run_subprocess([str(vgmstream_path), "-m", "-s", str(stream_num), str(file_path)])
-        if result.returncode != 0: return f"track_{stream_num}"
+        if result.returncode != 0:
+            return f"{Path(file_path).stem}_{stream_num:04d}"
         for line in result.stdout.splitlines():
             if line.startswith("stream name:"):
-                return line.split(":")[1].strip().split(';')[0].strip()
-        return f"track_{stream_num}"
+                name = line.split(":", 1)[1].strip().split(';')[0].strip()
+                if name:
+                    return name
+        return f"{Path(file_path).stem}_{stream_num:04d}"
 
-    def _convert_audio_container(self, item_path_str, output_dir, vgmstream_path, overwrite):
+    def _convert_audio_container(self, item_path_str: str, output_dir: str, vgmstream_path: Path | str, overwrite: bool) -> tuple[int, list[tuple[str, dict]]]:
         """
         단일 오디오 컨테이너(.awb) 파일 내의 모든 스트림을 변환하는 작업자 태스크.
 
@@ -246,7 +241,7 @@ class ConversionLogic:
             tuple: (변환된 트랙 수, 로그 항목 리스트)
         """
         item_path = Path(item_path_str)
-        log_entries = [('raw', {'text': SEPARATOR}),
+        log_entries = [('raw', {'text': SEPARATOR_SHORT}),
                        ('conv_log_source', {'path': self._get_relative_path(item_path)}),
                        ('raw', {'text': ''}),
                        ('conv_log_result_header', {})]
@@ -284,17 +279,38 @@ class ConversionLogic:
                     log_entries.append(('conv_log_details_error_header', {}))
                     log_entries.extend([('raw', {'text': f"      > {line}"}) for line in error_output.splitlines()])
 
-        log_entries.append(('raw', {'text': SEPARATOR}))
+        log_entries.append(('raw', {'text': SEPARATOR_SHORT}))
         return total_converted, log_entries
+
+    def preview_single_audio(self, file_path, stream_num, output_path, vgmstream_path):
+        """단일 오디오 스트림을 지정된 임시 경로로 변환합니다 (미리보기용)."""
+        command = [str(vgmstream_path), "-s", str(stream_num), "-o", str(output_path), str(file_path)]
+        result = self._run_subprocess(command)
+        return result.returncode == 0 and Path(output_path).exists()
+
+    def preview_single_video(self, usm_file_str, output_dir, usmtoolkit_path):
+        """단일 비디오를 지정된 임시 경로로 변환합니다 (미리보기용)."""
+        usm_file = Path(usm_file_str)
+        usmtoolkit_dir = usmtoolkit_path.parent
+        output_path = Path(output_dir)
+        final_mp4_path = output_path / (usm_file.stem + ".mp4")
+
+        command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(output_path.resolve())]
+        try:
+            SubprocessRunner.run(command, cwd=str(usmtoolkit_dir))
+            # 변환 후 임시 중간 파일 정리
+            for ext in AV_TEMP_EXTENSIONS:
+                temp_file = usm_file.parent / (usm_file.stem + ext)
+                if temp_file.exists():
+                    try: os.remove(temp_file)
+                    except OSError: pass
+            return final_mp4_path if final_mp4_path.exists() else None
+        except Exception:
+            return None
 
 
 class FFmpegDownloader:
-    # 다운로드 URL 및 파일명 상수
-    FFMPEG_URL = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
-    FFMPEG_ZIP_FILENAME = "ffmpeg_temp.zip"
-    FFMPEG_EXE_NAME = "ffmpeg.exe"
-
-    def __init__(self, log_queue, usmtoolkit_path_parent_dir: Path, get_lang_data_func):
+    def __init__(self, log_queue: queue.Queue, usmtoolkit_path_parent_dir: Path, get_lang_data_func: Callable[[], dict[str, str]]) -> None:
         """
         FFmpegDownloader 인스턴스 초기화.
 
@@ -305,7 +321,7 @@ class FFmpegDownloader:
         """
         self.log_queue = log_queue
         self.download_dir = usmtoolkit_path_parent_dir
-        self.ffmpeg_path = self.download_dir / self.FFMPEG_EXE_NAME
+        self.ffmpeg_path = self.download_dir / FFMPEG_EXE_NAME
         self.get_lang_data = get_lang_data_func
         os.makedirs(self.download_dir, exist_ok=True)
 
@@ -327,7 +343,7 @@ class FFmpegDownloader:
 
     def _actual_download_and_extract(self) -> bool:
         """실제 다운로드 및 압축 해제 로직을 수행합니다."""
-        local_zip_path = self.download_dir / self.FFMPEG_ZIP_FILENAME
+        local_zip_path = self.download_dir / FFMPEG_ZIP_FILENAME
         temp_extract_dir = None
         
         # FFmpeg가 이미 존재하면 작업 생략
@@ -338,8 +354,8 @@ class FFmpegDownloader:
         self._log_entry('ffmpeg_not_found', path=self.download_dir)
         try:
             # 1. 다운로드
-            self._log_entry('ffmpeg_download_start', url=self.FFMPEG_URL)
-            with urllib.request.urlopen(self.FFMPEG_URL) as response, open(local_zip_path, 'wb') as out_file:
+            self._log_entry('ffmpeg_download_start', url=FFMPEG_URL)
+            with urllib.request.urlopen(FFMPEG_URL) as response, open(local_zip_path, 'wb') as out_file:
                 if response.status != 200:
                     raise Exception(f"HTTP Error: {response.status} {response.reason}")
                 shutil.copyfileobj(response, out_file)
@@ -352,7 +368,7 @@ class FFmpegDownloader:
             os.makedirs(temp_extract_dir, exist_ok=True)
             with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
                 # ZIP 파일 내에서 ffmpeg.exe 경로 탐색
-                ffmpeg_internal_path = next((name for name in zip_ref.namelist() if name.endswith(f'/bin/{self.FFMPEG_EXE_NAME}')), None)
+                ffmpeg_internal_path = next((name for name in zip_ref.namelist() if name.endswith(f'/bin/{FFMPEG_EXE_NAME}')), None)
                 if not ffmpeg_internal_path:
                     d = self.get_lang_data()
                     raise Exception(d['ffmpeg_zip_structure_error'])

@@ -87,7 +87,16 @@
         "ffmpeg_exe_not_found_in_zip": "압축 해제 후 '{path}'를 찾을 수 없습니다. ZIP 파일 구조를 확인해주세요.",
         "dialog_select_files": "파일을 선택하세요",
         "dialog_select_folder": "폴더를 선택하세요",
-        "dialog_select_output": "저장할 폴더를 선택하세요"
+        "dialog_select_output": "저장할 폴더를 선택하세요",
+        "preview_menu": "미리보기",
+        "preview_converting": "변환 중...",
+        "preview_error": "미리보기 실패: {error}",
+        "preview_track_title": "트랙 선택",
+        "preview_track_col_num": "트랙 번호",
+        "preview_track_col_name": "트랙 이름",
+        "preview_play_btn": "재생",
+        "preview_no_tool_video": "UsmToolkit.exe를 찾을 수 없어 비디오 미리보기를 실행할 수 없습니다.",
+        "preview_no_tool_audio": "vgmstream(test.exe)을 찾을 수 없어 오디오 미리보기를 실행할 수 없습니다."
     },
     "en": {
         "program_started": "Program started.",
@@ -177,7 +186,16 @@
         "ffmpeg_exe_not_found_in_zip": "Could not find '{path}' after extraction. Please check the ZIP file structure.",
         "dialog_select_files": "Select files",
         "dialog_select_folder": "Select a folder",
-        "dialog_select_output": "Select an output folder"
+        "dialog_select_output": "Select an output folder",
+        "preview_menu": "Preview",
+        "preview_converting": "Converting...",
+        "preview_error": "Preview failed: {error}",
+        "preview_track_title": "Select Track",
+        "preview_track_col_num": "#",
+        "preview_track_col_name": "Track Name",
+        "preview_play_btn": "Play",
+        "preview_no_tool_video": "Cannot preview video: UsmToolkit.exe not found.",
+        "preview_no_tool_audio": "Cannot preview audio: vgmstream (test.exe) not found."
     },
     "ja": {
         "program_started": "プログラムが起動しました。",
@@ -264,6 +282,15 @@
         "ffmpeg_exe_not_found_in_zip": "展開後、'{path}'が見つかりませんでした。ZIPファイルの構造を確認してください。",
         "dialog_select_files": "ファイルを選択してください",
         "dialog_select_folder": "フォルダを選択してください",
-        "dialog_select_output": "保存先フォルダを選択してください"
+        "dialog_select_output": "保存先フォルダを選択してください",
+        "preview_menu": "プレビュー",
+        "preview_converting": "変換中...",
+        "preview_error": "プレビュー失敗: {error}",
+        "preview_track_title": "トラック選択",
+        "preview_track_col_num": "トラック番号",
+        "preview_track_col_name": "トラック名",
+        "preview_play_btn": "再生",
+        "preview_no_tool_video": "UsmToolkit.exeが見つからないため、ビデオプレビューを実行できません。",
+        "preview_no_tool_audio": "vgmstream(test.exe)が見つからないため、オーディオプレビューを実行できません。"
     }
 }

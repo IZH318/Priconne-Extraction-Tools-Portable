@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/av_converter/gui.py
 import os
 import sys
@@ -8,11 +9,15 @@ import queue
 import threading
 from pathlib import Path
 from tkinterdnd2 import DND_FILES
-from .logic import ConversionLogic, FFmpegDownloader, SEPARATOR
+import tempfile
+import shutil
+from typing import Any
+from .logic import ConversionLogic, FFmpegDownloader
+from src.constants import SEPARATOR_LONG as SEPARATOR
 from .languages import LANGUAGES
 
 class App(ttk.Frame):
-    def __init__(self, master, app_lang_var=None, about_info=None):
+    def __init__(self, master: Any, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
         # 초기화 (사용하지 않는 언어 키 정리)
         for lang in LANGUAGES.values(): lang.pop('env_check_footer', None)
         super().__init__(master)
@@ -48,6 +53,9 @@ class App(ttk.Frame):
         self._setup_ui()
         self._log_initial_status()
         self._process_log_queue()
+
+        # 미리보기 전용 임시 디렉토리 생성
+        self._preview_temp_dir = tempfile.mkdtemp(prefix='priconne_preview_')
     
     def _on_language_change_event(self, *args):
         self.switch_language(self.lang_var.get())
@@ -320,14 +328,217 @@ class App(ttk.Frame):
         clear_cmd = lambda: self._clear_list(full_paths, filenames_var, tab_type)
         menu.add_command(label="", command=clear_cmd)
         
+        menu.add_separator()
+        preview_cmd = lambda: self._preview_selected(listbox, full_paths, tab_type)
+        menu.add_command(label="", command=preview_cmd)
+        
         def show_menu(event):
             d = self.lang_data
             menu.entryconfig(0, label=d['remove_selected'], state="normal" if listbox.curselection() else "disabled")
             menu.entryconfig(1, label=d['remove_all'], state="normal" if listbox.size() > 0 else "disabled")
+            # index 2 = separator
+            menu.entryconfig(3, label=d.get('preview_menu', 'Preview'), state="normal" if listbox.curselection() else "disabled")
             menu.post(event.x_root, event.y_root)
             
         listbox.bind("<Button-3>", show_menu)
         listbox.bind("<Delete>", lambda e: self._remove_selected_from_list(listbox, full_paths, filenames_var, tab_type))
+
+    def _preview_selected(self, listbox, full_paths, tab_type):
+        """선택된 항목을 미리보기합니다."""
+        selection = listbox.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        if idx >= len(full_paths):
+            return
+        file_path = full_paths[idx]
+        
+        if tab_type == 'audio':
+            self._preview_audio(file_path)
+        else:
+            self._preview_video(file_path)
+
+    def _preview_audio(self, file_path):
+        """오디오 파일을 분석 후 단일 트랙이면 바로 재생, 멀티 트랙이면 선택 목록을 표시합니다."""
+        d = self.lang_data
+        if not self.vgmstream_path:
+            from tkinter import messagebox
+            messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_audio', 'vgmstream not found.'), parent=self.master)
+            return
+        
+        # 진행 상태 팝업 (스트림 분석 중)
+        popup = tk.Toplevel(self.master)
+        popup.title(d.get('preview_menu', 'Preview'))
+        win_w, win_h = 300, 80
+        sx = popup.winfo_screenwidth()
+        sy = popup.winfo_screenheight()
+        popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
+        popup.transient(self.master)
+        popup.grab_set()
+        popup.resizable(False, False)
+        
+        ttk.Label(popup, text=d.get('preview_converting', 'Converting...')).pack(pady=(15, 5))
+        progress = ttk.Progressbar(popup, mode='indeterminate')
+        progress.pack(fill='x', padx=20, pady=(0, 10))
+        progress.start(15)
+        
+        def analyze_worker():
+            stream_count = self.logic._get_stream_count(file_path, self.vgmstream_path)
+            self.master.after(0, lambda: on_analyze_done(stream_count))
+        
+        def on_analyze_done(stream_count):
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+            
+            if stream_count == 0:
+                from tkinter import messagebox
+                messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_error', 'Preview failed: {error}').format(error='No streams'), parent=self.master)
+                return
+            
+            if stream_count == 1:
+                self._play_audio_stream(file_path, 1)
+            else:
+                self._show_track_selector(file_path, stream_count)
+        
+        threading.Thread(target=analyze_worker, daemon=True).start()
+
+    def _play_audio_stream(self, file_path, stream_num):
+        """단일 오디오 스트림을 임시 파일로 변환 후 재생합니다."""
+        d = self.lang_data
+        
+        # 진행 상태 팝업
+        popup = tk.Toplevel(self.master)
+        popup.title(d.get('preview_menu', 'Preview'))
+        win_w, win_h = 300, 80
+        sx = popup.winfo_screenwidth()
+        sy = popup.winfo_screenheight()
+        popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
+        popup.transient(self.master)
+        popup.grab_set()
+        popup.resizable(False, False)
+        
+        ttk.Label(popup, text=d.get('preview_converting', 'Converting...')).pack(pady=(15, 5))
+        progress = ttk.Progressbar(popup, mode='indeterminate')
+        progress.pack(fill='x', padx=20, pady=(0, 10))
+        progress.start(15)
+        
+        temp_wav = os.path.join(self._preview_temp_dir, f"preview_{os.path.basename(file_path)}_{stream_num}.wav")
+        if os.path.exists(temp_wav):
+            try: os.remove(temp_wav)
+            except OSError: pass
+        
+        def convert_worker():
+            success = self.logic.preview_single_audio(file_path, stream_num, temp_wav, self.vgmstream_path)
+            self.master.after(0, lambda: on_done(success))
+        
+        def on_done(success):
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+            if success:
+                os.startfile(temp_wav)
+            else:
+                from tkinter import messagebox
+                messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_error', 'Preview failed: {error}').format(error='Conversion failed'), parent=self.master)
+        
+        threading.Thread(target=convert_worker, daemon=True).start()
+
+    def _show_track_selector(self, file_path, stream_count):
+        """멀티 스트림 오디오의 트랙 선택 팝업을 표시합니다."""
+        d = self.lang_data
+        popup = tk.Toplevel(self.master)
+        popup.title(d.get('preview_track_title', 'Select Track'))
+        win_w, win_h = 450, 400
+        sx = popup.winfo_screenwidth()
+        sy = popup.winfo_screenheight()
+        popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
+        popup.transient(self.master)
+        popup.grab_set()
+        
+        frame = ttk.Frame(popup)
+        frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        columns = ('num', 'name')
+        tree = ttk.Treeview(frame, columns=columns, show='headings', selectmode='browse')
+        tree.heading('num', text=d.get('preview_track_col_num', '#'))
+        tree.heading('name', text=d.get('preview_track_col_name', 'Track Name'), anchor='w')
+        tree.column('num', width=80, minwidth=60, stretch=False, anchor='center')
+        tree.column('name', width=400, minwidth=200, stretch=True, anchor='w')
+        
+        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        tree.config(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side='right', fill='y')
+        tree.pack(side='left', fill='both', expand=True)
+        
+        # 트랙 이름 수집 및 표시
+        stream_map = {}  # tree item id → stream number
+        for i in range(1, stream_count + 1):
+            name = self.logic._get_stream_name(file_path, i, self.vgmstream_path)
+            item_id = tree.insert('', tk.END, values=(i, name))
+            stream_map[item_id] = i
+        
+        def on_double_click(event):
+            item_id = tree.focus()
+            if item_id in stream_map:
+                self._play_audio_stream(file_path, stream_map[item_id])
+        
+        tree.bind('<Double-Button-1>', on_double_click)
+
+    def _preview_video(self, file_path):
+        """비디오 파일을 임시 변환 후 재생합니다."""
+        d = self.lang_data
+        if not self.usmtoolkit_path:
+            from tkinter import messagebox
+            messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_video', 'UsmToolkit not found.'), parent=self.master)
+            return
+        
+        # 진행 상태 팝업
+        popup = tk.Toplevel(self.master)
+        popup.title(d.get('preview_menu', 'Preview'))
+        win_w, win_h = 300, 80
+        sx = popup.winfo_screenwidth()
+        sy = popup.winfo_screenheight()
+        popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
+        popup.transient(self.master)
+        popup.grab_set()
+        popup.resizable(False, False)
+        
+        ttk.Label(popup, text=d.get('preview_converting', 'Converting...')).pack(pady=(15, 5))
+        progress = ttk.Progressbar(popup, mode='indeterminate')
+        progress.pack(fill='x', padx=20, pady=(0, 10))
+        progress.start(15)
+        
+        import time
+        temp_dir = os.path.join(self._preview_temp_dir, f"video_{os.path.basename(file_path)}_{int(time.time() * 1000)}")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        def convert_worker():
+            result_path = self.logic.preview_single_video(file_path, temp_dir, self.usmtoolkit_path)
+            self.master.after(0, lambda: on_convert_done(result_path))
+        
+        def on_convert_done(result_path):
+            try:
+                popup.destroy()
+            except tk.TclError:
+                pass
+            if result_path:
+                os.startfile(str(result_path))
+            else:
+                from tkinter import messagebox
+                messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_error', 'Preview failed: {error}').format(error='Conversion failed'), parent=self.master)
+        
+        threading.Thread(target=convert_worker, daemon=True).start()
+
+    def _cleanup_preview_temp(self):
+        """미리보기 임시 디렉토리를 정리합니다."""
+        if hasattr(self, '_preview_temp_dir') and os.path.exists(self._preview_temp_dir):
+            try:
+                shutil.rmtree(self._preview_temp_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     def _set_ui_state(self, widgets, state):
         """탭 내의 모든 컨트롤의 상태(활성화/비활성화)를 일괄 변경합니다."""

@@ -1,10 +1,11 @@
-# src/renamer/gui.py
+from __future__ import annotations
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, ttk
 from datetime import datetime
 import queue
 import threading
 import os
+from typing import Any
 
 from .languages import LANGUAGES
 from .logic import RenameHashedFile, SEPARATOR
@@ -20,7 +21,7 @@ class FileRenamerGUI(ttk.Frame):
         'website': "https://github.com/IZH318",
     }
 
-    def __init__(self, master, app_lang_var=None):
+    def __init__(self, master: Any, app_lang_var: tk.StringVar | None = None) -> None:
         super().__init__(master)
         self.pack(fill=tk.BOTH, expand=True)
 
@@ -54,20 +55,20 @@ class FileRenamerGUI(ttk.Frame):
         self.create_widgets()
         self.update_ui_language(is_initial_setup=True)
 
-    def get_string(self, key, **kwargs):
+    def get_string(self, key: str, **kwargs: Any) -> str:
         return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
 
-    def set_language(self, lang_code):
+    def set_language(self, lang_code: str) -> None:
         if self.current_lang != lang_code:
             self.current_lang = lang_code
             self.file_processor.set_get_string_func(self.get_string)
             self.update_ui_language()
 
-    def on_language_change(self, *args):
+    def on_language_change(self, *args: Any) -> None:
         new_lang = self.lang_var.get()
         self.set_language(new_lang)
 
-    def update_ui_language(self, is_initial_setup=False):
+    def update_ui_language(self, is_initial_setup: bool = False) -> None:
         self.start_button.config(text=self.get_string('start_button'))
         
         if not self.is_processing:
@@ -162,10 +163,10 @@ class FileRenamerGUI(ttk.Frame):
         self.log_area.configure(state='disabled')
         self.log_area.see(tk.END)
 
-    def _add_raw_text(self, text):
+    def _add_raw_text(self, text: str) -> None:
         self.log_data.append((None, text, None))
 
-    def _add_log_event(self, key, kwargs=None):
+    def _add_log_event(self, key: str, kwargs: dict[str, Any] | None = None) -> None:
         if kwargs is None:
             kwargs = {}
         timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]

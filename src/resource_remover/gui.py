@@ -1,10 +1,11 @@
-# src/resource_remover/gui.py
+from __future__ import annotations
 import tkinter as tk
 import os
 import threading
 import queue
 from tkinter import ttk, messagebox
 from pathlib import Path
+from typing import Any
 
 from .languages import LANGUAGES
 from .logic import ResourceRemoverLogic
@@ -26,7 +27,7 @@ EXTENSION_CATEGORIES = [
 ]
 
 class ResourceRemoverApp(ttk.Frame):
-    def __init__(self, master, app_lang_var=None, about_info=None):
+    def __init__(self, master: Any, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
         super().__init__(master)
         self.pack(fill=tk.BOTH, expand=True)
 

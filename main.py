@@ -12,12 +12,10 @@ from src.story_viewer import StoryViewerApp
 from src.resource_remover import ResourceRemoverApp
 from src.logger import setup_global_logging
 
-# 전역 상수 설정
-APP_VERSION = "3.0.0"
-APP_LAST_UPDATE = "2026-03-17"
-APP_DEVELOPER = "(Github) IZH318"
-APP_WEBSITE = "https://github.com/IZH318"
-APP_COPYRIGHT_YEAR = "2026"
+from src.constants import (
+    APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, 
+    APP_WEBSITE, APP_COPYRIGHT_YEAR
+)
 
 # 모든 모듈이 공유하는 중앙 프로그램 정보 (DRY 원칙)
 APP_ABOUT_INFO = {
@@ -185,4 +183,13 @@ class MainLauncher(TkinterDnD.Tk):
 if __name__ == '__main__':
     # freeze_support 등 multiprocessing 초기화 코드가 필요할 수 있으나 현재는 패스
     app = MainLauncher()
+
+    def _on_app_closing():
+        """앱 종료 시 미리보기 임시 파일을 정리합니다."""
+        # AV Converter 미리보기 임시 파일 정리
+        if hasattr(app, 'app3') and hasattr(app.app3, '_cleanup_preview_temp'):
+            app.app3._cleanup_preview_temp()
+        app.destroy()
+
+    app.protocol("WM_DELETE_WINDOW", _on_app_closing)
     app.mainloop()

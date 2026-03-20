@@ -1,26 +1,28 @@
-# src/story_viewer/gui.py
+from __future__ import annotations
 import os
 import threading
 import queue
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font
+from typing import Any
 from datetime import datetime
 
 from .languages import LANGUAGES
 from .windows_search import SearchWindow
 from .windows_export import ExportWindow
-from .logic import StoryDataLoader, StoryFormatter
+from .logic import StoryDataLoader, StoryFormatter, LRUCache
 from . import db_helper
+from src.constants import STORY_CACHE_MAX_SIZE
 
 class StoryViewerApp(ttk.Frame):
-    def __init__(self, master, app_lang_var=None, about_info=None):
+    def __init__(self, master: Any, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
         super().__init__(master)
         self.pack(fill=tk.BOTH, expand=True)
 
         self.master = master
         self.about_info = about_info or {}
         self.all_files = {}
-        self.story_data_cache = {}
+        self.story_data_cache = LRUCache(max_size=STORY_CACHE_MAX_SIZE)
         self.search_data = {}
         self.file_titles = {}
         self.display_name_to_filename = {}
@@ -286,7 +288,8 @@ class StoryViewerApp(ttk.Frame):
 
     def _load_and_analyze_thread(self, paths, folder_path):
         import re
-        temp_all_files, temp_story_cache, invalid_files = {}, {}, []
+        temp_all_files, invalid_files = {}, []
+        temp_story_cache = LRUCache(max_size=STORY_CACHE_MAX_SIZE)
         
         file_candidates = {}
         pattern = re.compile(r'^storydata_\d{7}\.json$')
@@ -322,6 +325,8 @@ class StoryViewerApp(ttk.Frame):
         file_list_to_process.sort()
         
         total_files = len(file_list_to_process)
+        unique_char_names, unique_bgms, unique_bgs, temp_file_titles = set(), set(), set(), {}
+
         for i, path in enumerate(file_list_to_process):
             self.task_queue.put(lambda i=i, t=total_files: self._update_status_bar('status_bar_analyzing', i=i+1, t=t))
             is_valid, data, error_reason = StoryDataLoader.is_valid_storydata(path)
@@ -329,23 +334,21 @@ class StoryViewerApp(ttk.Frame):
             if is_valid:
                 filename = os.path.basename(path)
                 temp_all_files[filename] = path
-                temp_story_cache[filename] = data
+                
+                title = data.get('0', {}).get('title', '').strip()
+                temp_file_titles[filename] = title if title else filename
+                for scene in data.values():
+                    if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
+                    if 'bgm' in scene and (bgm_name := StoryDataLoader.extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
+                    if 'background' in scene and (bg_name := StoryDataLoader.extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
+                
+                temp_story_cache.put(filename, data)
             else:
                 invalid_files.append((path, error_reason))
         
         if not temp_all_files:
             self.task_queue.put(lambda: self._finish_loading(None, invalid_files))
             return
-
-        unique_char_names, unique_bgms, unique_bgs, temp_file_titles = set(), set(), set(), {}
-
-        for filename, data in temp_story_cache.items():
-            title = data.get('0', {}).get('title', '').strip()
-            temp_file_titles[filename] = title if title else filename
-            for scene in data.values():
-                if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
-                if 'bgm' in scene and (bgm_name := StoryDataLoader.extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
-                if 'background' in scene and (bg_name := StoryDataLoader.extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
 
         temp_search_data = {
             'filenames': sorted(list(temp_all_files.keys())), 

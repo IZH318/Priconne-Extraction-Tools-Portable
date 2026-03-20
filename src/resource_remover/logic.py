@@ -1,15 +1,18 @@
-# src/resource_remover/logic.py
+from __future__ import annotations
 import os
 from pathlib import Path
 from datetime import datetime
 import json
+from typing import List, Tuple, Sequence
 from send2trash import send2trash
 
+from src.constants import SEPARATOR_SHORT
+
 class ResourceRemoverLogic:
-    def __init__(self, base_path="."):
+    def __init__(self, base_path: str | Path = ".") -> None:
         self.base_path = Path(base_path).resolve()
 
-    def count_resources(self, extensions_to_remove):
+    def count_resources(self, extensions_to_remove: Sequence[str]) -> List[Path]:
         """
         Counts the number of files matching the given extensions without deleting them.
         Returns a list of Path objects for the matching files.
@@ -24,7 +27,7 @@ class ResourceRemoverLogic:
                     found_files.append(Path(root) / file)
         return found_files
 
-    def remove_resources(self, target_files, extensions_to_remove, use_trash=True):
+    def remove_resources(self, target_files: Sequence[Path | str], extensions_to_remove: Sequence[str], use_trash: bool = True) -> Tuple[int, List[str], str]:
         """
         Removes the provided resource files and returns the number of deleted files.
         Raises an Exception if a critical error occurs.
@@ -55,12 +58,12 @@ class ResourceRemoverLogic:
                     f.write(f"Target Path: {self.base_path}\n")
                     f.write(f"Extensions: {extensions_to_remove}\n")
                     f.write(f"Use Trash: {use_trash}\n")
-                    f.write("-" * 50 + "\n")
+                    f.write(f"{SEPARATOR_SHORT}\n")
                     f.write(f"Successfully processed: {len(deleted_files)} files\n")
                     for p in deleted_files:
                         f.write(f"[SUCCESS] {p}\n")
                     if errors:
-                        f.write("-" * 50 + "\n")
+                        f.write(f"{SEPARATOR_SHORT}\n")
                         f.write(f"Errors: {len(errors)} files\n")
                         for e in errors:
                             f.write(f"[ERROR] {e}\n")

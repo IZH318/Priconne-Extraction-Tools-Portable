@@ -67,7 +67,17 @@
         "about_label_updated": "최종 업데이트",
         "about_label_license": "라이선스",
         "about_label_developer": "개발자",
-        "about_label_website": "웹 사이트"
+        "about_label_website": "웹 사이트",
+        "browse_assets_menu": "에셋 탐색",
+        "asset_browser_title": "에셋 탐색기 - {filename}",
+        "asset_col_name": "이름",
+        "asset_col_type": "타입",
+        "asset_col_size": "크기",
+        "asset_no_data": "이 에셋에는 미리보기 가능한 데이터가 없습니다.",
+        "preview_text_title": "텍스트 미리보기 - {name}",
+        "preview_image_title": "이미지 미리보기 - {name}",
+        "preview_audio_playing": "오디오 재생 중: {name}",
+        "preview_converting": "처리 중..."
     },
     "en": {
         "window_title": "unity3d File Converter",
@@ -137,7 +147,17 @@
         "about_label_updated": "Updated",
         "about_label_license": "License",
         "about_label_developer": "Developer",
-        "about_label_website": "Website"
+        "about_label_website": "Website",
+        "browse_assets_menu": "Browse Assets",
+        "asset_browser_title": "Asset Browser - {filename}",
+        "asset_col_name": "Name",
+        "asset_col_type": "Type",
+        "asset_col_size": "Size",
+        "asset_no_data": "No previewable data in this asset.",
+        "preview_text_title": "Text Preview - {name}",
+        "preview_image_title": "Image Preview - {name}",
+        "preview_audio_playing": "Playing audio: {name}",
+        "preview_converting": "Processing..."
     },
     "ja": {
         "window_title": "unity3d File Converter",
@@ -205,6 +225,16 @@
         "about_label_updated": "最終更新",
         "about_label_license": "ライセンス",
         "about_label_developer": "開発者",
-        "about_label_website": "ウェブサイト"
+        "about_label_website": "ウェブサイト",
+        "browse_assets_menu": "アセット探索",
+        "asset_browser_title": "アセットブラウザ - {filename}",
+        "asset_col_name": "名前",
+        "asset_col_type": "タイプ",
+        "asset_col_size": "サイズ",
+        "asset_no_data": "このアセットにはプレビュー可能なデータがありません。",
+        "preview_text_title": "テキストプレビュー - {name}",
+        "preview_image_title": "画像プレビュー - {name}",
+        "preview_audio_playing": "オーディオ再生中: {name}",
+        "preview_converting": "処理中..."
     }
 }

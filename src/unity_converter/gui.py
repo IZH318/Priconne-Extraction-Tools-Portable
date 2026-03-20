@@ -1,6 +1,7 @@
-# src/unity_converter/gui.py
+from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, Text, Scrollbar, PanedWindow
+from typing import Any
 import queue
 import threading
 import concurrent.futures
@@ -12,12 +13,12 @@ from tkinterdnd2 import DND_FILES
 
 from .languages import LANGUAGES
 from .extractor import process_single_file, AssetProcessor
+from .asset_browser import AssetBrowserWindow
 
-# 프로그램에서 지원하는 파일 확장자 정의
-SUPPORTED_EXTENSIONS = ('.unity3d',)
+from src.constants import UNITY_SUPPORTED_EXTENSIONS as SUPPORTED_EXTENSIONS
 
 class AssetExtractorApp(ttk.Frame):
-    def __init__(self, master, app_lang_var=None, about_info=None):
+    def __init__(self, master: Any, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
         """
         AssetExtractorApp 인스턴스 초기화.
 
@@ -173,6 +174,8 @@ class AssetExtractorApp(ttk.Frame):
         self.listbox_menu = tk.Menu(self, tearoff=0)
         self.listbox_menu.add_command(label="", command=self._remove_selected_files)
         self.listbox_menu.add_command(label="", command=self._remove_all_files)
+        self.listbox_menu.add_separator()
+        self.listbox_menu.add_command(label="", command=self._open_asset_browser)
         self.file_listbox.bind("<Button-3>", self._show_listbox_menu)
         self.file_listbox.bind("<Button-2>", self._show_listbox_menu)
 
@@ -562,9 +565,26 @@ class AssetExtractorApp(ttk.Frame):
     def _show_listbox_menu(self, event):
         """파일 목록에서 우클릭 시 컨텍스트 메뉴를 표시합니다."""
         if self.is_running: return
-        self.listbox_menu.entryconfig(0, state=tk.NORMAL if self.file_listbox.curselection() else tk.DISABLED)
+        d = LANGUAGES[self.lang.get()]
+        has_selection = bool(self.file_listbox.curselection())
+        self.listbox_menu.entryconfig(0, state=tk.NORMAL if has_selection else tk.DISABLED)
         self.listbox_menu.entryconfig(1, state=tk.NORMAL if self.file_paths else tk.DISABLED)
+        # index 2 = separator
+        self.listbox_menu.entryconfig(3, label=d.get('browse_assets_menu', 'Browse Assets'), state=tk.NORMAL if has_selection else tk.DISABLED)
         self.listbox_menu.post(event.x_root, event.y_root)
+
+    def _open_asset_browser(self):
+        """선택된 파일의 에셋 탐색기를 엽니다."""
+        selection = self.file_listbox.curselection()
+        if not selection:
+            return
+        idx = selection[0]
+        if idx >= len(self.file_paths):
+            return
+        file_path = str(self.file_paths[idx])
+        d = LANGUAGES[self.lang.get()]
+        unity_version = self.unity_version_var.get().strip() or "2021.3.20f1"
+        AssetBrowserWindow(self.winfo_toplevel(), file_path, d, unity_version)
         
     def _select_output_dir(self):
         """'출력 폴더' 대화상자를 열고 선택된 경로를 저장합니다."""

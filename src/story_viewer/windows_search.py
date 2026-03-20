@@ -216,7 +216,7 @@ class SearchWindow(tk.Toplevel):
                 char_type_speaker = lang_dict['char_type_speaker']
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future_to_filename = {
-                        executor.submit(SearchEngine.check_file_for_search, filename, criteria, self.story_data_cache, char_type_search, char_type_speaker): filename 
+                        executor.submit(SearchEngine.check_file_for_search, filename, criteria, self.story_data_cache, char_type_search, char_type_speaker, self.all_files_dict): filename 
                         for filename in initial_matched_files
                     }
                     for future in concurrent.futures.as_completed(future_to_filename):

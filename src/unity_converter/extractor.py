@@ -1,10 +1,11 @@
-# src/unity_converter/extractor.py
+from __future__ import annotations
 import os
 import re
 import json
 import base64
 from struct import unpack, error as struct_error
 from enum import Enum
+from typing import Any
 import UnityPy
 
 
@@ -279,7 +280,7 @@ class AssetProcessor:
     # 기본적으로 비활성화되지만 사용자가 활성화할 수 있는 타입
     OPTIONAL_TYPES = sorted(SKIP_TYPES) + ["Material", "_OTHER_"]
 
-    def __init__(self, file_path, output_path, base_input_path, log_queue, enabled_types=None):
+    def __init__(self, file_path: str, output_path: str, base_input_path: str | None, log_queue: Any, enabled_types: set[str] | None = None) -> None:
         """
         AssetProcessor 인스턴스 초기화.
 
@@ -308,15 +309,15 @@ class AssetProcessor:
         self.env = None # UnityPy 환경 객체
         self.fallback_count = 0 # 오류로 인해 원본(.bin)으로 저장된 에셋 수
 
-    def log(self, message_key, level='INFO', format_args=None):
+    def log(self, message_key: str, level: str = 'INFO', format_args: dict[str, Any] | None = None) -> None:
         """로그 메시지를 통신 큐에 추가합니다."""
         self.log_queue.put(('log', self.base_name, message_key, level, format_args))
 
-    def _sanitize_filename(self, name):
+    def _sanitize_filename(self, name: str) -> str:
         """파일 시스템에서 사용할 수 없는 문자를 '_'로 치환합니다."""
         return re.sub(r'[\\/:*?"<>|]', '_', name)
 
-    def _get_unique_path(self, path, obj_path_id):
+    def _get_unique_path(self, path: str, obj_path_id: int) -> str:
         """파일명 충돌 시 `(#PathID)` 또는 `(count)` 접미사를 붙여 고유한 경로를 생성합니다."""
         if not os.path.exists(path):
             return path
@@ -333,7 +334,7 @@ class AssetProcessor:
                 return final_path
             count += 1
 
-    def _get_export_path(self, obj, extension, data=None, sub_folder=None):
+    def _get_export_path(self, obj: Any, extension: str, data: Any = None, sub_folder: str | None = None) -> str:
         """
         에셋을 저장할 최종 경로를 결정하고 생성합니다.
         
@@ -353,7 +354,7 @@ class AssetProcessor:
         initial_path = os.path.join(dest_folder, f"{sanitized_name}{extension}")
         return self._get_unique_path(initial_path, obj.path_id)
 
-    def process_all_assets(self):
+    def process_all_assets(self) -> int | None:
         """파일 내의 모든 에셋을 순회하며 처리를 시작하는 메인 함수입니다."""
         self.env = UnityPy.load(self.file_path) # 파일 로드
         num_assets = len(self.env.objects)
@@ -374,7 +375,7 @@ class AssetProcessor:
         else:
             self.log('extraction_complete', 'SUCCESS', {'total': num_assets, 'success': extracted_count})
 
-    def _dispatch_asset(self, obj):
+    def _dispatch_asset(self, obj: Any) -> bool:
         """에셋의 타입에 따라 적절한 처리 함수를 호출하는 라우터 역할을 합니다."""
         obj_type = obj.type.name
 
@@ -434,7 +435,7 @@ class AssetProcessor:
                     self.log('json_fallback_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj.type.name, 'error': e2})
         return False
 
-    def _export_raw_data(self, obj):
+    def _export_raw_data(self, obj: Any) -> bool:
         """에셋을 처리할 수 없을 때 원본 바이너리 데이터(.bin)로 저장합니다."""
         try:
             path = self._get_export_path(obj, ".bin")
@@ -451,7 +452,7 @@ class AssetProcessor:
     # UnityPy의 .image 속성이 PIL.Image로 변환해줌.
     # m_Width 체크로 빈 텍스처 크래시 방지.
     # =====================================================================
-    def _export_texture2d(self, obj):
+    def _export_texture2d(self, obj: Any) -> bool:
         """Texture2D 에셋을 .png 파일로 저장합니다."""
         data = obj.parse_as_object()
         if data.m_Width and data.image:
@@ -465,7 +466,7 @@ class AssetProcessor:
     # Sprite는 텍스처의 일부분이며, 별도의 알파 이미지를 가질 수 있음.
     # UnityPy가 자동으로 알파 이미지를 합성하여 .image로 반환함.
     # =====================================================================
-    def _export_sprite(self, obj):
+    def _export_sprite(self, obj: Any) -> bool:
         """Sprite 에셋을 .png 파일로 저장합니다 (알파 합성 포함)."""
         data = obj.parse_as_object()
         if data.image:
@@ -479,7 +480,7 @@ class AssetProcessor:
     # 'storydata_' 접두사를 가진 에셋은 커스텀 바이너리 역직렬화를 시도.
     # m_Script는 UnityPy에서 str로 반환됨.
     # =====================================================================
-    def _export_textasset_dispatch(self, obj):
+    def _export_textasset_dispatch(self, obj: Any) -> bool:
         """TextAsset의 이름에 따라 일반 바이너리 또는 StoryData JSON으로 분기합니다."""
         data = obj.parse_as_object()
         asset_name = data.m_Name or ''
@@ -488,7 +489,7 @@ class AssetProcessor:
         else:
             return self._export_textasset(obj, data)
 
-    def _export_storydata_as_json(self, obj, data):
+    def _export_storydata_as_json(self, obj: Any, data: Any) -> bool:
         """'storydata_'로 시작하는 TextAsset을 JSON으로 역직렬화하여 저장합니다."""
         asset_name = data.m_Name or ''
         
