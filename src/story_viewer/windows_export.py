@@ -1,8 +1,9 @@
+from __future__ import annotations
 # src/story_viewer/windows_export.py
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from .languages import LANGUAGES
+from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -33,7 +34,7 @@ class ToolTip:
         self.tip_window.wm_geometry(f"+{self.x}+{self.y}")
 
         label = tk.Label(self.tip_window, text=self.text, background="#ffffe0", relief=tk.SOLID, borderwidth=1,
-                         font=("TkDefaultFont", 10, "normal"))
+                         font="TkDefaultFont")
         label.pack(ipadx=1)
 
     def hide_tip(self):
@@ -45,11 +46,10 @@ class ToolTip:
         self.tip_window = None
 
 class ExportWindow(tk.Toplevel):
-    def __init__(self, app, all_files_dict, story_data_cache, search_data, db_status, server_db_info):
+    def __init__(self, app, all_files_dict, search_data, db_status, server_db_info):
         super().__init__(app.master)
         self.app = app
         self.all_files_dict = all_files_dict
-        self.story_data_cache = story_data_cache
         self.search_data = search_data
         self.db_status = db_status
         self.server_db_info = server_db_info
@@ -127,10 +127,7 @@ class ExportWindow(tk.Toplevel):
 
         self.cb_event_list_jp = ttk.Checkbutton(self.event_list_group_frame, text="", variable=self.export_options['event_list_jp'])
         self.cb_event_list_jp.pack(anchor="w", pady=2)
-        try:
-            lang_dict = LANGUAGES[self.app.lang_var.get()]
-        except KeyError:
-            lang_dict = LANGUAGES['ko']
+        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
         
         if not self.db_status.get('JP', False):
             self.cb_event_list_jp.tooltip = ToolTip(self.cb_event_list_jp, text=lang_dict['export_db_not_found_tooltip'])
@@ -178,10 +175,7 @@ class ExportWindow(tk.Toplevel):
             self.export_options['event_list_kr'].set(False)
 
     def _update_ui_text(self):
-        try:
-            lang_dict = LANGUAGES[self.app.lang_var.get()]
-        except KeyError:
-            lang_dict = LANGUAGES['ko']
+        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
         self.title(lang_dict['export_window_title'])
         self.options_frame.config(text=lang_dict['export_type_frame'])
         
@@ -209,10 +203,7 @@ class ExportWindow(tk.Toplevel):
             self.cb_event_list_kr.tooltip.text = lang_dict['export_db_not_found_tooltip']
 
     def start_export(self):
-        try:
-            lang_dict = LANGUAGES[self.app.lang_var.get()]
-        except KeyError:
-            lang_dict = LANGUAGES['ko']
+        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
         selected_options = {k: v.get() for k, v in self.export_options.items()}
         selected_options['story_data_scope'] = self.story_data_scope.get() if selected_options['story_data'] else None
         actual_selected_exports = {k: v for k,v in selected_options.items() if k not in ['story_data_scope', 'event_list_master']}
@@ -225,7 +216,7 @@ class ExportWindow(tk.Toplevel):
         if not output_folder:
             return
 
-        self.app._update_status_bar('status_bar_export_prep')
+        self.app.view.update_status_bar('status_bar_export_prep')
         
         thread = threading.Thread(target=self.app._export_master_thread, args=(selected_options, output_folder))
         thread.daemon = True

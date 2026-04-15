@@ -33,13 +33,18 @@ class AssetBrowserWindow(tk.Toplevel):
         "MovieTexture": ".ogv", "VideoClip": ".mp4",
     }
 
-    def __init__(self, master: Any, file_path: str, lang_dict: dict[str, str], unity_version: str = "2021.3.20f1") -> None:
+    def __init__(self, master: Any, file_path: str, lang_dict: dict[str, str], unity_version: str = "2021.3.20f1", app_temp_dir: str | None = None) -> None:
         super().__init__(master)
         self.file_path = file_path
         self.lang_dict = lang_dict
         self.unity_version = unity_version
         self._asset_map = {}  # tree item id → (obj, type_name)
-        self._preview_temp_dir = tempfile.mkdtemp(prefix='priconne_asset_preview_')
+        
+        if app_temp_dir:
+            self._preview_temp_dir = os.path.join(app_temp_dir, f"asset_browser_{id(self)}")
+            os.makedirs(self._preview_temp_dir, exist_ok=True)
+        else:
+            self._preview_temp_dir = tempfile.mkdtemp(prefix='priconne_asset_preview_')
 
         filename = os.path.basename(file_path)
         self.title(lang_dict.get('asset_browser_title', 'Asset Browser - {filename}').format(filename=filename))
@@ -86,8 +91,8 @@ class AssetBrowserWindow(tk.Toplevel):
         try:
             config.FALLBACK_UNITY_VERSION = self.unity_version
             env = UnityPy.load(self.file_path)
-        except Exception as e:
-            messagebox.showerror("Error", str(e), parent=self)
+        except (OSError, ValueError, RuntimeError) as e:
+            messagebox.showerror(self.lang_dict.get('asset_error_title', 'Error'), str(e), parent=self)
             return
 
         group_nodes = {}
@@ -103,7 +108,7 @@ class AssetBrowserWindow(tk.Toplevel):
             try:
                 data = obj.parse_as_object()
                 name = getattr(data, 'm_Name', '') or f"PathID_{obj.path_id}"
-            except Exception:
+            except AttributeError:
                 name = f"PathID_{obj.path_id}"
 
             # 크기 계산
@@ -115,7 +120,7 @@ class AssetBrowserWindow(tk.Toplevel):
                     size_str = f"{size / 1024:.1f} KB"
                 else:
                     size_str = f"{size} B"
-            except Exception:
+            except AttributeError:
                 size_str = "?"
 
             item_id = self.tree.insert(group_nodes[group_name], 'end',
@@ -133,8 +138,8 @@ class AssetBrowserWindow(tk.Toplevel):
         try:
             data = obj.parse_as_object()
             name = getattr(data, 'm_Name', '') or f"PathID_{obj.path_id}"
-        except Exception as e:
-            messagebox.showerror("Error", str(e), parent=self)
+        except (AttributeError, ValueError) as e:
+            messagebox.showerror(self.lang_dict.get('asset_error_title', 'Error'), str(e), parent=self)
             return
 
         # 진행 상태 팝업
@@ -164,7 +169,7 @@ class AssetBrowserWindow(tk.Toplevel):
                     self._export_text(data, name)
                 else:
                     self._export_raw(obj, data, name, type_name)
-            except Exception as e:
+            except (OSError, ValueError, TypeError) as e:
                 error = e
             self.after(0, lambda: on_done(error))
 
@@ -174,7 +179,7 @@ class AssetBrowserWindow(tk.Toplevel):
             except tk.TclError:
                 pass
             if error:
-                messagebox.showerror("Error", str(error), parent=self)
+                messagebox.showerror(self.lang_dict.get('asset_error_title', 'Error'), str(error), parent=self)
 
         threading.Thread(target=export_worker, daemon=True).start()
 
@@ -186,7 +191,7 @@ class AssetBrowserWindow(tk.Toplevel):
         """이미지 에셋을 .png로 추출하여 OS 기본 프로그램으로 엽니다."""
         img = data.image
         if img is None:
-            messagebox.showinfo("Preview", self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
+            messagebox.showinfo(self.lang_dict.get('asset_preview_title', 'Preview'), self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
             return
 
         safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
@@ -197,7 +202,7 @@ class AssetBrowserWindow(tk.Toplevel):
     def _export_audio(self, data, name):
         """오디오 에셋을 추출하여 OS 기본 프로그램으로 엽니다."""
         if not data.samples:
-            messagebox.showinfo("Preview", self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
+            messagebox.showinfo(self.lang_dict.get('asset_preview_title', 'Preview'), self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
             return
 
         safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
@@ -243,7 +248,7 @@ class AssetBrowserWindow(tk.Toplevel):
         self._open_with_os(temp_path)
 
     def _on_close(self):
-        """창 종료 시 임시 파일을 정리합니다."""
+        """창 종료 시 내부 임시 폴더를 정리합니다."""
         if os.path.exists(self._preview_temp_dir):
             try:
                 shutil.rmtree(self._preview_temp_dir, ignore_errors=True)

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # src/story_viewer/windows_search.py
 import os
 import threading
@@ -6,15 +7,15 @@ import sqlite3
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-from .languages import LANGUAGES
+from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
+from src.queue_events import ActionEvent
 from .logic import SearchEngine
 
 class SearchWindow(tk.Toplevel):
-    def __init__(self, app, all_files_dict, story_data_cache, search_callback, search_data, db_status, server_db_info):
+    def __init__(self, app, all_files_dict, search_callback, search_data, db_status, server_db_info):
         super().__init__(app.master)
         self.app = app
         self.all_files_dict = all_files_dict
-        self.story_data_cache = story_data_cache
         self.search_callback = search_callback
         self.search_data = search_data
         self.db_status = db_status
@@ -115,10 +116,7 @@ class SearchWindow(tk.Toplevel):
         self._update_ui_text()
 
     def _update_ui_text(self):
-        try:
-            lang_dict = LANGUAGES[self.app.lang_var.get()]
-        except KeyError:
-            lang_dict = LANGUAGES['ko']
+        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
         
         self.title(lang_dict['search_window_title'])
         self.criteria_frame.config(text=lang_dict['basic_search_criteria_frame'])
@@ -147,10 +145,7 @@ class SearchWindow(tk.Toplevel):
     def _on_server_selection_change(self):
         selected_server = self.server_var.get()
         db_info = self.server_db_info.get(selected_server)
-        try:
-            lang_dict = LANGUAGES[self.app.lang_var.get()]
-        except KeyError:
-            lang_dict = LANGUAGES['ko']
+        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
         
         self.event_combobox['values'] = []
         self.search_vars['event_name'].set('')
@@ -165,76 +160,79 @@ class SearchWindow(tk.Toplevel):
             from . import db_helper
             event_names = db_helper.fetch_event_names(db_info)
             self.event_combobox['values'] = event_names
-        except Exception as e:
+        except sqlite3.Error as e:
             messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
             self.event_combobox.config(state='disabled')
 
     def start_search(self):
-        self.app._update_status_bar('status_searching')
+        self.app.view.update_status_bar('status_searching')
         criteria = {key: var.get() for key, var in self.search_vars.items() if var.get()}
         server = self.server_var.get()
-        # destroy() 전에 Tk 변수 값을 메인 스레드에서 미리 캡처
+        # destroy() 전에 모든 공유 참조 및 Tk 변수 값을 메인 스레드에서 미리 캡처
         char_type_value = self.search_vars['char_type'].get()
-        
-        thread = threading.Thread(target=self._search_thread, args=(criteria, server, char_type_value))
-        thread.daemon = True
-        thread.start()
+        captured_refs = {
+            'app': self.app,
+            'all_files_dict': self.all_files_dict,
+            'search_callback': self.search_callback,
+            'db_status': self.db_status,
+            'server_db_info': self.server_db_info,
+            'lang_var_value': self.app.lang_var.get(),
+        }
         
         self.destroy()
+        
+        thread = threading.Thread(target=self._search_thread, args=(criteria, server, char_type_value, captured_refs))
+        thread.daemon = True
+        thread.start()
 
-    def _search_thread(self, criteria, server, char_type_value):
-        try:
-            lang_dict = LANGUAGES[self.app.lang_var.get()]
-        except KeyError:
-            lang_dict = LANGUAGES['ko']
+    def _search_thread(self, criteria, server, char_type_value, refs):
+        from . import db_helper
+        app = refs['app']
+        all_files_dict = refs['all_files_dict']
+        search_callback = refs['search_callback']
+        db_status = refs['db_status']
+        server_db_info = refs['server_db_info']
+        lang_dict = LANGUAGES.get(refs['lang_var_value'], LANGUAGES['ko'])
             
         try:
-            initial_matched_files = set(self.all_files_dict.keys())
+            initial_matched_files = set(all_files_dict.keys())
 
             if 'event_name' in criteria:
                 selected_event_name = criteria.pop('event_name')
-                db_info = self.server_db_info.get(server)
+                db_info = server_db_info.get(server)
                 
-                if db_info and self.db_status.get(server):
-                    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-                    db_path = os.path.join(script_dir, db_info['db_path'])
+                if db_info and db_status.get(server):
                     try:
-                        with sqlite3.connect(db_path) as conn:
-                            cursor = conn.cursor()
-                            query = f"SELECT \"{db_info['event_id_col_details']}\" FROM \"{db_info['event_details_table']}\" WHERE \"{db_info['event_info_col_details']}\" LIKE ?"
-                            cursor.execute(query, (f"{selected_event_name}%",))
-                            event_story_ids = {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
-                            initial_matched_files.intersection_update(event_story_ids)
+                        event_story_ids = db_helper.fetch_event_story_ids(db_info, selected_event_name)
+                        initial_matched_files.intersection_update(event_story_ids)
                     except sqlite3.Error as e:
-                        self.app.task_queue.put(lambda exc=e: messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=exc), parent=self.app.master))
+                        app.task_queue.put(ActionEvent(action=lambda exc=e: messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=exc), parent=app.master)))
             
             final_matched_files = []
             if not criteria:
-                 final_matched_files = list(initial_matched_files)
+                final_matched_files = list(initial_matched_files)
             else:
                 char_type_search = char_type_value
                 char_type_speaker = lang_dict['char_type_speaker']
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future_to_filename = {
-                        executor.submit(SearchEngine.check_file_for_search, filename, criteria, self.story_data_cache, char_type_search, char_type_speaker, self.all_files_dict): filename 
+                        executor.submit(SearchEngine.check_file_for_search, filename, criteria, char_type_search, char_type_speaker, all_files_dict): filename 
                         for filename in initial_matched_files
                     }
                     for future in concurrent.futures.as_completed(future_to_filename):
                         if future.result():
                             final_matched_files.append(future_to_filename[future])
             
-            self.app.task_queue.put(lambda: self.search_callback(sorted(final_matched_files)))
+            app.task_queue.put(ActionEvent(action=lambda: search_callback(sorted(final_matched_files))))
 
-        except Exception as e:
-            self.app.task_queue.put(lambda: self._finish_search_error(e))
-
-    def _finish_search_error(self, error):
-        try:
-            lang_dict = LANGUAGES[self.app.lang_var.get()]
-        except KeyError:
-            lang_dict = LANGUAGES['ko']
-        messagebox.showerror(lang_dict['search_error_title'], lang_dict['search_error_msg'].format(e=error), parent=self.app.master)
-        self.app._update_status_bar('status_bar_ready')
+        except (OSError, sqlite3.Error) as e:
+            # self(Toplevel)는 이미 destroy() 되었으므로 self 참조를 피하고
+            # 캡처된 app(컨트롤러) 참조만 사용합니다.
+            def _show_error(error=e, app_ref=app):
+                lang_dict = LANGUAGES.get(app_ref.lang_var.get(), LANGUAGES['ko'])
+                messagebox.showerror(lang_dict['search_error_title'], lang_dict['search_error_msg'].format(e=error), parent=app_ref.master)
+                app_ref.view.update_status_bar('status_bar_ready')
+            app.task_queue.put(ActionEvent(action=_show_error))
 
     def _reset(self):
         self.search_callback(list(self.all_files_dict.keys()))

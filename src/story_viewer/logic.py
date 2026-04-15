@@ -3,50 +3,12 @@ from __future__ import annotations
 import json
 import re
 import os
-import sqlite3
-import concurrent.futures
-from datetime import datetime
-from collections import OrderedDict
 from typing import Any, Iterable
 
-class LRUCache:
-    """크기 제한이 있는 LRU 캐시."""
-    def __init__(self, max_size: int = 1024) -> None:
-        self._cache: OrderedDict[str, Any] = OrderedDict()
-        self._max_size: int = max_size
-    
-    def get(self, key: str) -> Any | None:
-        if key not in self._cache:
-            return None
-        self._cache.move_to_end(key)
-        return self._cache[key]
-        
-    def put(self, key: str, value: Any) -> None:
-        self._cache[key] = value
-        self._cache.move_to_end(key)
-        if len(self._cache) > self._max_size:
-            self._cache.popitem(last=False)
-            
-    def clear(self) -> None:
-        self._cache.clear()
-        
-    def __len__(self) -> int:
-        return len(self._cache)
-        
-    def __contains__(self, key: str) -> bool:
-        return key in self._cache
-        
-    def items(self) -> Iterable[tuple[str, Any]]:
-        return self._cache.items()
-        
-    def values(self) -> Iterable[Any]:
-        return self._cache.values()
-        
-    def keys(self) -> Iterable[str]:
-        return self._cache.keys()
-
+from src.constants import SEPARATOR_MEDIUM
 
 class StoryDataLoader:
+    """스토리 데이터 JSON 파일의 유효성 검증 및 에셋 이름 추출을 담당합니다."""
     @staticmethod
     def is_valid_storydata(file_path: str) -> tuple[bool, dict[str, Any] | None, str | None]:
         try:
@@ -60,7 +22,7 @@ class StoryDataLoader:
                 return False, None, "Does not seem to be a storydata file (missing '0' key or title/outline)"
         except json.JSONDecodeError as e:
             return False, None, f"JSON format error: {e}"
-        except Exception as e:
+        except OSError as e:
             return False, None, f"File read/other error: {e}"
 
     @staticmethod
@@ -70,6 +32,7 @@ class StoryDataLoader:
         return None
 
 class SearchEngine:
+    """스토리 데이터에 대한 다중 조건 검색 기능을 제공합니다."""
     @staticmethod
     def check_scene(scene: dict[str, Any], criteria: dict[str, str], char_type_search: str, char_type_speaker: str) -> bool:
         if 'content' in criteria and not ('print' in scene and criteria['content'] in scene['print'].get('text', '').lower()):
@@ -110,20 +73,16 @@ class SearchEngine:
         return False
 
     @staticmethod
-    def check_file_for_search(filename: str, criteria: dict[str, str], story_data_cache: LRUCache, char_type_search: str, char_type_speaker: str, all_files: dict[str, str]) -> bool:
+    def check_file_for_search(filename: str, criteria: dict[str, str], char_type_search: str, char_type_speaker: str, all_files: dict[str, str]) -> bool:
         if 'filename' in criteria and criteria['filename'].lower() not in filename.lower():
             return False
         
-        data = story_data_cache.get(filename)
-        if not data:
-            filepath = all_files.get(filename)
-            if not filepath:
-                return False
-            is_valid, data, _ = StoryDataLoader.is_valid_storydata(filepath)
-            if not is_valid:
-                return False
-            # Load into cache for later reuse (e.g. clicking the search result)
-            story_data_cache.put(filename, data)
+        filepath = all_files.get(filename)
+        if not filepath:
+            return False
+        is_valid, data, _ = StoryDataLoader.is_valid_storydata(filepath)
+        if not is_valid:
+            return False
 
         content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
         if not content_criteria:
@@ -166,7 +125,7 @@ class StoryFormatter:
                 formatter = getattr(self, f'_format_{field}', self._format_default)
                 formatter(value, content_list)
                 content_list.append(("\n", None))
-            content_list.append(("-"*60 + "\n\n", None))
+            content_list.append((SEPARATOR_MEDIUM + "\n\n", None))
         return content_list
 
     def _format_print(self, value: dict[str, Any], content_list: list[tuple[str, str | None]]) -> None:
@@ -174,19 +133,36 @@ class StoryFormatter:
         name, text = str(value.get('name', '???')), value.get('text', '')
         formatted_text = text.replace('\n', '\n' + indent)
         content_list.extend([(indent + f"- name: {name}\n", 'print_sub_key'), (indent + f"- text: “{formatted_text}”\n", 'print_sub_key')])
-    def _format_chara_full(self, v: Any, c: list[tuple[str, str | None]]) -> None: self._format_generic_id_list(v, c)
-    def _format_fadein(self, v: Any, c: list[tuple[str, str | None]]) -> None: self._format_generic_id_list(v, c)
-    def _format_fadeout(self, v: Any, c: list[tuple[str, str | None]]) -> None: self._format_generic_id_list(v, c)
-    def _format_face(self, v: Any, c: list[tuple[str, str | None]]) -> None: self._format_generic_id_list(v, c)
-    def _format_nod(self, v: Any, c: list[tuple[str, str | None]]) -> None: self._format_simple_id_list(v, c)
-    def _format_shake(self, v: Any, c: list[tuple[str, str | None]]) -> None: self._format_simple_id_list(v, c)
-    def _format_focus(self, v: Any, c: list[tuple[str, str | None]]) -> None: self._format_simple_id_list(v, c)
+
+    def _format_chara_full(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+        self._format_generic_id_list(value, content_list)
+
+    def _format_fadein(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+        self._format_generic_id_list(value, content_list)
+
+    def _format_fadeout(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+        self._format_generic_id_list(value, content_list)
+
+    def _format_face(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+        self._format_generic_id_list(value, content_list)
+
+    def _format_nod(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+        self._format_simple_id_list(value, content_list)
+
+    def _format_shake(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+        self._format_simple_id_list(value, content_list)
+
+    def _format_focus(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+        self._format_simple_id_list(value, content_list)
+
     def _format_choice(self, value: list[dict[str, Any]], content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         for i, item in enumerate(value, 1):
             content_list.extend([(indent + f"{i}. {item['text']}", 'choice'), (f" (→ S# {item['tag']})\n", 'choice_tag')])
+
     def _format_default(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
         content_list.append(("        " + f"{str(value)}\n", 'value'))
+
     def _format_generic_id_list(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         if not isinstance(value, list):
@@ -198,6 +174,7 @@ class StoryFormatter:
                 content_list.extend([(indent + f"- {str(item[0])}", 'value'), (f" ({details})\n" if details else "\n", 'value')])
             else:
                 content_list.append((indent + f"- {str(item)}\n", 'value'))
+
     def _format_simple_id_list(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         if not isinstance(value, list): value = [value]

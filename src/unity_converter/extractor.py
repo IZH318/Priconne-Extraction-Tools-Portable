@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any
 import UnityPy
 
+from src.queue_events import LogEvent, CompletionEvent
 
 class StoryDataDeserializer:
     class CommandId(Enum):
@@ -311,7 +312,7 @@ class AssetProcessor:
 
     def log(self, message_key: str, level: str = 'INFO', format_args: dict[str, Any] | None = None) -> None:
         """로그 메시지를 통신 큐에 추가합니다."""
-        self.log_queue.put(('log', self.base_name, message_key, level, format_args))
+        self.log_queue.put(LogEvent(target=self.base_name, key=message_key, level=level, kwargs=format_args))
 
     def _sanitize_filename(self, name: str) -> str:
         """파일 시스템에서 사용할 수 없는 문자를 '_'로 치환합니다."""
@@ -351,7 +352,12 @@ class AssetProcessor:
         dest_folder = os.path.join(self.output_dir, folder_name)
         os.makedirs(dest_folder, exist_ok=True) # 폴더 자동 생성
         sanitized_name = self._sanitize_filename(base_name_asset)
-        initial_path = os.path.join(dest_folder, f"{sanitized_name}{extension}")
+        
+        # 이미 원본 이름에 확장자가 포함되어 있다면 추가 확장자 부착을 생략 (유저 요청)
+        _, existing_ext = os.path.splitext(sanitized_name)
+        final_ext = "" if existing_ext else extension
+        
+        initial_path = os.path.join(dest_folder, f"{sanitized_name}{final_ext}")
         return self._get_unique_path(initial_path, obj.path_id)
 
     def process_all_assets(self) -> int | None:
@@ -431,7 +437,7 @@ class AssetProcessor:
             else:
                 try:
                     return self._export_generic_json(obj, error_info=str(e))
-                except Exception as e2:
+                except (ValueError, TypeError, OSError) as e2:
                     self.log('json_fallback_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj.type.name, 'error': e2})
         return False
 
@@ -443,7 +449,7 @@ class AssetProcessor:
             with open(path, "wb") as f:
                 f.write(raw_data)
             return True
-        except Exception as e:
+        except OSError as e:
             self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': 'raw data', 'error': e})
             return False
 
@@ -512,7 +518,7 @@ class AssetProcessor:
                 json.dump(deserialized_data, f, indent=4, ensure_ascii=False)
             self.log('storydata_deserialization_success', 'SUCCESS', {'asset_name': asset_name})
         
-        except Exception as e:
+        except (struct_error, ValueError, IndexError, TypeError) as e:
             # 실패 시 로그 기록
             self.log('storydata_deserialization_fail', 'ERROR', {'asset_name': asset_name, 'error': e})
         
@@ -626,7 +632,7 @@ class AssetProcessor:
                                      default=lambda o: f"<Unserializable: {type(o).__name__}>")
             export_bytes = export_data.encode("utf-8", errors="surrogateescape")
             extension = ".json"
-        except Exception:
+        except (ValueError, KeyError, AttributeError):
             # TypeTree가 없는 경우 바이너리로 폴백
             export_bytes = obj.get_raw_data()
             extension = ".bin"
@@ -635,7 +641,7 @@ class AssetProcessor:
         # 이름 추출 (파싱하지 않고 peek_name 사용하여 성능 향상)
         try:
             asset_name = obj.peek_name() or obj.type.name
-        except Exception:
+        except AttributeError:
             asset_name = obj.type.name
         
         dest_folder = os.path.join(self.output_dir, self.SPECIAL_TYPES["MonoBehaviour"])
@@ -658,7 +664,7 @@ class AssetProcessor:
         data = obj.parse_as_object()
         try:
             images = data.images  # property로 접근
-        except Exception:
+        except AttributeError:
             return False
         
         if not images:
@@ -716,7 +722,7 @@ class AssetProcessor:
                         resource.m_Offset if hasattr(resource, 'm_Offset') else getattr(resource, 'offset', 0),
                         resource.m_Size if hasattr(resource, 'm_Size') else getattr(resource, 'size', 0),
                     )
-                except Exception:
+                except AttributeError:
                     pass
         
         if video_data:
@@ -785,7 +791,7 @@ def process_single_file(file_path, output_path, base_input_path, log_queue, comp
     except Exception as e:
         # 심각한 오류 발생 시 로그 전송
         base_name = os.path.basename(file_path)
-        log_queue.put(('log', base_name, 'worker_process_error', 'ERROR', {'error': e}))
+        log_queue.put(LogEvent(target=base_name, key='worker_process_error', level='ERROR', kwargs={'error': e}))
     finally:
         # 작업 완료 신호 전송
-        completion_queue.put(True)
+        completion_queue.put(CompletionEvent(success=True))

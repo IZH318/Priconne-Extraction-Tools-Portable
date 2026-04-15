@@ -9,13 +9,19 @@ import threading
 import concurrent.futures
 import queue
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.cancellation_token import CancellationToken
 
 from src.constants import (
     SEPARATOR_SHORT, AV_TEMP_EXTENSIONS, FFMPEG_URL, 
     FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME
 )
 from src.subprocess_runner import SubprocessRunner
+from src.queue_events import (
+    LogEvent, LogBlockEvent, ProgressEvent, CompletionEvent
+)
 
 class ConversionLogic:
     # 시스템 CPU 코어 수의 절반을 최대 작업자 수로 설정 (과도한 부하 방지)
@@ -35,9 +41,9 @@ class ConversionLogic:
 
     def _log_entry(self, target_tab, log_key, **kwargs):
         """로그 메시지를 통신 큐에 추가합니다."""
-        self.log_queue.put(('log_entry', target_tab, log_key, kwargs))
+        self.log_queue.put(LogEvent(target=target_tab, key=log_key, kwargs=kwargs))
 
-    def _get_relative_path(self, full_path):
+    def get_relative_path(self, full_path):
         """로그에 표시할 파일의 상대 경로를 계산합니다."""
         try: return os.path.relpath(full_path, self.base_path)
         except (ValueError, TypeError): return str(full_path)
@@ -63,8 +69,8 @@ class ConversionLogic:
         output_path = Path(output_dir)
         final_mp4_path = output_path / (usm_file.stem + ".mp4")
 
-        log_entries = [('raw', {'text': SEPARATOR_SHORT}),
-                       ('conv_log_source', {'path': self._get_relative_path(usm_file)})]
+        log_entries = [('raw', {'text': ''}),
+                       ('conv_log_source', {'path': self.get_relative_path(usm_file)})]
         status = "unknown"
 
         log_entries.append(('raw', {'text': ''}))
@@ -85,7 +91,7 @@ class ConversionLogic:
                 # 결과 파일 존재 여부로 성공/실패 판단
                 if final_mp4_path.exists():
                     status = "success"
-                    log_entries.append(('conv_log_success', {'path': self._get_relative_path(final_mp4_path)}))
+                    log_entries.append(('conv_log_success', {'path': self.get_relative_path(final_mp4_path)}))
 
                     # 성공 시, 스택 트레이스를 제외한 유용한 로그만 파싱 및 추가
                     raw_output = (result.stdout or "").strip()
@@ -122,34 +128,34 @@ class ConversionLogic:
                         log_entries.append(('conv_log_details_error_header', {}))
                         log_entries.extend([('raw', {'text': f"    > {line}"}) for line in error_output.splitlines()])
 
-            except Exception as e:
+            except OSError as e:
                 status = "error"
                 log_entries.append(('conv_log_result_header', {}))
                 log_entries.append(('conv_log_error_exception', {'error': str(e)}))
 
-        log_entries.append(('raw', {'text': SEPARATOR_SHORT}))
+        log_entries.append(('raw', {'text': ''}))
         return status, log_entries
 
-    def run_video_conversion(self, input_paths: list[str], output_dir: str, usmtoolkit_path: Path | None, cancel_event: threading.Event | None) -> None:
+    def run_video_conversion(self, input_paths: list[str], output_dir: str, usmtoolkit_path: Path | None, cancel_token: CancellationToken | None) -> None:
         """비디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
         target_tab = 'video'
         self._log_entry(target_tab, 'conv_start_video')
         self._log_entry(target_tab, 'conv_video_skip_notice')
-        self.log_queue.put(('log_spacing', target_tab))
+        self.log_queue.put(LogEvent(target=target_tab, is_spacing=True))
         
         if not usmtoolkit_path:
             self._log_entry(target_tab, 'conv_error_usmtoolkit_not_found')
-            self.log_queue.put(('__VIDEO_DONE__',))
+            self.log_queue.put(CompletionEvent(target='__VIDEO_DONE__'))
             return
 
         total_files = len(input_paths)
         success_count, skipped_count, error_count, completed_tasks = 0, 0, 0, 0
-        self.log_queue.put(('progress_start', target_tab, total_files))
+        self.log_queue.put(ProgressEvent(target=target_tab, is_start=True, total=total_files))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             future_to_path = {executor.submit(self._convert_single_video_task, path, output_dir, usmtoolkit_path): path for path in input_paths}
             for future in concurrent.futures.as_completed(future_to_path):
-                if cancel_event and cancel_event.is_set():
+                if cancel_token and cancel_token.is_cancelled:
                     # 취소 요청된 상태면 pending 중인 future를 cancel 시도 (이미 실행 중인 것은 계속 끝남)
                     for f in future_to_path: f.cancel()
                     self._log_entry(target_tab, 'status_cancelled')
@@ -157,61 +163,61 @@ class ConversionLogic:
 
                 try:
                     status, log_entries = future.result()
-                    self.log_queue.put(('log_block', target_tab, log_entries))
+                    self.log_queue.put(LogBlockEvent(target=target_tab, entries=log_entries))
                     if status == "success": success_count += 1
                     elif status == "skipped": skipped_count += 1
                     else: error_count += 1
-                except Exception as e:
+                except (OSError, ValueError) as e:
                     path = future_to_path[future]
                     self._log_entry(target_tab, 'conv_log_worker_exception', filename=Path(path).name, error=e)
                     error_count += 1
                 finally:
                     completed_tasks += 1
-                    self.log_queue.put(('progress_update', target_tab, completed_tasks))
+                    self.log_queue.put(ProgressEvent(target=target_tab, current=completed_tasks, total=total_files))
         
         self._log_entry(target_tab, 'conv_summary_video', total=total_files, success=success_count, skipped=skipped_count, error=error_count)
-        self.log_queue.put(('__VIDEO_DONE__',))
+        self.log_queue.put(CompletionEvent(target='__VIDEO_DONE__'))
 
-    def run_audio_conversion(self, input_paths: list[str], output_dir: str, vgmstream_path: Path | None, overwrite: bool, cancel_event: threading.Event | None) -> None:
+    def run_audio_conversion(self, input_paths: list[str], output_dir: str, vgmstream_path: Path | None, overwrite: bool, cancel_token: CancellationToken | None) -> None:
         """오디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
         target_tab = 'audio'
         self._log_entry(target_tab, 'conv_start_audio')
         self._log_entry(target_tab, 'conv_audio_overwrite_notice' if overwrite else 'conv_audio_skip_notice')
-        self.log_queue.put(('log_spacing', target_tab))
+        self.log_queue.put(LogEvent(target=target_tab, is_spacing=True))
 
         if not vgmstream_path:
             self._log_entry(target_tab, 'conv_error_vgmstream_not_found')
-            self.log_queue.put(('__AUDIO_DONE__',))
+            self.log_queue.put(CompletionEvent(target='__AUDIO_DONE__'))
             return
             
         total_files = len(input_paths)
         total_converted_tracks = 0
         completed_tasks = 0
-        self.log_queue.put(('progress_start', target_tab, total_files))
+        self.log_queue.put(ProgressEvent(target=target_tab, is_start=True, total=total_files))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
             future_to_path = {executor.submit(self._convert_audio_container, path, output_dir, vgmstream_path, overwrite): path for path in input_paths}
             for future in concurrent.futures.as_completed(future_to_path):
-                if cancel_event and cancel_event.is_set():
+                if cancel_token and cancel_token.is_cancelled:
                     for f in future_to_path: f.cancel()
                     self._log_entry(target_tab, 'status_cancelled')
                     break
 
                 try:
                     converted_count, log_entries = future.result()
-                    self.log_queue.put(('log_block', target_tab, log_entries))
+                    self.log_queue.put(LogBlockEvent(target=target_tab, entries=log_entries))
                     total_converted_tracks += converted_count
-                except Exception as e:
+                except (OSError, ValueError) as e:
                     path = future_to_path[future]
                     self._log_entry(target_tab, 'conv_log_worker_exception', filename=Path(path).name, error=e)
                 finally:
                     completed_tasks += 1
-                    self.log_queue.put(('progress_update', target_tab, completed_tasks))
+                    self.log_queue.put(ProgressEvent(target=target_tab, current=completed_tasks, total=total_files))
                     
         self._log_entry(target_tab, 'conv_audio_summary_combined', tracks=total_converted_tracks)
-        self.log_queue.put(('__AUDIO_DONE__',))
+        self.log_queue.put(CompletionEvent(target='__AUDIO_DONE__'))
 
-    def _get_stream_count(self, file_path: Path | str, vgmstream_path: Path | str) -> int:
+    def get_stream_count(self, file_path: Path | str, vgmstream_path: Path | str) -> int:
         """vgmstream을 이용해 AWB 파일 내의 오디오 스트림 개수를 확인합니다."""
         result = self._run_subprocess([str(vgmstream_path), "-m", str(file_path)])
         if result.returncode != 0: return 0
@@ -221,7 +227,7 @@ class ConversionLogic:
                 except (ValueError, IndexError): return 1
         return 1
 
-    def _get_stream_name(self, file_path: Path | str, stream_num: int, vgmstream_path: Path | str) -> str:
+    def get_stream_name(self, file_path: Path | str, stream_num: int, vgmstream_path: Path | str) -> str:
         """vgmstream을 이용해 특정 스트림의 이름을 가져옵니다."""
         result = self._run_subprocess([str(vgmstream_path), "-m", "-s", str(stream_num), str(file_path)])
         if result.returncode != 0:
@@ -241,8 +247,8 @@ class ConversionLogic:
             tuple: (변환된 트랙 수, 로그 항목 리스트)
         """
         item_path = Path(item_path_str)
-        log_entries = [('raw', {'text': SEPARATOR_SHORT}),
-                       ('conv_log_source', {'path': self._get_relative_path(item_path)}),
+        log_entries = [('raw', {'text': ''}),
+                       ('conv_log_source', {'path': self.get_relative_path(item_path)}),
                        ('raw', {'text': ''}),
                        ('conv_log_result_header', {})]
         total_converted = 0
@@ -251,15 +257,14 @@ class ConversionLogic:
         item_output_folder = Path(output_dir) / item_path.stem
         item_output_folder.mkdir(parents=True, exist_ok=True)
 
-        num_streams = self._get_stream_count(item_path, vgmstream_path)
+        num_streams = self.get_stream_count(item_path, vgmstream_path)
         if num_streams == 0:
             log_entries.append(('conv_audio_stream_error', {}))
-            log_entries.append(('raw', {'text': SEPARATOR}))
             return 0, log_entries
 
         # 각 스트림을 개별 .wav 파일로 변환
         for i in range(1, num_streams + 1):
-            stream_name = self._get_stream_name(item_path, i, vgmstream_path)
+            stream_name = self.get_stream_name(item_path, i, vgmstream_path)
             output_file = item_output_folder / f"{stream_name}.wav"
 
             if not overwrite and output_file.exists():
@@ -270,7 +275,7 @@ class ConversionLogic:
             result = self._run_subprocess(command)
 
             if result.returncode == 0 and output_file.exists():
-                log_entries.append(('conv_audio_stream_success', {'path': self._get_relative_path(output_file)}))
+                log_entries.append(('conv_audio_stream_success', {'path': self.get_relative_path(output_file)}))
                 total_converted += 1
             else:
                 log_entries.append(('conv_audio_stream_fail', {'index': i, 'name': stream_name}))
@@ -279,7 +284,7 @@ class ConversionLogic:
                     log_entries.append(('conv_log_details_error_header', {}))
                     log_entries.extend([('raw', {'text': f"      > {line}"}) for line in error_output.splitlines()])
 
-        log_entries.append(('raw', {'text': SEPARATOR_SHORT}))
+        log_entries.append(('raw', {'text': ''}))
         return total_converted, log_entries
 
     def preview_single_audio(self, file_path, stream_num, output_path, vgmstream_path):
@@ -327,7 +332,7 @@ class FFmpegDownloader:
 
     def _log_entry(self, log_key, **kwargs):
         """로그 메시지를 통신 큐에 추가합니다."""
-        self.log_queue.put(('log_entry', 'video', log_key, kwargs))
+        self.log_queue.put(LogEvent(target='video', key=log_key, kwargs=kwargs))
 
     def ensure_ffmpeg_ready(self) -> concurrent.futures.Future:
         """
@@ -360,6 +365,18 @@ class FFmpegDownloader:
                     raise Exception(f"HTTP Error: {response.status} {response.reason}")
                 shutil.copyfileobj(response, out_file)
             
+            # 1-1. 다운로드된 파일 무결성 검증 (ZIP magic bytes + 아카이브 테스트)
+            # NOTE: URL이 'latest' 롤링 릴리스를 가리키므로 고정 SHA-256 해시 비교는 불가합니다.
+            #       대신 파일 형식 검증으로 손상 및 기본적인 변조를 탐지합니다.
+            with open(local_zip_path, 'rb') as f:
+                magic = f.read(4)
+            if magic[:2] != b'PK':
+                raise Exception("Downloaded file is not a valid ZIP archive (magic bytes mismatch).")
+            with zipfile.ZipFile(local_zip_path, 'r') as zip_test:
+                bad_file = zip_test.testzip()
+                if bad_file is not None:
+                    raise Exception(f"ZIP archive integrity check failed: corrupted entry '{bad_file}'.")
+            
             self._log_entry('ffmpeg_download_complete')
 
             # 2. 압축 해제 및 설치
@@ -374,7 +391,7 @@ class FFmpegDownloader:
                     raise Exception(d['ffmpeg_zip_structure_error'])
                 # 필요한 파일만 추출 후 이동
                 zip_ref.extract(ffmpeg_internal_path, temp_extract_dir)
-                shutil.move(temp_extract_dir / ffmpeg_internal_path, self.ffmpeg_path)
+                shutil.move(str(temp_extract_dir / ffmpeg_internal_path), str(self.ffmpeg_path))
             self._log_entry('ffmpeg_extract_complete', path=self.ffmpeg_path)
             return True
         except Exception as e:

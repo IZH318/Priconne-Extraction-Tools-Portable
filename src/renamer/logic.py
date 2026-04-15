@@ -1,20 +1,21 @@
 from __future__ import annotations
 import os
+import sys
 import sqlite3
 import hashlib
 import concurrent.futures
 import xxhash
-from typing import Callable, Optional, Tuple, Any
+from typing import Callable, Any
+from collections.abc import Sequence
 from queue import Queue
+from pathlib import Path
 
 from src.constants import SEPARATOR_LONG, RENAMER_TARGET_FOLDERS, HASH_CHUNK_SIZE, SHA1_LENGTH
-
-# --- 상수 정의 ---
-SEPARATOR: str = SEPARATOR_LONG
+from src.queue_events import LogEvent, ProgressEvent
 
 class RenameHashedFile:
     # --- 백엔드 클래스 초기화 메서드 ---
-    def __init__(self, log_queue: Queue, progress_queue: Queue, get_string_func: Callable[[str], str]) -> None:
+    def __init__(self, log_queue: Queue, progress_queue: Queue, get_string_func: Callable[[str], str], base_path: Path | None = None) -> None:
         """
         RenameHashedFile 클래스의 인스턴스를 초기화합니다.
         
@@ -22,8 +23,17 @@ class RenameHashedFile:
             log_queue (queue.Queue): 로그 메시지를 GUI로 보내기 위한 큐.
             progress_queue (queue.Queue): 진행률 정보를 GUI로 보내기 위한 큐.
             get_string_func (function): 다국어 문자열을 반환하는 GUI의 함수.
+            base_path (Path | None): 프로그램 실행 기준 경로. None이면 자동 감지.
         """
-        self.target_folders: list[str] = RENAMER_TARGET_FOLDERS  # 파일 이름 변경 작업을 수행할 대상 폴더 목록
+        # 프로그램 실행 기준 경로 (os.getcwd() 대신 안전한 절대 경로 사용)
+        if base_path is not None:
+            self.base_path = base_path
+        elif getattr(sys, 'frozen', False):
+            self.base_path = Path(sys.executable).parent
+        else:
+            self.base_path = Path(__file__).resolve().parent.parent.parent
+        
+        self.target_folders: Sequence[str] = RENAMER_TARGET_FOLDERS  # 파일 이름 변경 작업을 수행할 대상 폴더 목록
         self.hash_list: dict[str, str] = {}  # DB에서 불러온 {해시: 파일명} 데이터를 저장할 딕셔너리
         self.unprocessed_files: list[str] = []  # 1차 해시 대조에서 실패한 파일들의 경로를 저장할 리스트
         self.log_queue = log_queue  # GUI와의 통신을 위한 큐 참조
@@ -34,20 +44,26 @@ class RenameHashedFile:
         """GUI에서 언어가 변경되었을 때, 이 클래스가 사용하는 번역 함수를 업데이트합니다."""
         self.get_string = get_string_func
 
-    # --- GUI로의 정보 전달 메서드 ---
-    def log(self, key: str, **kwargs) -> None:
-        """로그 메시지를 생성하여 로그 큐에 넣습니다. GUI 스레드가 이를 가져가 화면에 표시합니다."""
-        self.log_queue.put((key, kwargs))
+    def set_base_path(self, new_base_path: Path) -> None:
+        """사용자가 GUI에서 새 대상 폴더를 선택했을 때 기준 경로를 업데이트합니다."""
+        self.base_path = new_base_path
 
-    def update_progress(self, value: float, current: int, total: int) -> None:
-        """진행률 정보를 생성하여 진행률 큐에 넣습니다."""
-        self.progress_queue.put((value, current, total))
+    def set_target_folders(self, folders: Sequence[str]) -> None:
+        """대상 폴더 목록을 설정합니다. 테스트나 사용자 설정 변경 시 사용됩니다."""
+        self.target_folders = folders
+
+    # --- GUI로의 정보 전달 메서드 ---
+    def _add_log_event(self, key: str, **kwargs) -> None:
+        self.log_queue.put(LogEvent(key=key, kwargs=kwargs))
+        
+    def _add_progress_event(self, value: int, current: int, total: int) -> None:
+        self.progress_queue.put(ProgressEvent(value=value, current=current, total=total))
 
     # --- 메인 파일 처리 로직 ---
     def process_files(self) -> None:
         """파일 이름 변경 작업의 전체 과정을 순차적으로 실행합니다."""
         # 1. manifest.db 파일 존재 확인
-        manifest_db_path = os.path.join(os.getcwd(), "manifest.db")
+        manifest_db_path = self.base_path / "manifest.db"
         if not os.path.exists(manifest_db_path):
             self.log('backend_warning_db_not_found')
             return
@@ -72,7 +88,7 @@ class RenameHashedFile:
         # 4. SQLite DB에 연결하여 해시 데이터를 메모리(self.hash_list)로 로드
         with sqlite3.connect(manifest_db_path) as connection:
             cursor = connection.cursor()
-            cursor.execute("SELECT * FROM t")
+            cursor.execute("SELECT name, hash FROM t")
             rows = cursor.fetchall()
             for row in rows:
                 filename, hash_value = row
@@ -102,7 +118,7 @@ class RenameHashedFile:
                         processed_count_rename += 1
                     else:  # 해시 불일치 파일
                         self.unprocessed_files.append(data)
-                except Exception as exc:  # 스레드 내에서 예외 발생 시
+                except (OSError, sqlite3.Error, ValueError) as exc:  # 스레드 내에서 예외 발생 시
                     file_path = futures[future]
                     self.log('backend_file_process_fail', path=file_path, exc=str(exc))
 
@@ -127,11 +143,11 @@ class RenameHashedFile:
                         new_filepath = self.get_unique_filename(new_filename)
                         os.rename(file_path, new_filepath)
                         processed_count_check += 1
-                        relative_file_path = os.path.relpath(file_path, os.getcwd())
+                        relative_file_path = os.path.relpath(file_path, self.base_path)
                         
                         self.log('backend_rename_exception_block', original=relative_file_path, new=new_filename.replace(os.sep, '\\'))
                         renamed_by_content = True
-                except Exception as e:
+                except OSError as e:
                     self.log('backend_unprocessed_error', error=str(e))
                 
                 # 예외 처리 로직으로도 이름 변경에 실패한 경우, 최종 미처리 파일 목록에 추가
@@ -145,7 +161,7 @@ class RenameHashedFile:
             self.log('backend_unprocessed_summary', count=len(final_unprocessed_files))
 
     # --- 개별 파일 처리 ---
-    def process(self, file_path: str) -> Tuple[bool, str]:
+    def process(self, file_path: str) -> tuple[bool, str]:
         """
         단일 파일에 대해 해시를 계산하고, self.hash_list와 비교하여 이름 변경을 시도합니다.
         
@@ -165,9 +181,9 @@ class RenameHashedFile:
         # 두 해시 모두 불일치 시, 처리 실패로 간주하고 원본 파일 경로 반환
         return False, file_path
 
-    def rename_file(self, file_path: str, new_filename: str) -> Tuple[bool, str]:
+    def rename_file(self, file_path: str, new_filename: str) -> tuple[bool, str]:
         """실제로 파일의 이름을 변경하고, 성공 또는 실패 결과를 로그로 남깁니다."""
-        new_filepath = os.path.join(os.getcwd(), new_filename)
+        new_filepath = os.path.join(str(self.base_path), new_filename)
         os.makedirs(os.path.dirname(new_filepath), exist_ok=True)  # 대상 폴더가 없으면 생성
 
         # 이름 변경하려는 파일이 이미 존재할 경우, 중복을 피하기 위해 새 이름 생성
@@ -176,7 +192,7 @@ class RenameHashedFile:
             
         try:
             os.rename(file_path, new_filepath)
-            relative_file_path = os.path.relpath(file_path, os.getcwd())  # 로그에 표시할 상대 경로
+            relative_file_path = os.path.relpath(file_path, self.base_path)  # 로그에 표시할 상대 경로
             
             self.log('backend_rename_block', original=relative_file_path, new=new_filename.replace(os.sep, '\\').replace('/', '\\'))
             return True, new_filepath
@@ -201,11 +217,11 @@ class RenameHashedFile:
                 xxhash64_hash.update(chunk)
         return xxhash64_hash
 
-    def get_all_files_in_folders(self, target_folders: list[str]) -> list[str]:
+    def get_all_files_in_folders(self, target_folders: Sequence[str]) -> list[str]:
         """지정된 모든 폴더와 그 하위 폴더를 재귀적으로 탐색하여 SHA1 형식의 파일 목록을 반환합니다."""
         all_files = []
         for folder in target_folders:
-            folder_path = os.path.join(os.getcwd(), folder)
+            folder_path = os.path.join(str(self.base_path), folder)
             if os.path.exists(folder_path) and os.path.isdir(folder_path):
                 for root, _, files in os.walk(folder_path):
                     for file_name in files:
