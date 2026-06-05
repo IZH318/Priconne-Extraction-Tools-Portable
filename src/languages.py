@@ -5,9 +5,10 @@ languages.json을 안전하게 로드하고, 모듈별 언어 딕셔너리를 �
 """
 import json
 import logging
-import os
+from pathlib import Path
+import copy
 
-_json_path = os.path.join(os.path.dirname(__file__), 'languages.json')
+_json_path = Path(__file__).parent / 'languages.json'
 
 try:
     with open(_json_path, 'r', encoding='utf-8') as _f:
@@ -25,3 +26,13 @@ RESOURCE_REMOVER_LANGUAGES: dict = _full_data.get('resource_remover', {})
 STORY_VIEWER_LANGUAGES: dict = _full_data.get('story_viewer', {})
 UNITY_CONVERTER_LANGUAGES: dict = _full_data.get('unity_converter', {})
 MAIN_MENU_LANGUAGES: dict = _full_data.get('main_menu', {})
+
+
+def get_logger_lang_data_map() -> dict:
+    """logger.py의 setup_global_logging에 전달할 최상위 언어 딕셔너리를 반환합니다.
+
+    container.py에서 별도로 languages.json을 다시 로드하지 않고,
+    이 모듈에서 이미 로드한 _full_data를 재사용합니다.
+    """
+    return copy.deepcopy(_full_data)
+

@@ -1,11 +1,14 @@
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, font
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .controller import StoryViewerController
 
 
 class StoryViewerView(ttk.Frame):
-    def __init__(self, master: Any, controller: Any) -> None:
+    def __init__(self, master: ttk.Frame, controller: StoryViewerController) -> None:
         super().__init__(master)
         self.controller = controller
         self.pack(fill=tk.BOTH, expand=True)
@@ -13,7 +16,7 @@ class StoryViewerView(ttk.Frame):
         self.setup_ui()
         self.setup_text_tags()
 
-    def setup_ui(self):
+    def setup_ui(self) -> None:
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
         
@@ -43,7 +46,7 @@ class StoryViewerView(ttk.Frame):
         self.display_mode_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.display_mode_combo.bind("<<ComboboxSelected>>", self.controller.on_display_mode_change)
         
-        self.search_button = ttk.Button(self.left_group, text="", command=self.controller.open_search_window, state="disabled")
+        self.search_button = ttk.Button(self.left_group, text="", command=self.controller.open_search_window, state=tk.DISABLED)
         self.search_button.pack(fill=tk.X, padx=5, pady=(5, 5))
         
         list_scrollbar = ttk.Scrollbar(self.left_group, orient=tk.VERTICAL)
@@ -77,7 +80,7 @@ class StoryViewerView(ttk.Frame):
         self.status_bar = ttk.Label(self.bottom_frame, text="", anchor=tk.W, padding=5)
         self.status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
-        self.btn_export = ttk.Button(self.bottom_frame, text="", command=self.controller.open_export_window, state="disabled")
+        self.btn_export = ttk.Button(self.bottom_frame, text="", command=self.controller.open_export_window, state=tk.DISABLED)
         self.btn_export.pack(side=tk.RIGHT, padx=(5, 0))
         
         def reapply_weights(event=None):
@@ -89,7 +92,7 @@ class StoryViewerView(ttk.Frame):
             except tk.TclError: pass
         self.paned_window.bind("<Configure>", reapply_weights)
 
-    def setup_text_tags(self):
+    def setup_text_tags(self) -> None:
         default_font_family = font.nametofont("TkDefaultFont").cget("family")
         self.story_text.tag_configure('scene_header', font=(default_font_family, 14, 'bold'), foreground='#00008B')
         self.story_text.tag_configure('key', font=(default_font_family, 10, 'bold'), foreground='#4A4A4A')
@@ -98,7 +101,7 @@ class StoryViewerView(ttk.Frame):
         self.story_text.tag_configure('choice', font=(default_font_family, 10, 'bold'), foreground='#8B0000')
         self.story_text.tag_configure('choice_tag', font=(default_font_family, 10, 'italic'), foreground='#808080')
     
-    def update_ui_text(self):
+    def update_ui_text(self) -> None:
         """현재 선택된 언어에 맞춰 UI 텍스트를 업데이트합니다."""
         lang_dict = self.controller.get_lang_dict()
             
@@ -126,7 +129,7 @@ class StoryViewerView(ttk.Frame):
         
         self.controller.update_file_list(self.controller.current_filenames_in_list)
 
-    def update_status_bar(self, key, **kwargs):
+    def update_status_bar(self, key, **kwargs) -> None:
         """상태바 메시지를 다국어 키 기반으로 업데이트합니다."""
         lang_dict = self.controller.get_lang_dict()
         message = lang_dict.get(key, "...")
@@ -137,9 +140,18 @@ class StoryViewerView(ttk.Frame):
                 pass
         self.status_bar.config(text=message)
 
-    def update_story_text(self, content_list):
+    def update_story_text(self, content_list) -> None:
         self.story_text.config(state=tk.NORMAL)
         self.story_text.delete('1.0', tk.END)
         for content, tag in content_list:
             self.story_text.insert(tk.END, content, (tag,) if tag else ())
         self.story_text.config(state=tk.DISABLED)
+
+    def set_action_buttons_state(self, state: str) -> None:
+        """검색 및 내보내기 버튼의 상태를 설정합니다.
+
+        Args:
+            state: 위젯 상태 ('normal', 'disabled' 등).
+        """
+        self.search_button.config(state=state)
+        self.btn_export.config(state=state)

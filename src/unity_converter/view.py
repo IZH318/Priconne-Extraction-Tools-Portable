@@ -2,12 +2,22 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, Text, Scrollbar, PanedWindow, font
 from tkinterdnd2 import DND_FILES
-from typing import Any
+from typing import TYPE_CHECKING
 
-from .extractor import AssetProcessor
+if TYPE_CHECKING:
+    from .controller import AssetExtractorController
+
 
 class AssetExtractorView(ttk.Frame):
-    def __init__(self, master: Any, controller: Any) -> None:
+    """Unity 에셋 추출기 UI(View)를 담당하는 클래스입니다."""
+
+    def __init__(self, master: ttk.Frame, controller: AssetExtractorController) -> None:
+        """AssetExtractorView 객체를 초기화합니다.
+
+        Args:
+            master: 부모 Tkinter 위젯.
+            controller: 비즈니스 로직을 처리하는 컨트롤러 객체.
+        """
         super().__init__(master)
         self.controller = controller
         self.pack(fill=tk.BOTH, expand=True)
@@ -15,7 +25,8 @@ class AssetExtractorView(ttk.Frame):
         self._type_group_labels = {}
         self.setup_ui()
 
-    def setup_ui(self):
+    def setup_ui(self) -> None:
+        """UI 위젯들을 초기화하고 화면에 배치합니다."""
         main_paned_window = PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
         main_paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
 
@@ -41,7 +52,7 @@ class AssetExtractorView(ttk.Frame):
         try:
             self.file_listbox.drop_target_register(DND_FILES)
             self.file_listbox.dnd_bind('<<Drop>>', self.controller.on_dnd_drop)
-        except Exception:
+        except (tk.TclError, RuntimeError):
             pass
 
         center_pane = ttk.Frame(main_paned_window)
@@ -58,7 +69,7 @@ class AssetExtractorView(ttk.Frame):
         log_text_frame.grid_columnconfigure(0, weight=1)
         log_scrollbar = Scrollbar(log_text_frame)
         log_scrollbar.grid(row=0, column=1, sticky='ns')
-        self.log_text = Text(log_text_frame, wrap=tk.WORD, yscrollcommand=log_scrollbar.set, state='disabled', padx=5, pady=5)
+        self.log_text = Text(log_text_frame, wrap=tk.WORD, yscrollcommand=log_scrollbar.set, state=tk.DISABLED, padx=5, pady=5)
         self.log_text.grid(row=0, column=0, sticky='nsew')
         log_scrollbar.config(command=self.log_text.yview)
         
@@ -72,7 +83,7 @@ class AssetExtractorView(ttk.Frame):
         progress_info_frame.grid_columnconfigure(1, weight=1)
         self.progress_label = ttk.Label(progress_info_frame, text="")
         self.progress_label.grid(row=0, column=0, sticky='w', padx=(0, 10))
-        self.progress_bar = ttk.Progressbar(progress_info_frame, orient='horizontal', mode='determinate')
+        self.progress_bar = ttk.Progressbar(progress_info_frame, orient=tk.HORIZONTAL, mode='determinate')
         self.progress_bar.grid(row=0, column=1, sticky='ew')
         
         bottom_controls_frame = ttk.Frame(self)
@@ -92,7 +103,7 @@ class AssetExtractorView(ttk.Frame):
         self.version_combo.pack(side=tk.LEFT, padx=(5, 2), pady=5)
         self.version_combo.bind("<<ComboboxSelected>>", self.controller.on_version_selection_change)
         
-        self.version_entry = ttk.Entry(self.version_frame, textvariable=self.controller.unity_version_var, width=18, state='disabled')
+        self.version_entry = ttk.Entry(self.version_frame, textvariable=self.controller.unity_version_var, width=18, state=tk.DISABLED)
         self.version_entry.pack(side=tk.LEFT, padx=(2, 5), pady=5)
 
         self.start_button_container = ttk.LabelFrame(bottom_controls_frame, text="")
@@ -109,8 +120,14 @@ class AssetExtractorView(ttk.Frame):
         self.file_listbox.bind("<Button-3>", self._show_listbox_menu)
         self.file_listbox.bind("<Button-2>", self._show_listbox_menu)
 
-    def _show_listbox_menu(self, event):
-        if self.controller.is_running: return
+    def _show_listbox_menu(self, event: Any) -> None:
+        """파일 목록 우클릭 컨텍스트 메뉴를 표시합니다.
+
+        Args:
+            event: Tkinter 마우스 이벤트 객체.
+        """
+        if self.controller.is_running:
+            return
         d = self.controller.get_lang_dict()
         has_selection = bool(self.file_listbox.curselection())
         self.listbox_menu.entryconfig(0, state=tk.NORMAL if has_selection else tk.DISABLED)
@@ -118,7 +135,12 @@ class AssetExtractorView(ttk.Frame):
         self.listbox_menu.entryconfig(3, label=d.get('browse_assets_menu', 'Browse Assets'), state=tk.NORMAL if has_selection else tk.DISABLED)
         self.listbox_menu.post(event.x_root, event.y_root)
 
-    def _build_type_filter_panel(self, parent):
+    def _build_type_filter_panel(self, parent: ttk.Frame) -> None:
+        """에셋 타입 필터 패널을 구성합니다.
+
+        Args:
+            parent: 필터 패널이 배치될 부모 위젯.
+        """
         self.filter_frame = ttk.LabelFrame(parent, text="")
         self.filter_frame.pack(fill=tk.BOTH, expand=True)
 
@@ -130,7 +152,7 @@ class AssetExtractorView(ttk.Frame):
         self.btn_deselect_all.pack(side=tk.RIGHT, expand=True, fill=tk.X, padx=(2, 0))
 
         canvas = tk.Canvas(self.filter_frame, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.filter_frame, orient="vertical", command=canvas.yview)
+        scrollbar = ttk.Scrollbar(self.filter_frame, orient=tk.VERTICAL, command=canvas.yview)
         self.filter_inner_frame = ttk.Frame(canvas)
 
         self.filter_inner_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
@@ -142,26 +164,33 @@ class AssetExtractorView(ttk.Frame):
 
         def _on_mousewheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-        def _bind_mousewheel(event):
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        def _unbind_mousewheel(event):
-            canvas.unbind_all("<MouseWheel>")
-        canvas.bind("<Enter>", _bind_mousewheel)
-        canvas.bind("<Leave>", _unbind_mousewheel)
+        
+        # bind_all/unbind_all 대신 canvas와 내부 프레임에 직접 이벤트 바인딩
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+        self.filter_inner_frame.bind("<MouseWheel>", _on_mousewheel)
+        
+        # 내부 프레임의 자식 위젯들에도 MouseWheel 이벤트가 전달되도록 처리
+        def _bind_to_children(widget):
+            for child in widget.winfo_children():
+                child.bind("<MouseWheel>", _on_mousewheel)
+                _bind_to_children(child)
+        
+        # 위젯 생성 후 바인딩을 위해 100ms 후 실행
+        self.after(100, lambda: _bind_to_children(self.filter_inner_frame))
 
         categories = [
             ("filter_group_textures", ["Texture2D", "Sprite", "Texture2DArray"]),
             ("filter_group_media", ["AudioClip", "MovieTexture", "VideoClip"]),
             ("filter_group_resources", ["TextAsset", "MonoBehaviour", "AnimationClip", "Mesh", "Shader", "Font", "Material"]),
-            ("filter_group_components", sorted(AssetProcessor.SKIP_TYPES) + ["_OTHER_"]),
+            ("filter_group_components", sorted(self.controller.asset_skip_types) + ["_OTHER_"]),
         ]
 
-        default_enabled = AssetProcessor.DEFAULT_ENABLED
+        default_enabled = self.controller.asset_default_enabled
         is_first_group = True
 
         for group_key, type_list in categories:
             if not is_first_group:
-                ttk.Separator(self.filter_inner_frame, orient='horizontal').pack(fill=tk.X, pady=(4, 0))
+                ttk.Separator(self.filter_inner_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(4, 0))
             is_first_group = False
 
             bold_font = font.Font(font="TkDefaultFont", weight="bold")
@@ -178,7 +207,7 @@ class AssetExtractorView(ttk.Frame):
                 cb = ttk.Checkbutton(self.filter_inner_frame, text=display_name, variable=var)
                 cb.pack(anchor="w", padx=(12, 0))
 
-    def update_ui_text(self):
+    def update_ui_text(self) -> None:
         """현재 선택된 언어에 맞춰 UI 텍스트를 업데이트합니다."""
         d = self.controller.get_lang_dict()
         
@@ -217,7 +246,7 @@ class AssetExtractorView(ttk.Frame):
         
         self.update_progress_bar()
 
-    def update_progress_bar(self):
+    def update_progress_bar(self) -> None:
         """진행률 바와 라벨을 현재 상태에 맞게 업데이트합니다."""
         d = self.controller.get_lang_dict()
         if self.controller.is_running and self.controller.file_paths:
@@ -228,7 +257,12 @@ class AssetExtractorView(ttk.Frame):
             self.progress_bar['value'] = 0
             self.progress_label.config(text=f"{d['progress']}{d['waiting']}")
 
-    def toggle_controls(self, enabled):
+    def toggle_controls(self, enabled: bool) -> None:
+        """UI 컨트롤의 활성화/비활성화 상태를 토글합니다.
+
+        Args:
+            enabled: 컨트롤을 활성화할지 여부 (True: 활성화, False: 비활성화).
+        """
         state = 'normal' if enabled else 'disabled'
         self.update_ui_text()
         if not enabled:
@@ -243,11 +277,22 @@ class AssetExtractorView(ttk.Frame):
         if enabled:
             current = self.controller.version_combo_var.get()
             is_manual = current not in self.controller.UNITY_VERSION_PRESETS
-            self.version_entry.config(state='normal' if is_manual else 'disabled')
+            self.version_entry.config(state=tk.NORMAL if is_manual else 'disabled')
         else:
-            self.version_entry.config(state='disabled')
+            self.version_entry.config(state=tk.DISABLED)
         self.btn_select_all.config(state=state)
         self.btn_deselect_all.config(state=state)
         for widget in self.filter_inner_frame.winfo_children():
             if isinstance(widget, ttk.Checkbutton):
                 widget.config(state=state)
+
+    def set_version_entry_state(self, state: str, focus: bool = False) -> None:
+        """버전 입력창의 상태와 포커스를 설정합니다.
+
+        Args:
+            state: 위젯 상태 ('normal', 'disabled' 등).
+            focus: True일 경우 해당 위젯으로 포커스 이동.
+        """
+        self.version_entry.config(state=state)
+        if focus:
+            self.version_entry.focus_set()

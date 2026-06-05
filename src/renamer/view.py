@@ -1,7 +1,10 @@
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, scrolledtext
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .controller import RenamerController
 
 class RenamerView(ttk.Frame):
     """
@@ -9,7 +12,7 @@ class RenamerView(ttk.Frame):
     비즈니스 로직을 전혀 알지 못하며, UI 위젯의 생성과 텍스트 업데이트만 수행합니다.
     버튼 이벤트 등은 Controller에게 전달합니다.
     """
-    def __init__(self, master: Any, controller: Any) -> None:
+    def __init__(self, master: ttk.Frame, controller: RenamerController) -> None:
         super().__init__(master)
         self.controller = controller
         self.pack(fill=tk.BOTH, expand=True)
@@ -36,19 +39,19 @@ class RenamerView(ttk.Frame):
         self.progress_label = ttk.Label(top_frame, textvariable=self.progress_label_var)
         self.progress_label.grid(row=1, column=0, sticky='w', padx=(0, 5))
         
-        self.progress_bar = ttk.Progressbar(top_frame, orient='horizontal', mode='determinate')
+        self.progress_bar = ttk.Progressbar(top_frame, orient=tk.HORIZONTAL, mode='determinate')
         self.progress_bar.grid(row=1, column=1, sticky='ew', padx=(0, 5))
         
         self.start_button = ttk.Button(top_frame, command=self.controller.start_processing_thread)
         self.start_button.grid(row=1, column=2, sticky='ew', padx=(5, 0))
         
-        self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, font=("TkFixedFont", 10), state='disabled', padx=5, pady=5)
+        self.log_area = scrolledtext.ScrolledText(self, wrap=tk.WORD, font=("TkFixedFont", 10), state=tk.DISABLED, padx=5, pady=5)
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
-    def set_texts(self, start_btn_text: str, folder_label_text: str, folder_btn_text: str) -> None:
-        self.start_button.config(text=start_btn_text)
-        self.folder_label.config(text=folder_label_text)
-        self.btn_open_folder.config(text=folder_btn_text)
+    def update_ui_text(self) -> None:
+        self.start_button.config(text=self.controller.get_string('start_button'))
+        self.folder_label.config(text=self.controller.get_string('game_client_folder'))
+        self.btn_open_folder.config(text=self.controller.get_string('folder_open'))
         
     def set_base_path_text(self, path: str) -> None:
         self.folder_entry_var.set(path)
@@ -66,8 +69,8 @@ class RenamerView(ttk.Frame):
         self.start_button.config(state=state)
 
     def write_log(self, text: str) -> None:
-        self.log_area.configure(state='normal')
+        self.log_area.configure(state=tk.NORMAL)
         self.log_area.delete('1.0', tk.END)
         self.log_area.insert('1.0', text)
-        self.log_area.configure(state='disabled')
+        self.log_area.configure(state=tk.DISABLED)
         self.log_area.see(tk.END)

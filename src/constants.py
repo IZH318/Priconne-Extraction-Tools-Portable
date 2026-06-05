@@ -1,6 +1,5 @@
 from __future__ import annotations
-# src/constants.py
-from typing import Any, Final
+from typing import Final
 
 # === External URLs ===
 DB_DOWNLOAD_BASE_URL: Final[str] = "https://raw.githubusercontent.com/Expugn/priconne-database/master/"
@@ -15,14 +14,12 @@ APP_COPYRIGHT_YEAR: Final[str] = "2026"
 # === GUI Update Intervals (ms) ===
 GUI_POLLING_INTERVAL_MS: Final[int] = 100
 GUI_UPDATE_INTERVAL_MS: Final[int] = 10
-PROGRESS_INTERVAL_MS: Final[int] = 15
 
 # === Log Separators ===
 SEPARATOR_LONG: Final[str] = "-" * 100
 SEPARATOR_MEDIUM: Final[str] = "-" * 60
 SEPARATOR_SHORT: Final[str] = "-" * 50
 SEPARATOR_MINI: Final[str] = "-" * 30
-SEPARATOR_EQUAL: Final[str] = "=" * 100
 
 # === File Processing Constants ===
 HASH_CHUNK_SIZE: Final[int] = 4096
@@ -36,15 +33,16 @@ AV_TEMP_EXTENSIONS: Final[tuple[str, ...]] = ('.adx', '.bin', '.m2v', '.wav')
 FFMPEG_URL: Final[str] = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
 FFMPEG_ZIP_FILENAME: Final[str] = "ffmpeg_temp.zip"
 FFMPEG_EXE_NAME: Final[str] = "ffmpeg.exe"
-
-# === Story Viewer Tool ===
-STORY_CACHE_MAX_SIZE: Final[int] = 1024
+SENTINEL_VIDEO_DONE: Final[str] = "__VIDEO_DONE__"
+SENTINEL_AUDIO_DONE: Final[str] = "__AUDIO_DONE__"
 
 # === Unity Converter Tool ===
 UNITY_SUPPORTED_EXTENSIONS: Final[tuple[str, ...]] = ('.unity3d',)
+DEFAULT_UNITY_VERSION: Final[str] = "2021.3.20f1"
+UNITY_VERSION_PRESETS: Final[tuple[str, ...]] = ("2021.3.20f1", "6000.0.58.57061")
 
 # === Resource Remover Tool ===
-EXTENSION_CATEGORIES: Final[tuple[dict[str, Any], ...]] = (
+EXTENSION_CATEGORIES: Final = (
     {
         "key": "chk_assetbundle",
         "extensions": (".unity3d",),

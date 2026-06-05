@@ -1,11 +1,10 @@
-import queue
+from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 @dataclass
 class QueueEvent:
     """모든 큐 통신 메시지의 기본이 되는 추상 이벤트 클래스입니다."""
-    pass
 
 @dataclass
 class LogEvent(QueueEvent):
@@ -16,6 +15,7 @@ class LogEvent(QueueEvent):
     kwargs: dict[str, Any] = field(default_factory=dict)
     un_timestamped: bool = False
     is_spacing: bool = False
+    timestamp: str | None = None
 
 @dataclass
 class LogBlockEvent(QueueEvent):
@@ -28,13 +28,14 @@ class ProgressEvent(QueueEvent):
     """진행 상태 변경 이벤트"""
     target: str = ""
     is_start: bool = False
+    value: int = 0
     current: int = 0
     total: int = 0
 
 @dataclass
 class CompletionEvent(QueueEvent):
     """작업 완료 이벤트"""
-    target: str = "" # e.g., '__VIDEO_DONE__', '__AUDIO_DONE__'
+    target: str = "" # e.g., SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE (constants.py)
     success: bool = True
     result: Any = None
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 import os
-import sys
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -8,6 +7,13 @@ from collections.abc import Sequence
 from send2trash import send2trash
 
 from src.constants import SEPARATOR_SHORT
+from src.utils.base_path import get_application_base_path
+
+# 삭제 대상에서 제외할 보호 디렉터리 목록 (개발 환경 안전장치)
+_PROTECTED_DIRS: frozenset[str] = frozenset({
+    'src', 'tests', '.git', '.github', '.venv', 'venv',
+    'node_modules', '__pycache__', '.mypy_cache',
+})
 
 class ResourceRemoverLogic:
     def __init__(self, base_path: str | Path | None = None) -> None:
@@ -22,22 +28,23 @@ class ResourceRemoverLogic:
         if base_path is not None:
             self.base_path = Path(base_path).resolve()
         else:
-            # PyInstaller frozen 빌드 또는 일반 스크립트 실행 환경 자동 감지
-            if getattr(sys, 'frozen', False):
-                self.base_path = Path(sys.executable).parent
-            else:
-                self.base_path = Path(__file__).resolve().parent.parent.parent
+            self.base_path = get_application_base_path()
 
     def count_resources(self, extensions_to_remove: Sequence[str]) -> list[Path]:
         """
         주어진 확장자에 해당하는 파일 수를 삭제하지 않고 카운트합니다.
         매칭되는 파일들의 Path 객체 리스트를 반환합니다.
+
+        Note:
+            보호 디렉터리(_PROTECTED_DIRS)는 순회 대상에서 자동 제외됩니다.
         """
         found_files = []
         target_exts = tuple(extensions_to_remove)
         search_path = self.base_path
 
         for root, dirs, files in os.walk(search_path):
+            # 보호 디렉터리를 순회 대상에서 제외 (in-place 수정으로 os.walk에 반영)
+            dirs[:] = [d for d in dirs if d not in _PROTECTED_DIRS]
             for file in files:
                 if file.lower().endswith(target_exts):
                     found_files.append(Path(root) / file)
@@ -62,7 +69,7 @@ class ResourceRemoverLogic:
                 errors.append(f"{file_path}: {e}")
                 
         # 로그 파일 생성
-        log_filename = ""
+        log_filename: Path | None = None
         if deleted_files or errors:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             # 로그 파일이 기준 경로에 생성되도록 보장
@@ -85,7 +92,7 @@ class ResourceRemoverLogic:
                             f.write(f"[ERROR] {e}\n")
             except OSError as e:
                 logging.warning("Failed to create log file %s: %s", log_filename, e)
-                log_filename = ""  # 로그 파일 생성 실패 표시
+                log_filename = None  # 로그 파일 생성 실패 표시
                 
-        return len(deleted_files), errors, str(log_filename)
+        return len(deleted_files), errors, str(log_filename) if log_filename else ""
 

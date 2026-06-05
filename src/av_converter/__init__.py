@@ -1,3 +1,3 @@
-from .gui import App as AVConverterApp
+from .gui import AVConverterApp
 
 __all__ = ['AVConverterApp']

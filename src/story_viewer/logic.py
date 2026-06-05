@@ -2,8 +2,7 @@ from __future__ import annotations
 # src/story_viewer/logic.py
 import json
 import re
-import os
-from typing import Any, Iterable
+from typing import Any
 
 from src.constants import SEPARATOR_MEDIUM
 
@@ -11,6 +10,14 @@ class StoryDataLoader:
     """스토리 데이터 JSON 파일의 유효성 검증 및 에셋 이름 추출을 담당합니다."""
     @staticmethod
     def is_valid_storydata(file_path: str) -> tuple[bool, dict[str, Any] | None, str | None]:
+        """스토리 데이터 JSON 파일이 유효한지 검사합니다.
+
+        Args:
+            file_path: 검사할 JSON 파일 경로.
+
+        Returns:
+            (유효성 여부, 파싱된 데이터 딕셔너리, 에러 메시지) 튜플.
+        """
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -27,6 +34,14 @@ class StoryDataLoader:
 
     @staticmethod
     def extract_asset_name(value: Any) -> str | None:
+        """스토리 데이터 값에서 에셋(배경, BGM 등)의 이름을 추출합니다.
+
+        Args:
+            value: 추출할 원본 값.
+
+        Returns:
+            추출된 문자열 이름 또는 None.
+        """
         if isinstance(value, str): return value
         if isinstance(value, list) and value and isinstance(value[0], str): return value[0]
         return None
@@ -35,6 +50,17 @@ class SearchEngine:
     """스토리 데이터에 대한 다중 조건 검색 기능을 제공합니다."""
     @staticmethod
     def check_scene(scene: dict[str, Any], criteria: dict[str, str], char_type_search: str, char_type_speaker: str) -> bool:
+        """단일 씬(Scene) 데이터가 주어진 검색 조건과 일치하는지 확인합니다.
+
+        Args:
+            scene: 씬 데이터 딕셔너리.
+            criteria: 소문자로 변환된 검색 조건 딕셔너리.
+            char_type_search: 검색할 캐릭터 타입.
+            char_type_speaker: '화자'에 해당하는 문자열.
+
+        Returns:
+            조건 일치 여부 (bool).
+        """
         if 'content' in criteria and not ('print' in scene and criteria['content'] in scene['print'].get('text', '').lower()):
             return False
         if 'bgm' in criteria and not ('bgm' in scene and criteria['bgm'] in str(scene.get('bgm', '')).lower()):
@@ -55,6 +81,17 @@ class SearchEngine:
 
     @staticmethod
     def check_file_content(data: dict[str, Any], criteria: dict[str, str], char_type_search: str, char_type_speaker: str) -> bool:
+        """파일 전체 내용이 주어진 검색 조건과 일치하는지 확인합니다.
+
+        Args:
+            data: 스토리 데이터 전체 딕셔너리.
+            criteria: 검색 조건 딕셔너리.
+            char_type_search: 검색할 캐릭터 타입.
+            char_type_speaker: '화자'에 해당하는 문자열.
+
+        Returns:
+            조건 일치 여부 (bool).
+        """
         lower_criteria = {k: v.lower() for k, v in criteria.items()}
         scene_0 = data.get('0', {})
         
@@ -74,6 +111,18 @@ class SearchEngine:
 
     @staticmethod
     def check_file_for_search(filename: str, criteria: dict[str, str], char_type_search: str, char_type_speaker: str, all_files: dict[str, str]) -> bool:
+        """파일 이름과 내용을 모두 포함하여 검색 조건과 일치하는지 확인합니다.
+
+        Args:
+            filename: 파일 이름.
+            criteria: 검색 조건 딕셔너리.
+            char_type_search: 검색할 캐릭터 타입.
+            char_type_speaker: '화자'에 해당하는 문자열.
+            all_files: 전체 파일 경로 딕셔너리.
+
+        Returns:
+            조건 일치 여부 (bool).
+        """
         if 'filename' in criteria and criteria['filename'].lower() not in filename.lower():
             return False
         
@@ -91,7 +140,9 @@ class SearchEngine:
         return SearchEngine.check_file_content(data, content_criteria, char_type_search, char_type_speaker)
 
 class StoryFormatter:
+    """스토리 데이터를 UI에 표시하기 쉬운 텍스트 및 태그 포맷으로 변환하는 클래스입니다."""
     def __init__(self) -> None:
+        """StoryFormatter 객체를 초기화하고 필드 출력 순서를 설정합니다."""
         self.field_order = [
             'title', 'outline', 'movie', 'shake_anime', 'place',
             'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
@@ -106,6 +157,15 @@ class StoryFormatter:
         ]
 
     def format_story_data(self, data: dict[str, Any], view_mode: str) -> list[tuple[str, str | None]]:
+        """스토리 데이터를 UI에 표시할 수 있는 포맷된 텍스트 및 태그 리스트로 변환합니다.
+
+        Args:
+            data: 포맷팅할 스토리 데이터 딕셔너리.
+            view_mode: 뷰 모드 ('simple' 또는 기타).
+
+        Returns:
+            (포맷팅된 문자열, 태그) 튜플의 리스트.
+        """
         content_list = []
         scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')) 
         

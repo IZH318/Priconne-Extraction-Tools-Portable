@@ -3,52 +3,46 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
-from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
+from typing import Any, Callable
 
-class ToolTip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tip_window = None
-        self.id = None
-        self.x = 0
-        self.y = 0
-        self.widget.bind("<Enter>", self.enter)
-        self.widget.bind("<Leave>", self.leave)
-
-    def enter(self, event=None):
-        self.x = self.widget.winfo_rootx() + 20
-        self.y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
-        self.id = self.widget.after(500, self.show_tip)
-
-    def leave(self, event=None):
-        self.hide_tip()
-
-    def show_tip(self):
-        if self.tip_window or not self.text:
-            return
-        if str(self.widget.cget('state')) == 'disabled':
-            return
-        self.tip_window = tk.Toplevel(self.widget)
-        self.tip_window.wm_overrideredirect(True)
-        self.tip_window.wm_geometry(f"+{self.x}+{self.y}")
-
-        label = tk.Label(self.tip_window, text=self.text, background="#ffffe0", relief=tk.SOLID, borderwidth=1,
-                         font="TkDefaultFont")
-        label.pack(ipadx=1)
-
-    def hide_tip(self):
-        if self.id:
-            self.widget.after_cancel(self.id)
-            self.id = None
-        if self.tip_window:
-            self.tip_window.destroy()
-        self.tip_window = None
+from src.utils.tooltip import ToolTip
 
 class ExportWindow(tk.Toplevel):
-    def __init__(self, app, all_files_dict, search_data, db_status, server_db_info):
-        super().__init__(app.master)
-        self.app = app
+    """데이터 추출 옵션을 설정하는 대화상자 클래스입니다.
+
+    Note:
+        Controller와의 순환 참조를 방지하기 위해, Controller 전체를 참조하지 않고
+        필요한 콜백과 데이터 접근자만 개별 인자로 주입받습니다.
+    """
+
+    def __init__(
+        self,
+        master: tk.Tk | tk.Toplevel,
+        get_lang_dict: Callable[[], dict[str, str]],
+        export_func: Callable[[dict[str, Any], str], None],
+        update_status_bar: Callable[..., None],
+        all_files_dict: dict[str, str],
+        search_data: dict[str, Any],
+        db_status: dict[str, bool],
+        server_db_info: dict[str, Any],
+    ) -> None:
+        """ExportWindow 객체를 초기화합니다.
+
+        Args:
+            master: 최상위 Tk 윈도우 (다이얼로그 위치 기준용).
+            get_lang_dict: 현재 언어 딕셔너리를 반환하는 콜백.
+            export_func: 내보내기 로직을 실행하는 콜백.
+            update_status_bar: 상태바를 업데이트하는 콜백.
+            all_files_dict: 전체 스토리 파일 딕셔너리.
+            search_data: 현재 검색 결과 데이터.
+            db_status: 각 지역 DB(JP, KR)의 로드 상태.
+            server_db_info: 서버 DB 메타데이터.
+        """
+        super().__init__(master)
+        self._master = master
+        self._get_lang_dict = get_lang_dict
+        self._export_func = export_func
+        self._update_status_bar = update_status_bar
         self.all_files_dict = all_files_dict
         self.search_data = search_data
         self.db_status = db_status
@@ -66,7 +60,7 @@ class ExportWindow(tk.Toplevel):
         }
         self.story_data_scope = tk.StringVar(value='current_list') 
 
-        self.transient(app.master)
+        self.transient(master)
         self.grab_set()
         self._setup_ui()
         self.focus_set()
@@ -75,26 +69,33 @@ class ExportWindow(tk.Toplevel):
         self._toggle_story_data_options()
         self._toggle_event_list_options()
 
-    def _center_window(self, width, height):
+    def _center_window(self, width: int, height: int) -> None:
+        """대화상자를 화면 중앙에 배치합니다.
+
+        Args:
+            width: 창 너비.
+            height: 창 높이.
+        """
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x = (screen_width // 2) - (width // 2)
         y = (screen_height // 2) - (height // 2)
         self.geometry(f'{width}x{height}+{x}+{y}')
 
-    def _setup_ui(self):
+    def _setup_ui(self) -> None:
+        """대화상자의 UI 요소들을 초기화하고 배치합니다."""
         main_frame = ttk.Frame(self, padding="15")
-        main_frame.pack(fill="both", expand=True)
+        main_frame.pack(fill=tk.BOTH, expand=True)
 
         self.options_frame = ttk.LabelFrame(main_frame, text="", padding="10")
-        self.options_frame.pack(fill="both", expand=True, pady=(0, 10))
+        self.options_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
         self.cb_story_data = ttk.Checkbutton(self.options_frame, text="", variable=self.export_options['story_data'],
                                             command=self._toggle_story_data_options)
         self.cb_story_data.pack(anchor="w", pady=2)
         
         self.story_data_scope_frame = ttk.LabelFrame(self.options_frame, text="", padding="5")
-        self.story_data_scope_frame.pack(fill="x", padx=10, pady=(0, 5))
+        self.story_data_scope_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
 
         self.story_data_scope_current_list_radio = ttk.Radiobutton(
             self.story_data_scope_frame, text="", variable=self.story_data_scope, value="current_list"
@@ -123,11 +124,11 @@ class ExportWindow(tk.Toplevel):
         self.cb_event_list_master.pack(anchor="w", pady=2)
 
         self.event_list_group_frame = ttk.LabelFrame(self.options_frame, text="", padding="5")
-        self.event_list_group_frame.pack(fill="x", padx=10, pady=(5, 5))
+        self.event_list_group_frame.pack(fill=tk.X, padx=10, pady=(5, 5))
 
         self.cb_event_list_jp = ttk.Checkbutton(self.event_list_group_frame, text="", variable=self.export_options['event_list_jp'])
         self.cb_event_list_jp.pack(anchor="w", pady=2)
-        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
+        lang_dict = self._get_lang_dict()
         
         if not self.db_status.get('JP', False):
             self.cb_event_list_jp.tooltip = ToolTip(self.cb_event_list_jp, text=lang_dict['export_db_not_found_tooltip'])
@@ -138,17 +139,18 @@ class ExportWindow(tk.Toplevel):
             self.cb_event_list_kr.tooltip = ToolTip(self.cb_event_list_kr, text=lang_dict['export_db_not_found_tooltip'])
 
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(side="bottom", fill="x")
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
         self.export_button = ttk.Button(button_frame, text="", command=self.start_export)
-        self.export_button.pack(side="right")
+        self.export_button.pack(side=tk.RIGHT)
 
         self.cancel_button = ttk.Button(button_frame, text="", command=self.destroy)
-        self.cancel_button.pack(side="right", padx=(0, 5))
+        self.cancel_button.pack(side=tk.RIGHT, padx=(0, 5))
 
         self._update_ui_text()
 
-    def _toggle_story_data_options(self):
+    def _toggle_story_data_options(self) -> None:
+        """스토리 데이터 추출 옵션 선택 상태에 따라 하위 라디오 버튼의 활성화 상태를 토글합니다."""
         is_story_data_selected = self.export_options['story_data'].get()
         state_str = 'normal' if is_story_data_selected else 'disabled'
         
@@ -159,7 +161,8 @@ class ExportWindow(tk.Toplevel):
         elif is_story_data_selected and not self.story_data_scope.get():
             self.story_data_scope.set('current_list')
 
-    def _toggle_event_list_options(self):
+    def _toggle_event_list_options(self) -> None:
+        """이벤트 리스트 추출 옵션 선택 상태에 따라 하위 체크박스의 활성화 상태를 토글합니다."""
         is_master_selected = self.export_options['event_list_master'].get()
 
         jp_can_be_enabled = self.db_status.get('JP', False)
@@ -174,8 +177,9 @@ class ExportWindow(tk.Toplevel):
         if kr_final_state == 'disabled':
             self.export_options['event_list_kr'].set(False)
 
-    def _update_ui_text(self):
-        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
+    def _update_ui_text(self) -> None:
+        """현재 언어 설정에 맞춰 UI 텍스트를 업데이트합니다."""
+        lang_dict = self._get_lang_dict()
         self.title(lang_dict['export_window_title'])
         self.options_frame.config(text=lang_dict['export_type_frame'])
         
@@ -202,8 +206,9 @@ class ExportWindow(tk.Toplevel):
         if not self.db_status.get('KR', False) and hasattr(self.cb_event_list_kr, 'tooltip'):
             self.cb_event_list_kr.tooltip.text = lang_dict['export_db_not_found_tooltip']
 
-    def start_export(self):
-        lang_dict = LANGUAGES.get(self.app.lang_var.get(), LANGUAGES['ko'])
+    def start_export(self) -> None:
+        """사용자가 선택한 옵션들을 바탕으로 백그라운드 추출 작업을 시작합니다."""
+        lang_dict = self._get_lang_dict()
         selected_options = {k: v.get() for k, v in self.export_options.items()}
         selected_options['story_data_scope'] = self.story_data_scope.get() if selected_options['story_data'] else None
         actual_selected_exports = {k: v for k,v in selected_options.items() if k not in ['story_data_scope', 'event_list_master']}
@@ -216,9 +221,9 @@ class ExportWindow(tk.Toplevel):
         if not output_folder:
             return
 
-        self.app.view.update_status_bar('status_bar_export_prep')
+        self._update_status_bar('status_bar_export_prep')
         
-        thread = threading.Thread(target=self.app._export_master_thread, args=(selected_options, output_folder))
+        thread = threading.Thread(target=self._export_func, args=(selected_options, output_folder))
         thread.daemon = True
         thread.start()
         

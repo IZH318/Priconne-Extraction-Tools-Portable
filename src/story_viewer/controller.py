@@ -1,27 +1,26 @@
 from __future__ import annotations
 import os
 import logging
-import shutil
 import threading
 import queue
 import json
-import sqlite3
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from typing import Any
 
 from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
+from src.utils.about_dialog import show_about_dialog
 from .windows_search import SearchWindow
 from .windows_export import ExportWindow
 from .logic import StoryDataLoader, StoryFormatter
 from . import db_helper
-from src.constants import DB_DOWNLOAD_BASE_URL
 from src.queue_events import ActionEvent
+from src.queue_polling import QueuePollingMixin
+from .db_manager import StoryDBManager
+from .export_handler import StoryExportHandler
 from .view import StoryViewerView
 
-# SQLite 파일 식별을 위한 매직 바이트 (16바이트 헤더)
-_SQLITE_MAGIC = b'SQLite format 3\x00'
+
 
 
 def _load_db_config() -> dict[str, dict[str, str]]:
@@ -41,8 +40,8 @@ def _load_db_config() -> dict[str, dict[str, str]]:
         logging.warning("Failed to load db_config.json: %s. Using empty fallback.", e)
         return {}
 
-class StoryViewerController:
-    def __init__(self, app_wrapper: ttk.Frame, master: Any, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
+class StoryViewerController(QueuePollingMixin):
+    def __init__(self, app_wrapper: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
         """StoryViewerController를 초기화합니다.
 
         Args:
@@ -78,26 +77,49 @@ class StoryViewerController:
         self.display_mode_var = tk.StringVar(value="original")
         self.view_mode_var = tk.StringVar(value="simple")
 
-        self.db_status = {}
-        self.db_check_done = False
-        self.db_warning_shown = False
-
         # 서버별 DB 테이블/컬럼 해시 매핑 정보. (외부 db_config.json에서 로드)
         self.server_db_info = _load_db_config()
 
         self.view = StoryViewerView(app_wrapper, self)
-        
-        self.lang_var.trace_add('write', self._on_language_change_event)
 
-        self.view.after(100, self._process_queue)
+        self._db_manager = StoryDBManager(
+            master=self.master,
+            server_db_info=self.server_db_info,
+            get_lang_dict=self.get_lang_dict,
+            task_queue=self.task_queue,
+            view=self.view,
+            get_all_files=lambda: self.all_files,
+        )
+        self._export_handler = StoryExportHandler(
+            get_lang_dict=self.get_lang_dict,
+            task_queue=self.task_queue,
+            master=self.master,
+            view_mode_var=self.view_mode_var,
+            get_current_filenames=lambda: self.current_filenames_in_list,
+            get_loaded_filenames=lambda: self.loaded_filenames,
+            get_all_files=lambda: self.all_files,
+            get_search_data=lambda: self.search_data,
+            get_server_db_info=lambda: self.server_db_info,
+            get_db_manager=lambda: self._db_manager,
+            view=self.view,
+        )
+        
+        self.lang_var.trace_add('write', self._on_language_change)
+
+        self._init_queue_polling(self.view)
         self.view.update_ui_text()
         self.view.update_status_bar('status_bar_initial')
 
-    def get_lang_dict(self) -> dict:
+    def get_lang_dict(self) -> dict[str, str]:
         """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
 
-    def _on_language_change_event(self, *args) -> None:
+    def _on_language_change(self, *args: Any) -> None:
+        """언어 변경 이벤트를 처리하고 UI 텍스트 및 뷰 모드를 업데이트합니다.
+
+        Args:
+            *args: 가변 인자 리스트.
+        """
         try:
             self.view.update_ui_text()
             self.on_display_mode_change(force_update=True)
@@ -107,25 +129,14 @@ class StoryViewerController:
 
     def show_about_info(self) -> None:
         """프로그램 정보 대화상자를 표시합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
-        title = lang_dict['about_header']
-        info_lines = []
-        for key, value in self.about_info.items():
-            label_key = f'about_label_{key}'
-            label_text = lang_dict.get(label_key, key.capitalize())
-            info_lines.append(f"{label_text}: {value}")
-        messagebox.showinfo(title, "\n".join(info_lines), parent=self.master)
+        lang_dict = self.get_lang_dict()
+        show_about_dialog(lang_dict, self.about_info, self.master)
 
-    def _process_queue(self) -> None:
-        try:
-            while not self.task_queue.empty():
-                task_event = self.task_queue.get_nowait()
-                if isinstance(task_event, ActionEvent):
-                    task_event.action()
-        except queue.Empty:
-            pass
-        finally:
-            self.view.after(100, self._process_queue)
+    def _on_poll_cycle(self) -> None:
+        """태스크 큐에 쌓인 액션 이벤트들을 메인 스레드에서 처리합니다."""
+        for event in self._drain_queue(self.task_queue):
+            if isinstance(event, ActionEvent):
+                event.action()
 
     def _clear_workspace(self) -> None:
         """작업 공간을 초기화하여 모든 로드된 데이터와 UI 상태를 초기 상태로 되돌립니다."""
@@ -138,15 +149,15 @@ class StoryViewerController:
         self.current_filenames_in_list = []
         self.loaded_filenames = []
         self.current_file_path = None
-        self.view.search_button.config(state="disabled")
-        self.view.btn_export.config(state="disabled")
-        self.db_status.clear()
-        self.db_check_done = False
-        self.db_warning_shown = False
+        self.view.search_button.config(state=tk.DISABLED)
+        self.view.btn_export.config(state=tk.DISABLED)
+        self._db_manager.db_status.clear()
+        self._db_manager.db_check_done = False
+        self._db_manager.db_warning_shown = False
 
-    def _start_loading_task(self, paths=None, folder_path=None) -> None:
+    def _start_loading_task(self, paths: tuple[str, ...] | list[str] | None = None, folder_path: str | None = None) -> None:
         """스토리 데이터 파일 로딩 작업을 백그라운드 스레드로 시작합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        lang_dict = self.get_lang_dict()
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
             return
@@ -154,8 +165,8 @@ class StoryViewerController:
         self._clear_workspace()
         self.is_loading = True
         self.view.update_status_bar('status_bar_loading_start')
-        self.view.btn_open_file.config(state="disabled")
-        self.view.btn_open_folder.config(state="disabled")
+        self.view.btn_open_file.config(state=tk.DISABLED)
+        self.view.btn_open_folder.config(state=tk.DISABLED)
         
         thread = threading.Thread(target=self._load_and_analyze_thread, args=(paths, folder_path))
         thread.daemon = True
@@ -163,7 +174,7 @@ class StoryViewerController:
 
     def open_files(self) -> None:
         """파일 선택 대화상자를 열고 스토리 데이터 파일을 로드합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        lang_dict = self.get_lang_dict()
         file_paths = filedialog.askopenfilenames(
             title=lang_dict.get('dialog_title_open_files', "Select storydata file(s)"),
             filetypes=[(lang_dict.get('filetype_json', "JSON Files"), "*.json"), (lang_dict.get('filetype_all', "All Files"), "*.*")]
@@ -173,12 +184,18 @@ class StoryViewerController:
 
     def open_folder(self) -> None:
         """폴더 선택 대화상자를 열고 내부 스토리 데이터 파일을 로드합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        lang_dict = self.get_lang_dict()
         folder_path = filedialog.askdirectory(title=lang_dict.get('dialog_title_open_folder', "Select the folder with storydata files"))
         if folder_path:
             self._start_loading_task(folder_path=folder_path)
 
-    def _load_and_analyze_thread(self, paths, folder_path) -> None:
+    def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None) -> None:
+        """선택된 파일/폴더 내의 스토리 데이터를 백그라운드에서 로드하고 분석합니다.
+
+        Args:
+            paths: 로드할 파일 경로들의 튜플 또는 리스트.
+            folder_path: 로드할 폴더 경로.
+        """
         import re
         temp_all_files, invalid_files = {}, []
         file_candidates = {}
@@ -247,12 +264,18 @@ class StoryViewerController:
         results = {"all_files": temp_all_files, "titles": temp_file_titles, "search_data": temp_search_data}
         self.task_queue.put(ActionEvent(action=lambda: self._finish_loading(results, invalid_files)))
 
-    def _finish_loading(self, results, invalid_files) -> None:
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+    def _finish_loading(self, results: dict[str, Any] | None, invalid_files: list[tuple[str, str]]) -> None:
+        """파일 로딩 작업을 완료하고 UI를 갱신합니다.
+
+        Args:
+            results: 파싱된 데이터 딕셔너리 (all_files, titles, search_data) 또는 실패 시 None.
+            invalid_files: 로드에 실패한 (파일경로, 에러사유) 튜플 리스트.
+        """
+        lang_dict = self.get_lang_dict()
             
         self.is_loading = False
-        self.view.btn_open_file.config(state="normal")
-        self.view.btn_open_folder.config(state="normal")
+        self.view.btn_open_file.config(state=tk.NORMAL)
+        self.view.btn_open_folder.config(state=tk.NORMAL)
         if not results:
             self.view.update_status_bar('status_bar_loading_done', loaded=0, failed=len(invalid_files))
             messagebox.showwarning(lang_dict['msgbox_no_valid_files_title'], lang_dict['msgbox_no_valid_files_msg'], parent=self.view)
@@ -260,8 +283,8 @@ class StoryViewerController:
             self.all_files, self.file_titles, self.search_data = results['all_files'], results['titles'], results['search_data']
             self.loaded_filenames = sorted(list(self.all_files.keys()))
             self.view.update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
-            self.view.search_button.config(state="normal")
-            self.view.btn_export.config(state="normal")
+            self.view.search_button.config(state=tk.NORMAL)
+            self.view.btn_export.config(state=tk.NORMAL)
             self.update_file_list(list(self.all_files.keys()))
         
         if invalid_files:
@@ -283,148 +306,58 @@ class StoryViewerController:
                 except OSError as e:
                     messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e), parent=self.view)
 
-    def _check_and_cache_db_status(self) -> bool:
-        if self.db_check_done:
-            return False
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
-            
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        missing_db_files = []
-        
-        for server, info in self.server_db_info.items():
-            db_path = os.path.join(script_dir, info['db_path'])
-            exists = os.path.exists(db_path)
-            self.db_status[server] = exists
-            if not exists:
-                missing_db_files.append(info['db_path'])
 
-        if missing_db_files and not self.db_warning_shown:
-            paths_str = "\n".join(missing_db_files)
-            is_online = False
-            try:
-                import urllib.request
-                urllib.request.urlopen("https://github.com", timeout=2)
-                is_online = True
-            except OSError:
-                pass
-                
-            if is_online:
-                if messagebox.askyesno(
-                    lang_dict.get('db_download_prompt_title', 'Download DB'), 
-                    lang_dict.get('db_download_prompt_msg', 'Missing:\n{paths}').format(paths=paths_str), 
-                    parent=self.master
-                ):
-                    self._start_db_download(missing_db_files, script_dir)
-                    return True
-                else:
-                    self._show_offline_warning(paths_str, lang_dict, reason='cancel')
-            else:
-                self._show_offline_warning(paths_str, lang_dict, reason='offline')
-
-        self.db_check_done = True
-        return False
-        
-    def _show_offline_warning(self, paths_str, lang_dict, reason='offline') -> None:
-        if reason == 'cancel':
-            extra_msg = lang_dict.get('db_download_cancel_msg', '')
-        else:
-            extra_msg = lang_dict.get('db_download_offline_msg', '')
-            
-        messagebox.showwarning(
-            lang_dict.get('db_not_found_title', 'DB Not Found'), 
-            lang_dict.get('db_not_found_msg', '{paths}').format(paths=paths_str) + "\n\n" + extra_msg,
-            parent=self.master
-        )
-        self.db_warning_shown = True
-
-    def _start_db_download(self, files_to_download, dest_dir) -> None:
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
-        self.view.search_button.config(state="disabled")
-        self.view.btn_export.config(state="disabled")
-        
-        from tkinter import ttk
-        top = tk.Toplevel(self.master)
-        top.title(lang_dict.get('db_download_prompt_title', 'Downloading DB...'))
-        top.geometry("300x100")
-        top.transient(self.master)
-        top.grab_set()
-        lbl = ttk.Label(top, text="Downloading...")
-        lbl.pack(pady=10)
-        pb = ttk.Progressbar(top, mode='indeterminate')
-        pb.pack(fill=tk.X, padx=20)
-        pb.start(10)
-        
-        def _download_thread():
-            import urllib.request
-            base_url = DB_DOWNLOAD_BASE_URL
-            try:
-                for f in files_to_download:
-                    url = base_url + f
-                    dest_path = os.path.join(dest_dir, f)
-                    with urllib.request.urlopen(url) as response:
-                        with open(dest_path, 'wb') as out_file:
-                            shutil.copyfileobj(response, out_file)
-                    # 다운로드된 파일이 유효한 SQLite DB인지 무결성 검증
-                    with open(dest_path, 'rb') as db_file:
-                        header = db_file.read(16)
-                    if header != _SQLITE_MAGIC:
-                        os.remove(dest_path)
-                        raise RuntimeError(f"Downloaded file '{f}' is not a valid SQLite database (header mismatch).")
-                self.task_queue.put(ActionEvent(action=lambda: self._on_download_success(top)))
-            except (OSError, RuntimeError) as e:
-                self.task_queue.put(ActionEvent(action=lambda err=e: self._on_download_error(top, err)))
-                
-        t = threading.Thread(target=_download_thread, daemon=True)
-        t.start()
-        
-    def _on_download_success(self, top) -> None:
-        top.destroy()
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
-        messagebox.showinfo(lang_dict.get('db_download_prompt_title', 'Complete'), lang_dict.get('db_download_success_msg', 'Success'), parent=self.master)
-        self.db_warning_shown = False
-        self.db_check_done = False
-        self._check_and_cache_db_status()
-        self.view.search_button.config(state="normal" if self.all_files else "disabled")
-        self.view.btn_export.config(state="normal" if self.all_files else "disabled")
-        
-    def _on_download_error(self, top, err) -> None:
-        top.destroy()
-        messagebox.showerror(LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko']).get('db_download_error_title', 'Download Error'), str(err), parent=self.master)
-        self.db_check_done = True
-        self.view.search_button.config(state="normal" if self.all_files else "disabled")
-        self.view.btn_export.config(state="normal" if self.all_files else "disabled")
 
     def open_search_window(self) -> None:
-        """DB 검색 창을 엽니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        """검색 창을 엽니다. DB 상태를 사전 확인하고 누락 시 다운로드를 안내합니다."""
+        lang_dict = self.get_lang_dict()
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
             return
         if not self.all_files:
             messagebox.showinfo(lang_dict['msgbox_search_before_load_title'], lang_dict['msgbox_search_before_load_msg'], parent=self.view)
             return
-        is_downloading = self._check_and_cache_db_status()
+        is_downloading = self._db_manager.check_and_cache_db_status()
         if is_downloading:
             return
         
-        # pass self (Controller) instead of App ttk.Frame
-        SearchWindow(app=self, all_files_dict=self.all_files, search_callback=self.update_file_list, search_data=self.search_data, db_status=self.db_status, server_db_info=self.server_db_info)
+        SearchWindow(
+            master=self.master,
+            get_lang_dict=self.get_lang_dict,
+            get_lang_code=lambda: self.lang_var.get(),
+            search_callback=self.update_file_list,
+            task_queue=self.task_queue,
+            update_status_bar=self.view.update_status_bar,
+            all_files_dict=self.all_files,
+            search_data=self.search_data,
+            db_status=self._db_manager.db_status,
+            server_db_info=self.server_db_info,
+        )
 
     def open_export_window(self) -> None:
-        """DB 내보내기 창을 엽니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        """내보내기 창을 엽니다. DB 상태를 사전 확인하고 누락 시 다운로드를 안내합니다."""
+        lang_dict = self.get_lang_dict()
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
             return
         if not self.all_files:
             messagebox.showinfo(lang_dict['msgbox_no_export_files_title'], lang_dict['msgbox_no_export_files_msg'], parent=self.view)
             return
-        is_downloading = self._check_and_cache_db_status()
+        is_downloading = self._db_manager.check_and_cache_db_status()
         if is_downloading:
             return
-        ExportWindow(app=self, all_files_dict=self.all_files, search_data=self.search_data, db_status=self.db_status, server_db_info=self.server_db_info)
+        ExportWindow(
+            master=self.master,
+            get_lang_dict=self.get_lang_dict,
+            export_func=self.export_master_thread,
+            update_status_bar=self.view.update_status_bar,
+            all_files_dict=self.all_files,
+            search_data=self.search_data,
+            db_status=self._db_manager.db_status,
+            server_db_info=self.server_db_info,
+        )
 
-    def update_file_list(self, filenames) -> None:
+    def update_file_list(self, filenames: list[str]) -> None:
         """파일 목록 뷰를 업데이트합니다."""
         self.view.update_story_text([])
         self.current_file_path = None
@@ -458,7 +391,7 @@ class StoryViewerController:
             self.view.after(1, lambda: _populate_list(end_index))
         _populate_list()
 
-    def on_file_select(self, event=None) -> None:
+    def on_file_select(self, event: Any = None) -> None:
         """파일 목록에서 항목을 선택했을 때 스토리 내용을 표시합니다."""
         if not self.view.file_listbox.curselection():
             return
@@ -478,7 +411,13 @@ class StoryViewerController:
                 else:
                     self.view.update_status_bar('status_bar_cache_error', filename=filename)
 
-    def on_display_mode_change(self, event=None, force_update=False) -> None:
+    def on_display_mode_change(self, event: Any = None, force_update: bool = False) -> None:
+        """리스트박스의 파일명 표시 모드(원본 이름/스토리 제목)를 변경합니다.
+
+        Args:
+            event: Tkinter 이벤트 객체 (기본값: None).
+            force_update: 로딩 중에도 강제로 업데이트할지 여부.
+        """
         if not force_update and self.is_loading:
             return
         try:
@@ -491,7 +430,12 @@ class StoryViewerController:
             pass
         self.update_file_list(self.current_filenames_in_list)
 
-    def on_view_mode_change(self, force_update=False) -> None:
+    def on_view_mode_change(self, force_update: bool = False) -> None:
+        """스토리 내용 표시 모드(심플/상세)를 변경합니다.
+
+        Args:
+            force_update: 로딩 중에도 강제로 업데이트할지 여부.
+        """
         if not force_update and self.is_loading:
             return
         if self.current_file_path:
@@ -502,176 +446,15 @@ class StoryViewerController:
                 self.view.update_story_text(formatter.format_story_data(data, self.view_mode_var.get()))
 
     # Export functionality helper methods
-    def _save_list_to_file(self, data_list, filename_suffix, output_folder, header_text) -> tuple[bool, Exception | None]:
-        output_path = os.path.join(output_folder, f"{filename_suffix}.txt")
-        try:
-            with open(output_path, 'w', encoding='utf-8') as f:
-                if data_list:
-                    for item in data_list:
-                        f.write(f"{item}\n")
-                else:
-                    f.write(f"(No data found for {filename_suffix})\n")
-            return True, None
-        except OSError as e:
-            return False, e
+    def export_master_thread(self, selected_options: dict[str, Any], output_folder: str) -> None:
+        """선택된 여러 유형의 데이터들을 백그라운드 스레드에서 파일로 내보냅니다.
 
-    def _export_master_thread(self, selected_options, output_folder) -> None:
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
-        export_results = {}
-        total_exported_count = 0
-        total_failed_count = 0
-        all_failed_details = []
-
-        if selected_options['story_data']:
-            story_data_scope = selected_options['story_data_scope']
-            filenames_to_export = []
-            if story_data_scope == 'current_list':
-                filenames_to_export = self.current_filenames_in_list
-            elif story_data_scope == 'all_loaded':
-                filenames_to_export = self.loaded_filenames
-            
-            if not filenames_to_export:
-                export_results['story_data'] = {'success': 0, 'failed': 0, 'details': ["No story data files selected for export."]}
-            else:
-                type_name = lang_dict.get('export_type_story_data', 'Story Data')
-                success_count = 0
-                fail_count = 0
-                current_failed_details = []
-
-                for i, filename in enumerate(filenames_to_export):
-                    current_success = success_count
-                    current_fail = fail_count
-                    def _update_export_status(tn=type_name, s=current_success, f=current_fail, idx=i, tf=len(filenames_to_export)):
-                        self.view.update_status_bar('status_bar_exporting_type', type_name=tn, success=s, failed=f, i=idx+1, t=tf)
-                    self.task_queue.put(ActionEvent(action=_update_export_status))
-                    filepath = self.all_files.get(filename)
-                    if not filepath:
-                        fail_count += 1
-                        current_failed_details.append(f"{filename} (File Not Found)")
-                        continue
-                    
-                    is_valid, data, _ = StoryDataLoader.is_valid_storydata(filepath)
-                    if not is_valid:
-                        fail_count += 1
-                        current_failed_details.append(f"{filename} (Parse Error)")
-                        continue
-                        
-                    output_path = os.path.join(output_folder, os.path.splitext(filename)[0] + ".txt")
-                    try:
-                        formatter = StoryFormatter()
-                        text_to_write = "".join([text for text, _ in formatter.format_story_data(data, self.view_mode_var.get())])
-                        with open(output_path, 'w', encoding='utf-8') as f:
-                            f.write(text_to_write)
-                        success_count += 1
-                    except (OSError, json.JSONDecodeError) as e:
-                        fail_count += 1
-                        current_failed_details.append(f"{filename} (Error: {e})")
-                
-                export_results['story_data'] = {'success': success_count, 'failed': fail_count, 'details': current_failed_details}
-                total_exported_count += success_count
-                total_failed_count += fail_count
-                all_failed_details.extend(current_failed_details)
-
-        other_export_types = [
-            {'type': 'filenames', 'name_key': 'export_type_filenames', 'data_func': lambda: sorted(list(self.loaded_filenames)), 'file_suffix': 'filenames', 'header_key': 'export_type_filenames'},
-            {'type': 'character_names', 'name_key': 'export_type_character_names', 'data_func': lambda: sorted(self.search_data.get('character_names', [])), 'file_suffix': 'character_names', 'header_key': 'export_type_character_names'},
-            {'type': 'bgm_names', 'name_key': 'export_type_bgm_names', 'data_func': lambda: sorted(self.search_data.get('bgms', [])), 'file_suffix': 'bgm_names', 'header_key': 'export_type_bgm_names'},
-            {'type': 'background_names', 'name_key': 'export_type_background_names', 'data_func': lambda: sorted(self.search_data.get('backgrounds', [])), 'file_suffix': 'background_names', 'header_key': 'export_type_background_names'},
-        ]
-        
-        for task in other_export_types:
-            task_type = task['type']
-            if not selected_options[task_type]:
-                continue
-
-            type_name = lang_dict.get(task['name_key'], task_type)
-            success_count = 0
-            fail_count = 0
-            current_failed_details = []
-
-            self.task_queue.put(ActionEvent(action=lambda tn=type_name: self.view.update_status_bar('status_bar_exporting_type', type_name=tn, success=0, failed=0)))
-            try:
-                data_list = task['data_func']()
-                if not data_list:
-                    export_results[task_type] = {'success': 0, 'failed': 0, 'details': [f"No data found for {type_name}."]}
-                    continue
-
-                success, error = self._save_list_to_file(data_list, task['file_suffix'], output_folder, lang_dict.get(task['header_key'], type_name))
-                if success:
-                    success_count = 1
-                else:
-                    fail_count = 1
-                    current_failed_details.append(f"{type_name} (Error: {error})")
-            except (sqlite3.Error, OSError) as e:
-                fail_count += 1
-                current_failed_details.append(f"{type_name} (Unexpected Error: {e})")
-
-            export_results[task_type] = {'success': success_count, 'failed': fail_count, 'details': current_failed_details}
-            total_exported_count += success_count
-            total_failed_count += fail_count
-            all_failed_details.extend(current_failed_details)
-
-        if selected_options['event_list_master']:
-            def get_event_list(server_key):
-                db_info = self.server_db_info.get(server_key)
-                if not db_info or not self.db_status.get(server_key):
-                    return []
-                try:
-                    return sorted(db_helper.fetch_event_names(db_info))
-                except sqlite3.Error as e:
-                    return []
-
-            event_list_tasks = [
-                {'type': 'event_list_jp', 'name_key': 'export_type_event_list_jp', 'data_func': lambda: get_event_list('JP'), 'file_suffix': 'event_list_jp', 'header_key': 'export_type_event_list_jp'},
-                {'type': 'event_list_kr', 'name_key': 'export_type_event_list_kr', 'data_func': lambda: get_event_list('KR'), 'file_suffix': 'event_list_kr', 'header_key': 'export_type_event_list_kr'}
-            ]
-            for task in event_list_tasks:
-                task_type = task['type']
-                if not selected_options[task_type]:
-                    continue
-                type_name = lang_dict.get(task['name_key'], task_type)
-                success_count = 0
-                fail_count = 0
-                current_failed_details = []
-
-                self.task_queue.put(ActionEvent(action=lambda tn=type_name: self.view.update_status_bar('status_bar_exporting_type', type_name=tn, success=0, failed=0)))
-                try:
-                    data_list = task['data_func']()
-                    if not data_list:
-                        export_results[task_type] = {'success': 0, 'failed': 0, 'details': [f"No data found for {type_name}."]}
-                        continue
-
-                    success, error = self._save_list_to_file(data_list, task['file_suffix'], output_folder, lang_dict.get(task['header_key'], type_name))
-                    if success:
-                        success_count = 1
-                    else:
-                        fail_count = 1
-                        current_failed_details.append(f"{type_name} (Error: {error})")
-                except (sqlite3.Error, OSError) as e:
-                    fail_count += 1
-                    current_failed_details.append(f"{type_name} (Unexpected Error: {e})")
-                
-                export_results[task_type] = {'success': success_count, 'failed': fail_count, 'details': current_failed_details}
-                total_exported_count += success_count
-                total_failed_count += fail_count
-                all_failed_details.extend(current_failed_details)
-
-        self.task_queue.put(ActionEvent(action=lambda: self._finish_export(total_exported_count, total_failed_count, all_failed_details)))
-
-    def _finish_export(self, exported_count, failed_count, failed_list) -> None:
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
-
-        if exported_count > 0:
-            messagebox.showinfo(lang_dict['msgbox_export_complete_title'], lang_dict['msgbox_export_complete_msg'].format(exported_count=exported_count), parent=self.master)
-            self.view.update_status_bar('status_bar_export_summary', success_total=exported_count, failed_total=failed_count)
-        else:
-            messagebox.showwarning(lang_dict['msgbox_export_failed_title'], lang_dict['msgbox_export_failed_msg'].format(failed_count=failed_count), parent=self.master)
-            self.view.update_status_bar('status_bar_export_summary', success_total=exported_count, failed_total=failed_count)
-        
-        if failed_list:
-            error_msg = "\n".join(failed_list[:10]) + ("\n..." if len(failed_list) > 10 else "")
-            messagebox.showerror(lang_dict['msgbox_export_error_details_title'], lang_dict['msgbox_export_error_details_msg'].format(errors=error_msg), parent=self.master)
+        Args:
+            selected_options: 사용자가 선택한 내보내기 옵션 딕셔너리.
+            output_folder: 내보낼 대상 폴더 경로.
+        """
+        self._export_handler.export_master_thread(selected_options, output_folder)
 
     def cleanup(self) -> None:
         """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다."""
-        pass
+        self._stop_polling()

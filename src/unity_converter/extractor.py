@@ -2,252 +2,12 @@ from __future__ import annotations
 import os
 import re
 import json
-import base64
-from struct import unpack, error as struct_error
-from enum import Enum
+from struct import error as struct_error
 from typing import Any
 import UnityPy
 
 from src.queue_events import LogEvent, CompletionEvent
-
-class StoryDataDeserializer:
-    class CommandId(Enum):
-        NONE = -1
-        TITLE = 0
-        OUTLINE = 1
-        VISIBLE = 2
-        FACE = 3
-        FOCUS = 4
-        BACKGROUND = 5
-        PRINT = 6
-        TAG = 7
-        GOTO = 8
-        BGM = 9
-        TOUCH = 10
-        CHOICE = 11
-        VO = 12
-        WAIT = 13
-        IN_L = 14
-        IN_R = 15
-        OUT_L = 16
-        OUT_R = 17
-        FADEIN = 18
-        FADEOUT = 19
-        IN_FLOAT = 20
-        OUT_FLOAT = 21
-        JUMP = 22
-        SHAKE = 23
-        POP = 24
-        NOD = 25
-        SE = 26
-        BLACK_OUT = 27
-        BLACK_IN = 28
-        WHITE_OUT = 29
-        WHITE_IN = 30
-        TRANSITION = 31
-        SITUATION = 32
-        COLOR_FADEIN = 33
-        FLASH = 34
-        SHAKE_TEXT = 35
-        TEXT_SIZE = 36
-        SHAKE_SCREEN = 37
-        DOUBLE = 38
-        SCALE = 39
-        TITLE_TELOP = 40
-        WINDOW_VISIBLE = 41
-        LOG = 42
-        NOVOICE = 43
-        CHANGE = 44
-        FADEOUT_ALL = 45
-        MOVIE = 46
-        MOVIE_STAY = 47
-        BATTLE = 48
-        STILL = 49
-        BUSTUP = 50
-        ENV = 51
-        TUTORIAL_REWARD = 52
-        NAME_EDIT = 53
-        EFFECT = 54
-        EFFECT_DELETE = 55
-        EYE_OPEN = 56
-        MOUTH_OPEN = 57
-        AUTO_END = 58
-        EMOTION = 59
-        EMOTION_END = 60
-        ENV_STOP = 61
-        BGM_PAUSE = 62
-        BGM_RESUME = 63
-        BGM_VOLUME_CHANGE = 64
-        ENV_RESUME = 65
-        ENV_VOLUME = 66
-        SE_PAUSE = 67
-        CHARA_FULL = 68
-        SWAY = 69
-        BACKGROUND_COLOR = 70
-        PAN = 71
-        STILL_UNIT = 72
-        SLIDE_CHARA = 73
-        SHAKE_SCREEN_ONCE = 74
-        TRANSITION_RESUME = 75
-        SHAKE_LOOP = 76
-        SHAKE_DELETE = 77
-        UNFACE = 78
-        WAIT_TOKEN = 79
-        EFFECT_ENV = 80
-        BRIGHT_CHANGE = 81
-        CHARA_SHADOW = 82
-        UI_VISIBLE = 83
-        FADEIN_ALL = 84
-        CHANGE_WINDOW = 85
-        BG_PAN = 86
-        STILL_MOVE = 87
-        STILL_NORMALIZE = 88
-        VOICE_EFFECT = 89
-        TRIAL_END = 90
-        SE_EFFECT = 91
-        CHARACTER_UP_DOWN = 92
-        BG_CAMERA_ZOOM = 93
-        BACKGROUND_SPLIT = 94
-        CAMERA_ZOOM = 95
-        SPLIT_SLIDE = 96
-        BGM_TRANSITION = 97
-        SHAKE_ANIME = 98
-        INSERT_STORY = 99
-        PLACE = 100
-        IGNORE_BGM = 101
-        MULTI_LIPSYNC = 102
-        JINGLE = 103
-        TOUCH_TO_START = 104
-        EVENT_ADV_MOVE_HORIZONTAL = 105
-        BG_PAN_X = 106
-        BACKGROUND_BLUR = 107
-        SEASONAL_REWARD = 108
-        MINI_GAME = 109
-        MAX = 110
-        UNKNOWN = 112
-    
-    @staticmethod
-    def _deserialize_command(data) -> tuple['StoryDataDeserializer.CommandId', list[str]]:
-        """단일 명령어 데이터를 디코딩하고 문자열로 변환합니다."""
-        index = data[0] # 명령어 ID
-        args = data[1:] if len(data) > 1 else [] # 인자 목록
-        array = [] # 디코딩된 인자를 저장할 리스트
-        for arg in args:
-            # 비표준 바이트 변환 (값이 127보다 크면 255에서 뺌)
-            array2 = bytearray()
-            for byte in arg:
-                array2.append(255 - byte if byte > 127 else byte)
-            # Base64 디코딩 및 UTF-8 문자열 변환
-            str_ = base64.b64decode(array2)
-            array.append(str_.decode('utf-8', 'surrogateescape'))
-        
-        # 숫자 ID를 CommandId Enum 멤버로 변환
-        try:
-            cmd_id = StoryDataDeserializer.CommandId(index)
-        except ValueError:
-            cmd_id = StoryDataDeserializer.CommandId.UNKNOWN # 알 수 없는 ID는 UNKNOWN으로 처리
-        return (cmd_id, array)
-
-    @staticmethod
-    def _deserialize_story_raw(bytes_: bytes) -> list[tuple['StoryDataDeserializer.CommandId', list[str]]]:
-        """전체 스토리 바이너리 데이터를 읽어 명령어 목록으로 파싱합니다."""
-        commands = []
-        fs = 0 # 파일 스트림 포인터
-        raw_commands = []
-        i = 2
-        while i < len(bytes_):
-            args: list[bytes | int] = []
-            try:
-                # 2바이트(Big-endian)를 읽어 명령어 인덱스 파싱
-                index = int(unpack(">H", bytes_[fs : fs + 2])[0])
-            except (struct_error, IndexError):
-                break  # 바이너리 버퍼가 소진되었거나 형식이 맞지 않음
-            fs += 2
-            args.append(index)
-            num = i
-            while True:
-                try:
-                    # 4바이트(Big-endian)를 읽어 인자의 길이 파싱
-                    length = int(unpack(">l", bytes_[fs : fs + 4])[0])
-                except (struct_error, IndexError):
-                    length = 0
-                fs += 4
-                if length == 0: # 길이가 0이면 명령어의 끝
-                    break
-                # 해당 길이만큼 읽어 인자 데이터로 저장
-                array = bytes_[fs : fs + length]
-                fs += length
-                args.append(array)
-                num += 4 + length
-            i = num + 4
-            raw_commands.append(args)
-            i += 2
-        # 파싱된 각 raw 명령어를 디코딩
-        for raw_command in raw_commands:
-            if len(raw_command) > 1:
-                commands.append(StoryDataDeserializer._deserialize_command(raw_command))
-        return commands
-    
-    @staticmethod
-    def _clean_text(text: str) -> str:
-        """역직렬화된 텍스트의 특수 문자들을 정리합니다."""
-        replace_pairs = (
-            ("\\n", "\n"),
-            ("{0}", "{player_name}"),
-            ('\\"', '"'),
-        )
-        for pair in replace_pairs:
-            text = text.replace(*pair)
-        return text
-
-    @staticmethod
-    def deserialize(bytes_: bytes) -> dict:
-        """
-        메인 역직렬화 함수. 바이너리 데이터를 받아 최종 JSON 구조의 딕셔너리로 변환합니다.
-
-        Args:
-            bytes_ (bytes): StoryData 에셋의 원본 바이너리 데이터.
-
-        Returns:
-            dict: 스토리가 재구성된 딕셔너리.
-        """
-        if not isinstance(bytes_, (bytes, bytearray)):
-            bytes_ = str(bytes_).encode('utf-8', 'surrogateescape')
-        
-        commands = StoryDataDeserializer._deserialize_story_raw(bytes_)
-        story: dict[int, dict] = {} # 최종 스토리 딕셔너리
-        num = 0 # 현재 스토리 블록 번호
-        story[num] = {}
-        block: dict[str, str | tuple | dict] = story[num]
-
-        # 명령어 ID에 따라 데이터 구조화
-        for command_id, args in commands:
-            match command_id:
-                case StoryDataDeserializer.CommandId.PRINT: # 대사
-                    cmd = block.setdefault(command_id.name.lower(), {})
-                    cmd.setdefault("name", args[0])
-                    cmd["text"] = (cmd.get("text") or "") + StoryDataDeserializer._clean_text(args[1])
-                case StoryDataDeserializer.CommandId.CHOICE: # 선택지
-                    choices = block.setdefault(command_id.name.lower(), [])
-                    if isinstance(choices, list):
-                        choices.append({"text": args[0], "tag": args[1]})
-                case StoryDataDeserializer.CommandId.BUSTUP: # 새 블록 시작
-                    num += 1
-                    block = story.setdefault(num, {})
-                case StoryDataDeserializer.CommandId.TAG: # 태그
-                    story.setdefault(num + 1, {})
-                    story[num + 1][command_id.name.lower()] = args[0]
-                case StoryDataDeserializer.CommandId.OUTLINE: # 개요 텍스트 정리
-                    if args:
-                        block[command_id.name.lower()] = StoryDataDeserializer._clean_text(args[0])
-                case StoryDataDeserializer.CommandId.TITLE | StoryDataDeserializer.CommandId.SITUATION | StoryDataDeserializer.CommandId.VO | StoryDataDeserializer.CommandId.GOTO:
-                    block[command_id.name.lower()] = args[0] if len(args) == 1 else args
-                case _: # 기타 명령어들은 리스트에 추가
-                    if command_id.name.lower() not in block or not isinstance(block[command_id.name.lower()], list):
-                        block[command_id.name.lower()] = []
-                    block[command_id.name.lower()].append(args[0] if len(args) == 1 else args)
-
-        return story
+from src.parsers.story_deserializer import StoryDataDeserializer
 
 
 class AssetProcessor:
@@ -277,9 +37,6 @@ class AssetProcessor:
 
     # 기본적으로 추출이 활성화되는 타입 (HANDLER_TYPES 전체)
     DEFAULT_ENABLED = set(HANDLER_TYPES)
-
-    # 기본적으로 비활성화되지만 사용자가 활성화할 수 있는 타입
-    OPTIONAL_TYPES = sorted(SKIP_TYPES) + ["Material", "_OTHER_"]
 
     def __init__(self, file_path: str, output_path: str, base_input_path: str | None, log_queue: Any, enabled_types: set[str] | None = None) -> None:
         """
@@ -360,7 +117,7 @@ class AssetProcessor:
         initial_path = os.path.join(dest_folder, f"{sanitized_name}{final_ext}")
         return self._get_unique_path(initial_path, obj.path_id)
 
-    def process_all_assets(self) -> int | None:
+    def process_all_assets(self) -> int:
         """파일 내의 모든 에셋을 순회하며 처리를 시작하는 메인 함수입니다."""
         self.env = UnityPy.load(self.file_path) # 파일 로드
         num_assets = len(self.env.objects)
@@ -381,6 +138,24 @@ class AssetProcessor:
         else:
             self.log('extraction_complete', 'SUCCESS', {'total': num_assets, 'success': extracted_count})
 
+        return extracted_count
+
+    # 에셋 타입별 핸들러 디스패치 테이블 (if-elif 체인 대신 O(1) 조회)
+    _DISPATCH_TABLE: dict[str, str] = {
+        "Texture2D": "_export_texture2d",
+        "Sprite": "_export_sprite",
+        "TextAsset": "_export_textasset_dispatch",
+        "AudioClip": "_export_audioclip",
+        "Mesh": "_export_mesh",
+        "Font": "_export_font",
+        "Shader": "_export_shader",
+        "MonoBehaviour": "_export_monobehaviour",
+        "Texture2DArray": "_export_texture2darray",
+        "MovieTexture": "_export_movietexture",
+        "VideoClip": "_export_videoclip",
+        "AnimationClip": "_export_animationclip",
+    }
+
     def _dispatch_asset(self, obj: Any) -> bool:
         """에셋의 타입에 따라 적절한 처리 함수를 호출하는 라우터 역할을 합니다."""
         obj_type = obj.type.name
@@ -388,44 +163,26 @@ class AssetProcessor:
         # 사용자가 선택하지 않은 타입은 스킵
         if obj_type not in self.enabled_types:
             # 전용 핸들러가 없는 기타 타입인 경우 "_OTHER_" 체크
-            if obj_type not in self.HANDLER_TYPES and obj_type != "Material" and "_OTHER_" in self.enabled_types:
+            if obj_type not in self._DISPATCH_TABLE and obj_type != "Material" and "_OTHER_" in self.enabled_types:
                 pass  # 아래 제네릭 처리로 계속 진행
             else:
                 return False
 
         try:
-            if obj_type == "Texture2D":
-                return self._export_texture2d(obj)
-            elif obj_type == "Sprite":
-                return self._export_sprite(obj)
-            elif obj_type == "TextAsset":
-                return self._export_textasset_dispatch(obj)
-            elif obj_type == "AudioClip":
-                return self._export_audioclip(obj)
-            elif obj_type == "Mesh":
-                return self._export_mesh(obj)
-            elif obj_type == "Font":
-                return self._export_font(obj)
-            elif obj_type == "Shader":
-                return self._export_shader(obj)
-            elif obj_type == "MonoBehaviour":
-                return self._export_monobehaviour(obj)
-            elif obj_type == "Texture2DArray":
-                return self._export_texture2darray(obj)
-            elif obj_type == "MovieTexture":
-                return self._export_movietexture(obj)
-            elif obj_type == "VideoClip":
-                return self._export_videoclip(obj)
-            elif obj_type == "AnimationClip":
-                return self._export_animationclip(obj)
-            elif obj_type == "Material":
+            # 디스패치 테이블에서 핸들러 조회
+            handler_name = self._DISPATCH_TABLE.get(obj_type)
+            if handler_name:
+                return getattr(self, handler_name)(obj)
+
+            # Material: 사용자가 명시적으로 활성화한 경우에만 제네릭 JSON으로 추출
+            if obj_type == "Material":
                 if "Material" in self.enabled_types:
                     return self._export_generic_json(obj)
                 return False
-            else:
-                # 전용 핸들러가 없는 기타 타입: SKIP_TYPES에 속하면 제네릭 JSON
-                return self._export_generic_json(obj)
-        except Exception as e:
+
+            # 전용 핸들러가 없는 기타 타입: 제네릭 JSON으로 추출
+            return self._export_generic_json(obj)
+        except (ValueError, OSError, TypeError, AttributeError, KeyError) as e:
             # 처리 실패 시 예외 로깅 및 대체 저장 시도
             self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj_type, 'error': e})
             if obj_type == "Mesh":
@@ -524,7 +281,7 @@ class AssetProcessor:
         
         return bin_saved
 
-    def _export_textasset(self, obj, data=None):
+    def _export_textasset(self, obj: Any, data: Any = None) -> bool:
         """TextAsset을 원본 바이너리(.bin) 파일로 저장합니다."""
         if data is None:
             data = obj.parse_as_object()
@@ -547,7 +304,7 @@ class AssetProcessor:
     # UnityPy의 .samples 속성이 딕셔너리를 반환 → {파일명: 바이너리 데이터}
     # 파일명에 올바른 확장자(.wav, .ogg, .m4a)가 포함되어 있음.
     # =====================================================================
-    def _export_audioclip(self, obj):
+    def _export_audioclip(self, obj: Any) -> bool:
         """AudioClip 에셋을 올바른 형식(.wav/.ogg/.m4a)으로 저장합니다."""
         data = obj.parse_as_object()
         if data.samples:
@@ -574,7 +331,7 @@ class AssetProcessor:
     # Font 추출
     # m_FontData 바이트 배열에서 TTF/OTF를 판별하여 저장.
     # =====================================================================
-    def _export_font(self, obj):
+    def _export_font(self, obj: Any) -> bool:
         """Font 에셋을 .ttf 또는 .otf 파일로 저장합니다."""
         data = obj.parse_as_object()
         if data.m_FontData:
@@ -591,7 +348,7 @@ class AssetProcessor:
     # UnityPy의 내장 Mesh.export()가 압축/비압축 메시 모두 처리함.
     # MeshHelper.MeshHandler가 내부적으로 CompressedMesh 언패킹도 수행.
     # =====================================================================
-    def _export_mesh(self, obj):
+    def _export_mesh(self, obj: Any) -> bool:
         """Mesh 에셋을 .obj 파일로 저장합니다 (UnityPy 내장 export 사용)."""
         data = obj.parse_as_object()
         exported = data.export()
@@ -606,7 +363,7 @@ class AssetProcessor:
     # Shader 추출
     # UnityPy의 내장 Shader.export()가 셰이더 소스 코드를 텍스트로 변환.
     # =====================================================================
-    def _export_shader(self, obj):
+    def _export_shader(self, obj: Any) -> bool:
         """Shader 에셋을 .shader 텍스트 파일로 저장합니다."""
         data = obj.parse_as_object()
         exported = data.export()
@@ -623,7 +380,7 @@ class AssetProcessor:
     # TypeTree를 사용하여 JSON으로 추출 시도.
     # TypeTree가 없으면 바이너리(.bin)로 폴백.
     # =====================================================================
-    def _export_monobehaviour(self, obj):
+    def _export_monobehaviour(self, obj: Any) -> bool:
         """MonoBehaviour 에셋을 JSON 또는 바이너리로 저장합니다."""
         try:
             # TypeTree 기반 JSON 추출 시도
@@ -659,7 +416,7 @@ class AssetProcessor:
     # UnityPy의 .images 속성이 PIL.Image 리스트를 반환.
     # 각 이미지를 인덱스를 붙여 개별 .png로 저장.
     # =====================================================================
-    def _export_texture2darray(self, obj):
+    def _export_texture2darray(self, obj: Any) -> bool:
         """Texture2DArray 에셋의 각 레이어를 개별 .png 파일로 저장합니다."""
         data = obj.parse_as_object()
         try:
@@ -686,7 +443,7 @@ class AssetProcessor:
     # MovieTexture 추출 (레거시, Unity 5 이전)
     # m_MovieData 바이트 배열에 Ogg Theora 비디오 데이터가 저장됨.
     # =====================================================================
-    def _export_movietexture(self, obj):
+    def _export_movietexture(self, obj: Any) -> bool:
         """MovieTexture 에셋의 비디오 데이터를 .ogv 파일로 저장합니다."""
         data = obj.parse_as_object()
         if hasattr(data, 'm_MovieData') and data.m_MovieData:
@@ -703,7 +460,7 @@ class AssetProcessor:
     # 비디오 데이터는 m_ExternalResources에 StreamedResource로 참조됨.
     # 또는 에셋 내부에 직접 포함될 수 있음.
     # =====================================================================
-    def _export_videoclip(self, obj):
+    def _export_videoclip(self, obj: Any) -> bool:
         """VideoClip 에셋의 비디오 데이터를 추출합니다."""
         data = obj.parse_as_object()
         
@@ -745,7 +502,7 @@ class AssetProcessor:
     # AnimationClip 추출
     # TypeTree를 사용하여 JSON으로 추출.
     # =====================================================================
-    def _export_animationclip(self, obj):
+    def _export_animationclip(self, obj: Any) -> bool:
         """AnimationClip 에셋을 JSON 파일로 저장합니다."""
         tree = obj.parse_as_dict()
         path = self._get_export_path(obj, ".json")
@@ -758,7 +515,7 @@ class AssetProcessor:
     # 제네릭 JSON 추출 (기타 모든 타입)
     # TypeTree를 사용하여 오브젝트 데이터를 JSON으로 저장.
     # =====================================================================
-    def _export_generic_json(self, obj, error_info=None):
+    def _export_generic_json(self, obj: Any, error_info: str | None = None) -> bool:
         """처리 규칙이 없는 모든 에셋 타입을 TypeTree 기반의 .json 파일로 저장합니다."""
         path = self._get_export_path(obj, ".json")
         typetree = obj.parse_as_dict()
@@ -769,7 +526,7 @@ class AssetProcessor:
         return True
 
 
-def process_single_file(file_path, output_path, base_input_path, log_queue, completion_queue, unity_version="2021.3.20f1", enabled_types=None):
+def process_single_file(file_path: str, output_path: str, base_input_path: str | None, log_queue: Any, completion_queue: Any, unity_version: str | None = None, enabled_types: set[str] | None = None) -> None:
     """
     단일 파일을 처리하는 독립적인 워커(worker) 함수. (멀티프로세싱용)
     
@@ -782,16 +539,20 @@ def process_single_file(file_path, output_path, base_input_path, log_queue, comp
         unity_version (str): 유니티 파싱을 위한 백업/강제 버전 지정.
         enabled_types (set | None): 추출할 에셋 타입 집합. None이면 기본값.
     """
+    extracted_count = None
     try:
         from UnityPy import config
+        from src.constants import DEFAULT_UNITY_VERSION
+        if unity_version is None:
+            unity_version = DEFAULT_UNITY_VERSION
         config.FALLBACK_UNITY_VERSION = unity_version
         
         processor = AssetProcessor(file_path, output_path, base_input_path, log_queue, enabled_types)
-        processor.process_all_assets()
+        extracted_count = processor.process_all_assets()
     except Exception as e:
         # 심각한 오류 발생 시 로그 전송
         base_name = os.path.basename(file_path)
         log_queue.put(LogEvent(target=base_name, key='worker_process_error', level='ERROR', kwargs={'error': e}))
     finally:
         # 작업 완료 신호 전송
-        completion_queue.put(CompletionEvent(success=True))
+        completion_queue.put(CompletionEvent(success=True, result=extracted_count))

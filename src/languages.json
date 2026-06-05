@@ -54,7 +54,6 @@
             "conv_log_result_header": "  [결과]",
             "conv_log_skipped": "    이미 변환된 파일입니다. (건너뜀)",
             "conv_log_success": "    변환 성공: {path}",
-            "conv_log_error_no_file": "    [오류] 변환은 성공했으나 결과 파일이 없습니다.",
             "conv_log_error_fail": "    [오류] 변환 실패 - {filename}",
             "conv_log_error_exception": "    [오류] 치명적 예외 발생 - {error}",
             "conv_log_details_header": "  [상세 로그]",
@@ -81,7 +80,6 @@
             "ffmpeg_download_fail": "[오류] FFmpeg 다운로드 실패: {error}",
             "ffmpeg_extract_start": "  > FFmpeg 압축 해제 시작...",
             "ffmpeg_extract_complete": "  > FFmpeg 압축 해제 및 설치 완료: {path}",
-            "ffmpeg_extract_fail": "[오류] FFmpeg 압축 해제 및 설치 실패: {error}",
             "ffmpeg_prepare_fail": "[오류] FFmpeg이 준비되지 않아 비디오 변환을 시작할 수 없습니다.",
             "ffmpeg_no_usm_path": "[오류] UsmToolkit.exe 경로를 알 수 없어 FFmpeg을 다운로드할 위치를 결정할 수 없습니다. 변환을 중단합니다.",
             "ffmpeg_zip_structure_error": "FFmpeg ZIP 파일 내부에 예상되는 폴더 구조를 찾을 수 없습니다.",
@@ -153,7 +151,6 @@
             "conv_log_result_header": "  [Result]",
             "conv_log_skipped": "    Already converted file. (Skipped)",
             "conv_log_success": "    Conversion successful: {path}",
-            "conv_log_error_no_file": "    [Error] Conversion succeeded, but the output file is missing.",
             "conv_log_error_fail": "    [Error] Conversion failed - {filename}",
             "conv_log_error_exception": "    [Error] Critical exception occurred - {error}",
             "conv_log_details_header": "  [Details Log]",
@@ -180,7 +177,6 @@
             "ffmpeg_download_fail": "[Error] FFmpeg download failed: {error}",
             "ffmpeg_extract_start": "  > Starting FFmpeg extraction...",
             "ffmpeg_extract_complete": "  > FFmpeg extraction and installation complete: {path}",
-            "ffmpeg_extract_fail": "[Error] FFmpeg extraction and installation failed: {error}",
             "ffmpeg_prepare_fail": "[Error] Cannot start video conversion because FFmpeg is not ready.",
             "ffmpeg_no_usm_path": "[Error] Cannot determine where to download FFmpeg because UsmToolkit.exe path is unknown. Aborting.",
             "ffmpeg_zip_structure_error": "Could not find the expected folder structure within the FFmpeg ZIP file.",
@@ -956,7 +952,7 @@
             "filter_group_components": "컴포넌트",
             "processing_started_assets": "처리 시작. 총 {count}개의 에셋을 발견했습니다.",
             "no_assets_to_process": "처리할 에셋이 없어 건너뜁니다.",
-            "extraction_complete": "추출이 완료되었습니다. (성공된 파일들은 output 폴더에 저장됩니다.)",
+            "extraction_complete": "추출이 완료되었습니다.",
             "cancel_extraction": "추출 취소",
             "extraction_cancelled": "추출 작업이 취소되었습니다",
             "extraction_complete_with_fallback": "추출 완료: 총 {total}개 중 {success}개 저장 성공. (오류로 인해 {fallback_count}개는 .bin으로 저장)",
@@ -988,7 +984,8 @@
             "preview_audio_playing": "오디오 재생 중: {name}",
             "preview_converting": "처리 중...",
             "asset_error_title": "오류",
-            "asset_preview_title": "미리보기"
+            "asset_preview_title": "미리보기",
+            "total_extracted_assets": "총 추출된 에셋: {count}개"
         },
         "en": {
             "window_title": "unity3d File Converter",
@@ -1038,7 +1035,7 @@
             "filter_group_components": "Components",
             "processing_started_assets": "Processing started. Found {count} assets.",
             "no_assets_to_process": "No assets to process, skipping.",
-            "extraction_complete": "Extraction complete. (Successfully extracted files are in output folder)",
+            "extraction_complete": "Extraction complete.",
             "cancel_extraction": "Cancel Extraction",
             "extraction_cancelled": "Extraction cancelled",
             "extraction_complete_with_fallback": "Extraction complete: Succeeded in saving {success} out of {total} assets. ({fallback_count} saved as .bin due to errors)",
@@ -1070,7 +1067,8 @@
             "preview_audio_playing": "Playing audio: {name}",
             "preview_converting": "Processing...",
             "asset_error_title": "Error",
-            "asset_preview_title": "Preview"
+            "asset_preview_title": "Preview",
+            "total_extracted_assets": "Total Extracted Assets: {count}"
         },
         "ja": {
             "window_title": "unity3d File Converter",
@@ -1152,7 +1150,8 @@
             "cancel_extraction": "抽出取消",
             "extraction_cancelled": "抽出作業がキャンセルされました",
             "asset_error_title": "エラー",
-            "asset_preview_title": "プレビュー"
+            "asset_preview_title": "プレビュー",
+            "total_extracted_assets": "抽出されたアセットの合計: {count}件"
         }
     },
     "main_menu": {

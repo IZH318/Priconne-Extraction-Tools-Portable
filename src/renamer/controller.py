@@ -5,17 +5,21 @@ import queue
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
+from tkinter import ttk
 from src.languages import RENAMER_LANGUAGES as LANGUAGES
 from .logic import RenameHashedFile
 from .view import RenamerView
 from src.constants import APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSITE, GUI_UPDATE_INTERVAL_MS
+from src.queue_events import LogEvent, ProgressEvent
+from src.queue_polling import QueuePollingMixin
 
-class RenamerController:
+class RenamerController(QueuePollingMixin):
     """
     MVC 아키텍처 중 Controller(상태 및 뷰모델 관리)를 전담하는 클래스입니다.
     View로부터 이벤트를 전달받아 Background Worker(RenamerLogic)를 제어하고, View에 렌더링을 명령합니다.
+
+    QueuePollingMixin을 상속하여 다른 모듈(AV Converter, Unity Converter, Resource Remover 등)과
+    동일한 큐 폴링 인프라를 사용합니다.
     """
     _DEFAULT_ABOUT_INFO: dict[str, str] = {
         'program': "Manifest File Renamer",
@@ -26,8 +30,9 @@ class RenamerController:
         'website': APP_WEBSITE,
     }
 
-    def __init__(self, master: Any, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
-        self.view = RenamerView(master, self)
+    def __init__(self, frame: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
+        self.master = master
+        self.view = RenamerView(frame, self)
         self.about_info = about_info or self._DEFAULT_ABOUT_INFO
         
         self.current_lang = 'ko'
@@ -35,12 +40,13 @@ class RenamerController:
             self.lang_var = app_lang_var
         else:
             self.lang_var = tk.StringVar(value=self.current_lang)
-        self.lang_var.trace_add("write", self.on_language_change)
+        self.lang_var.trace_add("write", self._on_language_change)
         
         self.log_data = []  # tuple[timestamp, key, kwargs]
         self.last_progress_info = {'current': 0, 'total': 0}
         self.is_processing = False
         self.total_files_count = 0
+        self._active_thread: threading.Thread | None = None
 
         self.log_queue = queue.Queue()
         self.progress_queue = queue.Queue()
@@ -53,8 +59,15 @@ class RenamerController:
         self.update_ui_language(is_initial_setup=True)
         self.view.set_base_path_text("")
 
+        # QueuePollingMixin 초기화 — 기존 10ms 폴링 주기를 유지
+        self._init_queue_polling(self.view, interval_ms=GUI_UPDATE_INTERVAL_MS)
+
     def get_string(self, key: str, **kwargs: Any) -> str:
         return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
+
+    def get_lang_dict(self) -> dict[str, str]:
+        """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
+        return LANGUAGES.get(self.current_lang, LANGUAGES.get('ko', {}))
 
     def set_language(self, lang_code: str) -> None:
         if self.current_lang != lang_code:
@@ -62,16 +75,17 @@ class RenamerController:
             self.file_processor.set_get_string_func(self.get_string)
             self.update_ui_language()
 
-    def on_language_change(self, *args: Any) -> None:
+    def _on_language_change(self, *args: Any) -> None:
+        """언어 변경 이벤트를 처리하고 UI 텍스트를 업데이트합니다.
+
+        Args:
+            *args: 가변 인자 리스트.
+        """
         new_lang = self.lang_var.get()
         self.set_language(new_lang)
 
     def update_ui_language(self, is_initial_setup: bool = False) -> None:
-        self.view.set_texts(
-            self.get_string('start_button'),
-            self.get_string('game_client_folder'),
-            self.get_string('folder_open')
-        )
+        self.view.update_ui_text()
         
         if not self.is_processing:
             if self.total_files_count > 0 and self.view.get_progress_value() >= 100:
@@ -121,15 +135,16 @@ class RenamerController:
                 output_buffer.append(key + "\n")
                 continue
 
-            if key == 'initial_info_db' and kwargs is not None:
+            render_kwargs = dict(kwargs) if kwargs is not None else None
+            if key == 'initial_info_db' and render_kwargs is not None:
                 folder_lines = []
                 folders = self.file_processor.target_folders
                 for idx, folder in enumerate(folders):
                     prefix_key = 'folder_item_last' if idx == len(folders) - 1 else 'folder_item_branch'
                     folder_lines.append(self.get_string(prefix_key, folder_name=folder))
-                kwargs['folder_structure'] = "\n".join(folder_lines)
+                render_kwargs['folder_structure'] = "\n".join(folder_lines)
 
-            message = self.get_string(key, **kwargs) if kwargs is not None else self.get_string(key)
+            message = self.get_string(key, **render_kwargs) if render_kwargs is not None else self.get_string(key)
             if not message:
                 continue
 
@@ -200,59 +215,50 @@ class RenamerController:
         
         self.file_processor.set_get_string_func(self.get_string)
         
-        processing_thread = threading.Thread(target=self.file_processor.process_files, daemon=True)
-        processing_thread.start()
-        
-        self.monitor_queue(processing_thread)
+        self._active_thread = threading.Thread(target=self.file_processor.process_files, daemon=True)
+        self._active_thread.start()
 
-    def monitor_queue(self, thread) -> None:
-        log_items_batch = []
-        progress_updates = []
-        
-        try:
-            while not self.log_queue.empty():
-                log_items_batch.append(self.log_queue.get_nowait())
-            while not self.progress_queue.empty():
-                progress_updates.append(self.progress_queue.get_nowait())
-        except queue.Empty:
-            pass
+    def _on_poll_cycle(self) -> None:
+        """QueuePollingMixin 훅: 매 폴링 사이클마다 로그/진행률 큐를 처리합니다."""
+        # 처리 중이 아니면 큐 확인 불필요
+        if not self.is_processing:
+            return
+
+        log_items_batch = self._drain_queue(self.log_queue)
+        progress_updates = self._drain_queue(self.progress_queue)
 
         if log_items_batch:
             # 첫 실행이 아닌 경우, 처리 로그 앞에 빈 줄 추가
             last_key = self.log_data[-1][1] if self.log_data else None
             if last_key is not None and last_key.strip() != "":
-                if log_items_batch[0][0] == 'raw' and log_items_batch[0][1].get('text') == "":
+                first = log_items_batch[0]
+                if isinstance(first, LogEvent) and first.key == 'raw' and first.kwargs.get('text') == "":
                     pass
                 else:
                     self._add_raw_text("")
 
-            for key, kwargs in log_items_batch:
-                self._add_log_event(key, kwargs)
+            for event in log_items_batch:
+                self._add_log_event(event.key, event.kwargs if event.kwargs else None)
             self.re_render_logs()
 
         if progress_updates:
-            for progress_val, current, total in progress_updates:
-                self.view.set_progress_value(progress_val)
-                self.last_progress_info = {'current': current, 'total': total}
-                self.view.set_progress_text(self.get_string('status_processing', current=current, total=total))
-                self.total_files_count = total
+            for event in progress_updates:
+                self.view.set_progress_value(event.value)
+                self.last_progress_info = {'current': event.current, 'total': event.total}
+                self.view.set_progress_text(self.get_string('status_processing', current=event.current, total=event.total))
+                self.total_files_count = event.total
 
-        if thread.is_alive():
-            self.view.after(GUI_UPDATE_INTERVAL_MS, lambda: self.monitor_queue(thread))
-        else:
-            final_log_items = []
-            try:
-                while True: 
-                    final_log_items.append(self.log_queue.get_nowait())
-            except queue.Empty: pass
-            
+        # 스레드 종료 감지 — 잔여 이벤트 드레인 후 완료 처리
+        if self._active_thread is not None and not self._active_thread.is_alive():
+            final_log_items = self._drain_queue(self.log_queue)
             if final_log_items:
-                for key, kwargs in final_log_items:
-                    self._add_log_event(key, kwargs)
+                for event in final_log_items:
+                    self._add_log_event(event.key, event.kwargs if event.kwargs else None)
             
             self.re_render_logs()
 
             self.is_processing = False
+            self._active_thread = None
             self.view.set_progress_value(100)
             if self.total_files_count > 0:
                 self.view.set_progress_text(self.get_string('status_complete_count', count=self.total_files_count))
@@ -261,5 +267,5 @@ class RenamerController:
             self.view.set_start_button_state(tk.NORMAL)
 
     def cleanup(self) -> None:
-        """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다. (현재 리소스 없음)"""
-        pass
+        """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다."""
+        self._stop_polling()

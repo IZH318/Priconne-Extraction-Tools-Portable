@@ -1,6 +1,5 @@
 from __future__ import annotations
 import os
-import sys
 import sqlite3
 import hashlib
 import concurrent.futures
@@ -12,6 +11,7 @@ from pathlib import Path
 
 from src.constants import SEPARATOR_LONG, RENAMER_TARGET_FOLDERS, HASH_CHUNK_SIZE, SHA1_LENGTH
 from src.queue_events import LogEvent, ProgressEvent
+from src.utils.base_path import get_application_base_path
 
 class RenameHashedFile:
     # --- 백엔드 클래스 초기화 메서드 ---
@@ -28,10 +28,8 @@ class RenameHashedFile:
         # 프로그램 실행 기준 경로 (os.getcwd() 대신 안전한 절대 경로 사용)
         if base_path is not None:
             self.base_path = base_path
-        elif getattr(sys, 'frozen', False):
-            self.base_path = Path(sys.executable).parent
         else:
-            self.base_path = Path(__file__).resolve().parent.parent.parent
+            self.base_path = get_application_base_path()
         
         self.target_folders: Sequence[str] = RENAMER_TARGET_FOLDERS  # 파일 이름 변경 작업을 수행할 대상 폴더 목록
         self.hash_list: dict[str, str] = {}  # DB에서 불러온 {해시: 파일명} 데이터를 저장할 딕셔너리
@@ -59,12 +57,20 @@ class RenameHashedFile:
     def _add_progress_event(self, value: int, current: int, total: int) -> None:
         self.progress_queue.put(ProgressEvent(value=value, current=current, total=total))
 
+    def log(self, key: str, **kwargs) -> None:
+        """로그 메시지를 GUI 통신 큐에 추가하는 public API입니다."""
+        self._add_log_event(key, **kwargs)
+
+    def update_progress(self, value: int, current: int, total: int) -> None:
+        """진행률 정보를 GUI 통신 큐에 추가하는 public API입니다."""
+        self._add_progress_event(value, current, total)
+
     # --- 메인 파일 처리 로직 ---
     def process_files(self) -> None:
         """파일 이름 변경 작업의 전체 과정을 순차적으로 실행합니다."""
         # 1. manifest.db 파일 존재 확인
         manifest_db_path = self.base_path / "manifest.db"
-        if not os.path.exists(manifest_db_path):
+        if not manifest_db_path.exists():
             self.log('backend_warning_db_not_found')
             return
             
@@ -86,6 +92,7 @@ class RenameHashedFile:
         self.log('backend_found_files', count=total_files)
 
         # 4. SQLite DB에 연결하여 해시 데이터를 메모리(self.hash_list)로 로드
+        self.hash_list.clear()
         with sqlite3.connect(manifest_db_path) as connection:
             cursor = connection.cursor()
             cursor.execute("SELECT name, hash FROM t")
@@ -140,12 +147,12 @@ class RenameHashedFile:
                     elif 'b/' in first_line: new_filename = os.path.join("manifest", "soundmanifest")
                     
                     if new_filename:
-                        new_filepath = self.get_unique_filename(new_filename)
-                        os.rename(file_path, new_filepath)
+                        new_filepath = self.get_unique_filename(self.base_path / new_filename)
+                        Path(file_path).rename(new_filepath)
                         processed_count_check += 1
-                        relative_file_path = os.path.relpath(file_path, self.base_path)
+                        relative_file_path = Path(file_path).relative_to(self.base_path)
                         
-                        self.log('backend_rename_exception_block', original=relative_file_path, new=new_filename.replace(os.sep, '\\'))
+                        self.log('backend_rename_exception_block', original=str(relative_file_path), new=str(Path(new_filename)))
                         renamed_by_content = True
                 except OSError as e:
                     self.log('backend_unprocessed_error', error=str(e))
@@ -183,20 +190,20 @@ class RenameHashedFile:
 
     def rename_file(self, file_path: str, new_filename: str) -> tuple[bool, str]:
         """실제로 파일의 이름을 변경하고, 성공 또는 실패 결과를 로그로 남깁니다."""
-        new_filepath = os.path.join(str(self.base_path), new_filename)
-        os.makedirs(os.path.dirname(new_filepath), exist_ok=True)  # 대상 폴더가 없으면 생성
+        new_filepath = self.base_path / new_filename
+        new_filepath.parent.mkdir(parents=True, exist_ok=True)  # 대상 폴더가 없으면 생성
 
         # 이름 변경하려는 파일이 이미 존재할 경우, 중복을 피하기 위해 새 이름 생성
-        if os.path.exists(new_filepath):
+        if new_filepath.exists():
             new_filepath = self.get_unique_filename(new_filepath)
             
         try:
-            os.rename(file_path, new_filepath)
-            relative_file_path = os.path.relpath(file_path, self.base_path)  # 로그에 표시할 상대 경로
+            Path(file_path).rename(new_filepath)
+            relative_file_path = Path(file_path).relative_to(self.base_path)  # 로그에 표시할 상대 경로
             
-            self.log('backend_rename_block', original=relative_file_path, new=new_filename.replace(os.sep, '\\').replace('/', '\\'))
-            return True, new_filepath
-        except Exception as e:
+            self.log('backend_rename_block', original=str(relative_file_path), new=str(Path(new_filename)))
+            return True, str(new_filepath)
+        except (OSError, PermissionError) as e:
             self.log('backend_rename_error', error=str(e))
             return False, file_path
 
@@ -221,27 +228,26 @@ class RenameHashedFile:
         """지정된 모든 폴더와 그 하위 폴더를 재귀적으로 탐색하여 SHA1 형식의 파일 목록을 반환합니다."""
         all_files = []
         for folder in target_folders:
-            folder_path = os.path.join(str(self.base_path), folder)
-            if os.path.exists(folder_path) and os.path.isdir(folder_path):
+            folder_path = self.base_path / folder
+            if folder_path.is_dir():
                 for root, _, files in os.walk(folder_path):
                     for file_name in files:
                         if self.is_sha1(file_name):  # 파일명이 SHA1 형식인지 확인
-                            all_files.append(os.path.join(root, file_name))
+                            all_files.append(str(Path(root) / file_name))
         return all_files
 
     def is_sha1(self, s: str) -> bool:
         """주어진 문자열이 SHA1 해시 형식(길이 40의 16진수 문자열)인지 확인합니다."""
         return len(s) == SHA1_LENGTH and all(c in "0123456789abcdefABCDEF" for c in s)
 
-    def get_unique_filename(self, file_path: str) -> str:
+    def get_unique_filename(self, file_path: Path) -> Path:
         """
         주어진 파일 경로가 이미 존재할 경우, 중복되지 않는 새 파일 경로를 생성하여 반환합니다.
         예: 'file.txt' -> 'file_(Duplicate_1).txt'
         """
-        base, extension = os.path.splitext(file_path)
         counter = 1
-        new_file_path = f"{base}{extension}"
-        while os.path.exists(new_file_path):
-            new_file_path = f"{base}_(Duplicate_{counter}){extension}"
+        new_file_path = file_path
+        while new_file_path.exists():
+            new_file_path = file_path.with_name(f"{file_path.stem}_(Duplicate_{counter}){file_path.suffix}")
             counter += 1
         return new_file_path

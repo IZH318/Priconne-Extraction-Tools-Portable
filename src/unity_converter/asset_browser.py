@@ -10,6 +10,9 @@ from typing import Any
 import UnityPy
 from UnityPy import config
 
+from src.constants import DEFAULT_UNITY_VERSION
+from src.utils.platform_open import open_with_default_app
+
 
 class AssetBrowserWindow(tk.Toplevel):
     """Unity3D 파일의 에셋을 계층 구조로 탐색하고 더블클릭 시 임시 파일로 추출하여 OS 기본 프로그램으로 여는 창."""
@@ -33,11 +36,25 @@ class AssetBrowserWindow(tk.Toplevel):
         "MovieTexture": ".ogv", "VideoClip": ".mp4",
     }
 
-    def __init__(self, master: Any, file_path: str, lang_dict: dict[str, str], unity_version: str = "2021.3.20f1", app_temp_dir: str | None = None) -> None:
+    @staticmethod
+    def _sanitize_name(name: str) -> str:
+        """파일 시스템에 안전한 이름으로 변환합니다."""
+        return "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
+
+    @staticmethod
+    def _format_file_size(size: int) -> str:
+        """바이트 단위의 크기를 사람이 읽기 쉬운 문자열로 변환합니다."""
+        if size >= 1024 * 1024:
+            return f"{size / (1024 * 1024):.1f} MB"
+        elif size >= 1024:
+            return f"{size / 1024:.1f} KB"
+        return f"{size} B"
+
+    def __init__(self, master: tk.Tk | tk.Toplevel, file_path: str, lang_dict: dict[str, str], unity_version: str | None = None, app_temp_dir: str | None = None) -> None:
         super().__init__(master)
         self.file_path = file_path
         self.lang_dict = lang_dict
-        self.unity_version = unity_version
+        self.unity_version = unity_version or DEFAULT_UNITY_VERSION
         self._asset_map = {}  # tree item id → (obj, type_name)
         
         if app_temp_dir:
@@ -63,7 +80,7 @@ class AssetBrowserWindow(tk.Toplevel):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    def _build_ui(self):
+    def _build_ui(self) -> None:
         """트리뷰 UI를 구성합니다."""
         d = self.lang_dict
 
@@ -79,14 +96,14 @@ class AssetBrowserWindow(tk.Toplevel):
         self.tree.column('type', width=120)
         self.tree.column('size', width=80)
 
-        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=self.tree.yview)
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.tree.yview)
         self.tree.config(yscrollcommand=scrollbar.set)
-        self.tree.pack(side='left', fill='both', expand=True)
-        scrollbar.pack(side='right', fill='y')
+        self.tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.tree.bind('<Double-Button-1>', self._on_double_click)
 
-    def _load_assets(self):
+    def _load_assets(self) -> None:
         """UnityPy로 파일을 로드하고 트리에 에셋을 표시합니다."""
         try:
             config.FALLBACK_UNITY_VERSION = self.unity_version
@@ -113,13 +130,7 @@ class AssetBrowserWindow(tk.Toplevel):
 
             # 크기 계산
             try:
-                size = obj.byte_size
-                if size >= 1024 * 1024:
-                    size_str = f"{size / (1024 * 1024):.1f} MB"
-                elif size >= 1024:
-                    size_str = f"{size / 1024:.1f} KB"
-                else:
-                    size_str = f"{size} B"
+                size_str = self._format_file_size(obj.byte_size)
             except AttributeError:
                 size_str = "?"
 
@@ -127,7 +138,7 @@ class AssetBrowserWindow(tk.Toplevel):
                                         text=name, values=(type_name, size_str))
             self._asset_map[item_id] = (obj, type_name)
 
-    def _on_double_click(self, event):
+    def _on_double_click(self, event: tk.Event) -> None:
         """트리 항목 더블클릭 시 임시 파일로 추출하여 OS 기본 프로그램으로 엽니다."""
         item_id = self.tree.focus()
         if item_id not in self._asset_map:
@@ -155,7 +166,7 @@ class AssetBrowserWindow(tk.Toplevel):
 
         ttk.Label(popup, text=self.lang_dict.get('preview_converting', 'Processing...')).pack(pady=(15, 5))
         progress = ttk.Progressbar(popup, mode='indeterminate')
-        progress.pack(fill='x', padx=20, pady=(0, 10))
+        progress.pack(fill=tk.X, padx=20, pady=(0, 10))
         progress.start(15)
 
         def export_worker():
@@ -183,29 +194,28 @@ class AssetBrowserWindow(tk.Toplevel):
 
         threading.Thread(target=export_worker, daemon=True).start()
 
-    def _open_with_os(self, file_path):
+    def _open_with_os(self, file_path: str) -> None:
         """OS 기본 프로그램으로 파일을 엽니다."""
-        os.startfile(file_path)
+        open_with_default_app(file_path)
 
-    def _export_image(self, data, name):
+    def _export_image(self, data: Any, name: str) -> None:
         """이미지 에셋을 .png로 추출하여 OS 기본 프로그램으로 엽니다."""
         img = data.image
         if img is None:
             messagebox.showinfo(self.lang_dict.get('asset_preview_title', 'Preview'), self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
             return
 
-        safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
-        temp_path = os.path.join(self._preview_temp_dir, f"{safe_name}.png")
+        temp_path = os.path.join(self._preview_temp_dir, f"{self._sanitize_name(name)}.png")
         img.save(temp_path)
         self._open_with_os(temp_path)
 
-    def _export_audio(self, data, name):
+    def _export_audio(self, data: Any, name: str) -> None:
         """오디오 에셋을 추출하여 OS 기본 프로그램으로 엽니다."""
         if not data.samples:
             messagebox.showinfo(self.lang_dict.get('asset_preview_title', 'Preview'), self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
             return
 
-        safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
+        safe_name = self._sanitize_name(name)
         for sample_name, audio_data in data.samples.items():
             _, ext = os.path.splitext(sample_name)
             if not ext:
@@ -216,7 +226,7 @@ class AssetBrowserWindow(tk.Toplevel):
             self._open_with_os(temp_path)
             break  # 첫 번째 샘플만
 
-    def _export_text(self, data, name):
+    def _export_text(self, data: Any, name: str) -> None:
         """텍스트 에셋을 .txt로 추출하여 OS 기본 프로그램으로 엽니다."""
         text_content = data.m_Script
         if isinstance(text_content, bytes):
@@ -226,20 +236,18 @@ class AssetBrowserWindow(tk.Toplevel):
         else:
             text_content = str(text_content).encode('utf-8')
 
-        safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
-        temp_path = os.path.join(self._preview_temp_dir, f"{safe_name}.txt")
+        temp_path = os.path.join(self._preview_temp_dir, f"{self._sanitize_name(name)}.txt")
         with open(temp_path, "wb") as f:
             f.write(text_content)
         self._open_with_os(temp_path)
 
-    def _export_raw(self, obj, data, name, type_name):
+    def _export_raw(self, obj: Any, data: Any, name: str, type_name: str) -> None:
         """기타 에셋을 raw 바이너리로 추출하여 OS 기본 프로그램으로 엽니다."""
         ext = self.TYPE_EXTENSIONS.get(type_name, ".bin")
         if ext is None:
             ext = ".bin"
 
-        safe_name = "".join(c if c.isalnum() or c in ('_', '-') else '_' for c in name)
-        temp_path = os.path.join(self._preview_temp_dir, f"{safe_name}{ext}")
+        temp_path = os.path.join(self._preview_temp_dir, f"{self._sanitize_name(name)}{ext}")
 
         # raw bytes 추출
         raw_data = obj.get_raw_data()
@@ -247,11 +255,11 @@ class AssetBrowserWindow(tk.Toplevel):
             f.write(raw_data)
         self._open_with_os(temp_path)
 
-    def _on_close(self):
+    def _on_close(self) -> None:
         """창 종료 시 내부 임시 폴더를 정리합니다."""
         if os.path.exists(self._preview_temp_dir):
             try:
                 shutil.rmtree(self._preview_temp_dir, ignore_errors=True)
-            except Exception:
+            except OSError:
                 pass
         self.destroy()

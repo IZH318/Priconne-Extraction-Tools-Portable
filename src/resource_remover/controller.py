@@ -1,19 +1,29 @@
 from __future__ import annotations
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import queue
 import threading
 import os
-from typing import Any
 
 from src.languages import RESOURCE_REMOVER_LANGUAGES as LANGUAGES
 from src.constants import EXTENSION_CATEGORIES
 from src.queue_events import SearchDoneEvent, DeleteDoneEvent
+from src.queue_polling import QueuePollingMixin
 from .logic import ResourceRemoverLogic
 from .view import ResourceRemoverView
 
-class ResourceRemoverController:
-    def __init__(self, master: Any, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
+class ResourceRemoverController(QueuePollingMixin):
+    """Resource Remover 모듈의 비즈니스 로직과 UI를 연결하는 컨트롤러 클래스입니다."""
+
+    def __init__(self, frame: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
+        """ResourceRemoverController 객체를 초기화합니다.
+
+        Args:
+            frame: gui.py의 ttk.Frame 래퍼 (View의 부모 위젯).
+            master: 최상위 Tk 윈도우 (다이얼로그 위치 기준용).
+            app_lang_var: 앱 전역 언어 상태 변수 (기본값: None).
+            about_info: 프로그램 정보 대화상자에 표시될 메타데이터 (기본값: None).
+        """
         self.master = master
         self.logic = ResourceRemoverLogic()
         self.about_info = about_info or {}
@@ -22,7 +32,6 @@ class ResourceRemoverController:
         self.chk_vars = {}
         for cat in EXTENSION_CATEGORIES:
             self.chk_vars[cat["key"]] = tk.BooleanVar(value=True)
-            
         self.status_var = tk.StringVar()
         self.is_complete = False
         self.task_queue = queue.Queue()
@@ -32,37 +41,52 @@ class ResourceRemoverController:
         else:
             self.lang_var = tk.StringVar(value='ko')
 
-        self.view = ResourceRemoverView(master, self)
+        self.view = ResourceRemoverView(frame, self)
         
-        self.lang_var.trace_add('write', self._on_language_change_event)
+        self.lang_var.trace_add('write', self._on_language_change)
 
         self.view.update_ui_text()
-        self._process_queue()
+        self._init_queue_polling(self.view)
 
-    def _process_queue(self) -> None:
-        try:
-            while not self.task_queue.empty():
-                msg = self.task_queue.get_nowait()
-                if isinstance(msg, SearchDoneEvent):
-                    self._handle_search_done(msg.target_files, msg.lang_dict)
-                elif isinstance(msg, DeleteDoneEvent):
-                    self._handle_delete_done(msg.deleted_count, msg.errors, msg.log_path, msg.lang_dict)
-        except queue.Empty:
-            pass
-        finally:
-            self.view.after(100, self._process_queue)
+    @property
+    def is_task_complete(self) -> bool:
+        """작업이 완료되었는지 여부를 반환합니다."""
+        return self.is_complete
 
-    def get_lang_dict(self) -> dict:
+    @property
+    def is_use_trash_enabled(self) -> bool:
+        """휴지통 사용 옵션이 활성화되어 있는지 여부를 반환합니다."""
+        return self.use_trash_var.get()
+
+    def _on_poll_cycle(self) -> None:
+        """태스크 큐에 쌓인 이벤트(검색 완료, 삭제 완료 등)를 처리합니다."""
+        for event in self._drain_queue(self.task_queue):
+            if isinstance(event, SearchDoneEvent):
+                self._handle_search_done(event.target_files, event.lang_dict)
+            elif isinstance(event, DeleteDoneEvent):
+                self._handle_delete_done(event.deleted_count, event.errors, event.log_path, event.lang_dict)
+
+    def get_lang_dict(self) -> dict[str, str]:
         """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
 
-    def _on_language_change_event(self, *args) -> None:
+    def _on_language_change(self, *args: Any) -> None:
+        """언어 변경 이벤트를 처리하고 UI 텍스트를 업데이트합니다.
+
+        Args:
+            *args: 가변 인자 리스트.
+        """
         try:
             self.view.update_ui_text()
         except (tk.TclError, AttributeError):
             pass
 
     def _get_selected_extensions(self) -> list[str]:
+        """체크박스에서 선택된 확장자 목록을 반환합니다.
+
+        Returns:
+            선택된 확장자 문자열 리스트.
+        """
         selected = []
         for cat in EXTENSION_CATEGORIES:
             if self.chk_vars[cat["key"]].get():
@@ -71,11 +95,11 @@ class ResourceRemoverController:
 
     def start_removal(self) -> None:
         """선택된 카테고리의 리소스 파일 삭제를 시작합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES['ko'])
+        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
 
         selected_exts = self._get_selected_extensions()
         if not selected_exts:
-            messagebox.showwarning(lang_dict.get('warn_title', 'Warning'), lang_dict['warn_no_selection'], parent=self.view)
+            messagebox.showwarning(lang_dict.get('warn_title', 'Warning'), lang_dict.get('warn_no_selection', 'No categories selected.'), parent=self.view)
             return
             
         self.is_complete = False
@@ -85,14 +109,26 @@ class ResourceRemoverController:
         
         threading.Thread(target=self._search_thread, args=(selected_exts, lang_dict), daemon=True).start()
 
-    def _search_thread(self, selected_exts, lang_dict) -> None:
+    def _search_thread(self, selected_exts: list[str], lang_dict: dict[str, str]) -> None:
+        """삭제할 리소스 파일을 백그라운드 스레드에서 검색합니다.
+
+        Args:
+            selected_exts: 검색할 대상 확장자 리스트.
+            lang_dict: 현재 언어의 다국어 딕셔너리.
+        """
         target_files = self.logic.count_resources(selected_exts)
         self.task_queue.put(SearchDoneEvent(
             target_files=target_files,
             lang_dict=lang_dict
         ))
 
-    def _handle_search_done(self, target_files, lang_dict) -> None:
+    def _handle_search_done(self, target_files: list[str], lang_dict: dict[str, str]) -> None:
+        """파일 검색 완료 이벤트를 처리하고 삭제 확인 대화상자를 표시합니다.
+
+        Args:
+            target_files: 검색된 삭제 대상 파일 경로 리스트.
+            lang_dict: 현재 언어의 다국어 딕셔너리.
+        """
         file_count = len(target_files)
         
         if file_count == 0:
@@ -116,7 +152,15 @@ class ResourceRemoverController:
             self.status_var.set(lang_dict.get('status_ready', 'Ready...'))
             self.view.set_status_color("black")
 
-    def _delete_thread(self, target_files, selected_exts, lang_dict, use_trash) -> None:
+    def _delete_thread(self, target_files: list[str], selected_exts: list[str], lang_dict: dict[str, str], use_trash: bool) -> None:
+        """선택된 리소스 파일을 백그라운드 스레드에서 삭제(또는 휴지통으로 이동)합니다.
+
+        Args:
+            target_files: 삭제 대상 파일 경로 리스트.
+            selected_exts: 삭제된 확장자 리스트 (로그용).
+            lang_dict: 현재 언어의 다국어 딕셔너리.
+            use_trash: 휴지통 사용 여부.
+        """
         deleted_count, errors, log_filename = self.logic.remove_resources(target_files=target_files, extensions_to_remove=selected_exts, use_trash=use_trash)
         self.task_queue.put(DeleteDoneEvent(
             deleted_count=deleted_count,
@@ -125,7 +169,15 @@ class ResourceRemoverController:
             lang_dict=lang_dict
         ))
 
-    def _handle_delete_done(self, deleted_count, errors, log_filename, lang_dict) -> None:
+    def _handle_delete_done(self, deleted_count: int, errors: list[str], log_filename: str | None, lang_dict: dict[str, str]) -> None:
+        """파일 삭제 완료 이벤트를 처리하고 결과 메시지를 표시합니다.
+
+        Args:
+            deleted_count: 성공적으로 삭제된 파일 수.
+            errors: 삭제 중 발생한 에러 메시지 리스트.
+            log_filename: 삭제 로그 파일 경로 (생성된 경우).
+            lang_dict: 현재 언어의 다국어 딕셔너리.
+        """
         self.view.set_control_state('normal')
         self.is_complete = True
             
@@ -141,5 +193,5 @@ class ResourceRemoverController:
             messagebox.showerror(lang_dict.get('error_title', 'Error'), lang_dict.get('error_delete_failed', '{count} files failed.').format(count=len(errors)), parent=self.view)
 
     def cleanup(self) -> None:
-        """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다. (현재 리소스 없음)"""
-        pass
+        """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다."""
+        self._stop_polling()

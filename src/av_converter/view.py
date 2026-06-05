@@ -2,11 +2,14 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, filedialog, scrolledtext, Listbox, Menu
 from tkinterdnd2 import DND_FILES
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .controller import AVConverterController
 
 
 class AVConverterView(ttk.Frame):
-    def __init__(self, master: Any, controller: Any) -> None:
+    def __init__(self, master: ttk.Frame, controller: AVConverterController) -> None:
         super().__init__(master)
         self.controller = controller
         self.pack(fill=tk.BOTH, expand=True)
@@ -25,7 +28,7 @@ class AVConverterView(ttk.Frame):
 
     def _setup_ui(self) -> None:
         self.notebook = ttk.Notebook(self)
-        self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         self.audio_tab = ttk.Frame(self.notebook)
         self.video_tab = ttk.Frame(self.notebook)
@@ -50,7 +53,7 @@ class AVConverterView(ttk.Frame):
             ('audio', self.audio_widgets, self.audio_ui_elements),
             ('video', self.video_widgets, self.video_ui_elements),
         ]:
-            is_converting = widgets['action_btn']['state'] == tk.DISABLED
+            is_converting = widgets['action_btn'].instate(['disabled'])
             for elem_key, lang_key in ui_elements.items():
                 w = getattr(self, f'{tab_type}_ui_{elem_key}', None)
                 if w:
@@ -63,6 +66,7 @@ class AVConverterView(ttk.Frame):
                 widgets['action_btn'].config(text=d.get('cancel_conversion', 'Cancel'))
             else:
                 widgets['action_btn'].config(text=d['start_conversion'])
+                widgets['status_label'].config(text=d['status_idle'])
                 
             if 'overwrite_check' in widgets:
                 widgets['overwrite_check'].config(text=d['overwrite_option'])
@@ -72,10 +76,10 @@ class AVConverterView(ttk.Frame):
         is_audio_tab = (tab_type == 'audio')
 
         main_bottom_controls_frame = ttk.Frame(parent_tab)
-        main_bottom_controls_frame.pack(side='bottom', fill='x', pady=5, padx=5)
+        main_bottom_controls_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5, padx=5)
         
         tab_pane = ttk.PanedWindow(parent_tab, orient=tk.HORIZONTAL)
-        tab_pane.pack(side='top', fill=tk.BOTH, expand=True)
+        tab_pane.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
         left_pane_frame = ttk.Frame(tab_pane)
         tab_pane.add(left_pane_frame, weight=1)
@@ -84,7 +88,7 @@ class AVConverterView(ttk.Frame):
         tab_pane.add(right_pane_frame, weight=3)
         
         input_frame = ttk.LabelFrame(left_pane_frame, text=d['input_section'])
-        input_frame.pack(fill='x', pady=5, padx=5)
+        input_frame.pack(fill=tk.X, pady=5, padx=5)
         
         input_frame.columnconfigure(0, weight=1, uniform='btn')
         input_frame.columnconfigure(1, weight=1, uniform='btn')
@@ -96,52 +100,52 @@ class AVConverterView(ttk.Frame):
         add_folder_btn.grid(row=0, column=1, padx=(2, 5), pady=5, sticky='ew')
         
         list_container = ttk.LabelFrame(left_pane_frame, text=d['file_list_section'])
-        list_container.pack(fill='both', expand=True, pady=5, padx=5)
+        list_container.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
         
         list_frame = ttk.Frame(list_container)
-        list_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         listbox = Listbox(list_frame, listvariable=filenames_var, selectmode=tk.EXTENDED, height=10)
-        listbox.pack(side='left', fill='both', expand=True)
+        listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
-        scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=listbox.yview)
-        scrollbar.pack(side='right', fill='y')
+        scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL, command=listbox.yview)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         listbox.config(yscrollcommand=scrollbar.set)
 
         try:
             listbox.drop_target_register(DND_FILES)
             listbox.dnd_bind('<<Drop>>', lambda e, lb=listbox, tt=tab_type: self.controller.on_dnd_drop(e, lb, tt))
-        except Exception as ex:
-            self.controller.log_queue.put(('log_entry', tab_type, 'raw', {'text': f"Drag & Drop disabled: {ex}\n"}))
+        except (RuntimeError, tk.TclError) as ex:
+            self.controller.log_system_message(tab_type, f"Drag & Drop disabled: {ex}\n")
 
         self._create_right_click_menu(listbox, tab_type)
         
         log_frame_container = ttk.LabelFrame(right_pane_frame, text=d['log_section'])
-        log_frame_container.pack(fill="both", expand=True, padx=5, pady=5)
+        log_frame_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state='disabled', font=("TkFixedFont", 10), padx=5, pady=5)
-        log_text_widget.pack(fill="both", expand=True, padx=5, pady=(5,0))
+        log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state=tk.DISABLED, font=("TkFixedFont", 10), padx=5, pady=5)
+        log_text_widget.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5,0))
         
         status_frame = ttk.Frame(log_frame_container)
-        status_frame.pack(side='bottom', fill='x', padx=5, pady=(2,5))
+        status_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=(2,5))
         
         status_label = ttk.Label(status_frame, text=d['status_idle'])
-        status_label.pack(side='left')
+        status_label.pack(side=tk.LEFT)
         
-        progress_bar = ttk.Progressbar(status_frame, orient='horizontal', mode='determinate')
-        progress_bar.pack(side='left', fill='x', expand=True, padx=(5,0))
+        progress_bar = ttk.Progressbar(status_frame, orient=tk.HORIZONTAL, mode='determinate')
+        progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5,0))
         
         action_frame = ttk.LabelFrame(main_bottom_controls_frame, text=d['action_section'])
-        action_frame.pack(side='right', fill='y', padx=(5, 0))
+        action_frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 0))
         
         output_frame = ttk.LabelFrame(main_bottom_controls_frame, text=d['output_section'])
-        output_frame.pack(side='left', fill='x', expand=True)
+        output_frame.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         output_entry = ttk.Entry(output_frame, state='readonly')
-        output_entry.pack(side='left', fill='x', expand=True, padx=5, pady=5)
+        output_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
         
         browse_btn = ttk.Button(output_frame, text=d['browse'], command=lambda: self._select_output_folder(output_entry))
-        browse_btn.pack(side='left', padx=5, pady=5)
+        browse_btn.pack(side=tk.LEFT, padx=5, pady=5)
         
         action_button = ttk.Button(action_frame, text=d['start_conversion'])
         
@@ -166,21 +170,21 @@ class AVConverterView(ttk.Frame):
             setattr(self, f"{tab_type}_ui_{key}", widget)
         
         if is_audio_tab:
-            action_button.pack(side='left', pady=5, padx=5)
+            action_button.pack(side=tk.LEFT, pady=5, padx=5)
             overwrite_check = ttk.Checkbutton(action_frame, text=d['overwrite_option'], variable=self.audio_overwrite_var)
-            overwrite_check.pack(side='left', pady=5, padx=10)
+            overwrite_check.pack(side=tk.LEFT, pady=5, padx=10)
             action_button.config(command=lambda: self.controller.start_audio_conversion(output_entry.get(), self.audio_overwrite_var.get()))
             widgets_dict['overwrite_check'] = overwrite_check
         else:
-            action_button.pack(fill='x', pady=5, padx=5)
+            action_button.pack(fill=tk.X, pady=5, padx=5)
             action_button.config(command=lambda: self.controller.start_video_conversion(output_entry.get()))
 
         return widgets_dict, log_text_widget, ui_elements_for_lang_update
 
     def _select_output_folder(self, entry_widget: ttk.Entry) -> None:
-        folder = filedialog.askdirectory(title=self.lang_data.get('dialog_select_output', '저장할 폴더를 선택하세요'))
+        folder = filedialog.askdirectory(title=self.lang_data.get('dialog_select_output', 'Select an output folder'))
         if folder:
-            entry_widget.config(state='normal')
+            entry_widget.config(state=tk.NORMAL)
             entry_widget.delete(0, tk.END)
             entry_widget.insert(0, folder)
             entry_widget.config(state='readonly')
@@ -194,9 +198,9 @@ class AVConverterView(ttk.Frame):
         
         def show_menu(event):
             d = self.lang_data
-            menu.entryconfig(0, label=d['remove_selected'], state="normal" if listbox.curselection() else "disabled")
-            menu.entryconfig(1, label=d['remove_all'], state="normal" if listbox.size() > 0 else "disabled")
-            menu.entryconfig(3, label=d.get('preview_menu', 'Preview'), state="normal" if listbox.curselection() else "disabled")
+            menu.entryconfig(0, label=d['remove_selected'], state=tk.NORMAL if listbox.curselection() else "disabled")
+            menu.entryconfig(1, label=d['remove_all'], state=tk.NORMAL if listbox.size() > 0 else "disabled")
+            menu.entryconfig(3, label=d.get('preview_menu', 'Preview'), state=tk.NORMAL if listbox.curselection() else "disabled")
             menu.post(event.x_root, event.y_root)
             
         listbox.bind("<Button-3>", show_menu)
@@ -213,7 +217,7 @@ class AVConverterView(ttk.Frame):
         popup.resizable(False, False)
         ttk.Label(popup, text=d.get('preview_converting', 'Converting...')).pack(pady=(15, 5))
         progress = ttk.Progressbar(popup, mode='indeterminate')
-        progress.pack(fill='x', padx=20, pady=(0, 10))
+        progress.pack(fill=tk.X, padx=20, pady=(0, 10))
         progress.start(15)
         return popup
 
@@ -243,10 +247,10 @@ class AVConverterView(ttk.Frame):
         tree.column('num', width=80, minwidth=60, stretch=False, anchor='center')
         tree.column('name', width=400, minwidth=200, stretch=True, anchor='w')
         
-        scrollbar = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
         tree.config(yscrollcommand=scrollbar.set)
-        scrollbar.pack(side='right', fill='y')
-        tree.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         
         # 트리뷰에 스트림 항목 추가
         stream_map_builder(tree)
@@ -274,6 +278,6 @@ class AVConverterView(ttk.Frame):
         else:
             new_cmd = lambda: self.controller.start_audio_conversion(widgets['output_entry'].get(), self.audio_overwrite_var.get())
         
-        widgets['action_btn'].config(text=d['start_conversion'], state='normal', command=new_cmd)
+        widgets['action_btn'].config(text=d['start_conversion'], state=tk.NORMAL, command=new_cmd)
         widgets['status_label'].config(text=d['status_idle'])
         widgets['progress']['value'] = 0

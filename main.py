@@ -1,100 +1,102 @@
+from __future__ import annotations
 import sys
+import logging
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk
+from typing import Any
 from pathlib import Path
-from tkinterdnd2 import TkinterDnD, DND_FILES
+from tkinterdnd2 import TkinterDnD
 
-# 모듈 임포트
+# 모듈 및 컨테이너 임포트
 from src.renamer import FileRenamerGUI
 from src.unity_converter import AssetExtractorApp
 from src.av_converter import AVConverterApp
 from src.story_viewer import StoryViewerApp
 from src.resource_remover import ResourceRemoverApp
-from src.logger import setup_global_logging
+from src.container import AppContainer
+from src.protocols import ModuleController
+from src.languages import MAIN_MENU_LANGUAGES
+from src.utils.about_dialog import show_about_dialog
 
-from src.constants import (
-    APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, 
-    APP_WEBSITE, APP_COPYRIGHT_YEAR
-)
 
-# 모든 모듈이 공유하는 중앙 프로그램 정보 (DRY 원칙)
-APP_ABOUT_INFO = {
-    'program': "Priconne Extraction Tools (Portable)",
-    'version': APP_VERSION,
-    'updated': APP_LAST_UPDATE,
-    'license': "GNU General Public License v3.0",
-    'developer': APP_DEVELOPER,
-    'website': APP_WEBSITE,
-}
+class _MenuBarIndex:
+    """메인 메뉴바의 cascade 인덱스 (Tkinter Menu는 1-based)."""
+    FILE = 1
+    LANGUAGE = 2
 
-# 공통 언어 데이터
-import json
-import os
 
-with open(os.path.join(os.path.dirname(__file__), 'src', 'languages.json'), 'r', encoding='utf-8') as _f:
-    LANGUAGES = json.load(_f)
+class _FileMenuIndex:
+    """파일 메뉴 내 항목 인덱스 (0-based)."""
+    ABOUT = 0
+    # SEPARATOR = 1
+    EXIT = 2
+
+
+class _LangMenuIndex:
+    """언어 메뉴 내 항목 인덱스 (0-based)."""
+    KOREAN = 0
+    ENGLISH = 1
+    JAPANESE = 2
+
+
+class _TabIndex:
+    """노트북 탭 인덱스 (0-based)."""
+    RENAMER = 0
+    UNITY = 1
+    AV = 2
+    STORY = 3
+    REMOVER = 4
 
 class MainLauncher(TkinterDnD.Tk):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         
-        # 앱 메타데이터 구성
-        app_info = {
-            'APP_VERSION': APP_VERSION,
-            'APP_LAST_UPDATE': APP_LAST_UPDATE,
-            'APP_DEVELOPER': APP_DEVELOPER
-        }
+        # 1. 의존성 주입(DI) 컨테이너 초기화 및 핵심 서비스 가동
+        self.container = AppContainer(self)
+        self.container.initialize_core_services()
+        
+        # 2. 컨테이너로부터 공유 인스턴스(의존성) 참조 획득
+        deps = self.container.get_shared_dependencies()
+        self.app_lang_var = deps['app_lang_var']
+        self.about_info = deps['about_info']
 
-        # 기본 셋팅 먼저 (로거에 전송하기 위함)
-        self.app_lang_var = tk.StringVar(value='ko')
-
-        # 전역 기본 폰트 크기 10으로 강제
-        from tkinter import font as tkfont
-        default_font = tkfont.nametofont("TkDefaultFont")
-        default_font.configure(size=10)
-        text_font = tkfont.nametofont("TkTextFont")
-        text_font.configure(size=10)
-        fixed_font = tkfont.nametofont("TkFixedFont")
-        fixed_font.configure(size=10)
-
-        # Initialize Global Logging Safety Net
-        setup_global_logging(self, app_info, self.app_lang_var, LANGUAGES)
+        # 3. 메인 윈도우 UI 및 레이아웃 구성
         self._configure_window()
         self._create_main_menu()
-        self._create_tabs()
+        self._create_tabs(deps)
         
-        # 언어 변경 이벤트 추적
+        # 4. 언어 변경 이벤트 바인딩
         self.app_lang_var.trace_add('write', self._on_language_change)
         
-        # 초기 텍스트 적용
+        # 5. 초기 텍스트 적용
         self._update_launcher_ui_text()
 
-    def _configure_window(self):
+    def _configure_window(self) -> None:
         """메인 윈도우의 크기와 위치를 설정합니다."""
-        width, height = 1000, 750
+        width, height = 800, 600
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x = (screen_width // 2) - (width // 2)
         y = (screen_height // 2) - (height // 2)
         self.geometry(f'{width}x{height}+{x}+{y}')
         
-        # 아이콘 설정 (기존 앱들의 구조를 참조)
+        # 아이콘 설정
         base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
         icon_path = base_path / 'icon.ico'
         if icon_path.exists():
             try:
                 self.iconbitmap(icon_path)
-            except Exception:
+            except (tk.TclError, OSError):
                 pass
 
-    def _create_main_menu(self):
+    def _create_main_menu(self) -> None:
         """런처의 글로벌 메인 메뉴 바를 생성합니다."""
         self.menu_bar = tk.Menu(self)
         self.config(menu=self.menu_bar)
         
-        # 파일 메뉴 (종료 정도만 가짐)
+        # 파일 메뉴
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
-        self.file_menu.add_command(label="", command=self._show_about_dialog) # 0번 (About)
+        self.file_menu.add_command(label="", command=self._show_about_info) # 0번 (About)
         self.file_menu.add_separator()                                        # 1번
         self.file_menu.add_command(label="", command=self.quit)               # 2번 (Exit)
         
@@ -108,88 +110,87 @@ class MainLauncher(TkinterDnD.Tk):
         self.menu_bar.add_cascade(label="", menu=self.file_menu)
         self.menu_bar.add_cascade(label="", menu=self.lang_menu)
 
-    def _create_tabs(self):
-        """각 툴 모듈을 담을 노트북 탭 구조를 생성합니다."""
+    def _create_tabs(self, deps: dict[str, Any]) -> None:
+        """각 툴 모듈을 담을 노트북 탭 구조를 생성하고, 컨테이너 리소스를 주입합니다."""
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # 1. Manifest Renamer
+        # 모듈 생성 시 생성자 주입(Constructor Injection) 방식으로 공유 객체 전달
+        
+        self.apps = []
+
+        # 1. Manifest File Renamer
         self.tab1 = ttk.Frame(self.notebook)
-        self.app1 = FileRenamerGUI(self.tab1, app_lang_var=self.app_lang_var)
+        self.apps.append(FileRenamerGUI(self.tab1, app_lang_var=deps['app_lang_var'], about_info=deps['about_info']))
         self.notebook.add(self.tab1, text="")
         
-        # 2. .unity3d File Converter
+        # 2. unity3d File Converter
         self.tab2 = ttk.Frame(self.notebook)
-        self.app2 = AssetExtractorApp(self.tab2, app_lang_var=self.app_lang_var, about_info=APP_ABOUT_INFO)
+        self.apps.append(AssetExtractorApp(self.tab2, app_lang_var=deps['app_lang_var'], about_info=deps['about_info'], app_temp_dir=deps.get('app_temp_dir')))
         self.notebook.add(self.tab2, text="")
         
-        # 3. Audio / Video Converter
+        # 3. Audio/Video Converter
         self.tab3 = ttk.Frame(self.notebook)
-        self.app3 = AVConverterApp(self.tab3, app_lang_var=self.app_lang_var, about_info=APP_ABOUT_INFO)
+        self.apps.append(AVConverterApp(self.tab3, app_lang_var=deps['app_lang_var'], about_info=deps['about_info'], app_temp_dir=deps.get('app_temp_dir')))
         self.notebook.add(self.tab3, text="")
         
         # 4. Story Viewer
         self.tab4 = ttk.Frame(self.notebook)
-        self.app4 = StoryViewerApp(self.tab4, app_lang_var=self.app_lang_var, about_info=APP_ABOUT_INFO)
+        self.apps.append(StoryViewerApp(self.tab4, app_lang_var=deps['app_lang_var'], about_info=deps['about_info']))
         self.notebook.add(self.tab4, text="")
         
         # 5. Resource Remover
         self.tab5 = ttk.Frame(self.notebook)
-        self.app5 = ResourceRemoverApp(self.tab5, app_lang_var=self.app_lang_var)
+        self.apps.append(ResourceRemoverApp(self.tab5, app_lang_var=deps['app_lang_var'], about_info=deps['about_info']))
         self.notebook.add(self.tab5, text="")
 
-    def _on_language_change(self, *args):
+    def _on_language_change(self, *args: str) -> None:
         """언어 변수가 변경될 때 런처 UI 요소 텍스트를 업데이트합니다."""
         self._update_launcher_ui_text()
 
-    def _update_launcher_ui_text(self):
+    def _update_launcher_ui_text(self) -> None:
         """현재 선택된 언어에 맞춰 런처 메뉴와 탭 이름을 변경합니다."""
-        lang_dict = LANGUAGES.get(self.app_lang_var.get(), LANGUAGES['ko'])
+        lang_dict = MAIN_MENU_LANGUAGES.get(self.app_lang_var.get(), MAIN_MENU_LANGUAGES.get('ko', {}))
         
-        # 윈도우 제목
-        self.title(lang_dict['window_title'])
+        self.title(lang_dict.get('window_title', 'Priconne Extraction Tools'))
         
-        # 메뉴 라벨 업데이트 (1=File Menu, 2=Language Menu)
-        self.menu_bar.entryconfig(1, label=lang_dict['menu_file'])
-        self.menu_bar.entryconfig(2, label=lang_dict['menu_lang'])
+        self.menu_bar.entryconfig(_MenuBarIndex.FILE, label=lang_dict.get('menu_file', 'File'))
+        self.menu_bar.entryconfig(_MenuBarIndex.LANGUAGE, label=lang_dict.get('menu_lang', 'Language'))
         
-        # 파일 메뉴 내부 항목
-        self.file_menu.entryconfig(0, label=lang_dict['menu_info']) # About
-        self.file_menu.entryconfig(2, label=lang_dict['menu_exit']) # Exit
-        self.lang_menu.entryconfig(0, label=lang_dict['menu_lang_ko'])
-        self.lang_menu.entryconfig(1, label=lang_dict['menu_lang_en'])
-        self.lang_menu.entryconfig(2, label=lang_dict['menu_lang_ja'])
+        self.file_menu.entryconfig(_FileMenuIndex.ABOUT, label=lang_dict.get('menu_info', 'About'))
+        self.file_menu.entryconfig(_FileMenuIndex.EXIT, label=lang_dict.get('menu_exit', 'Exit'))
+        self.lang_menu.entryconfig(_LangMenuIndex.KOREAN, label=lang_dict.get('menu_lang_ko', '한국어'))
+        self.lang_menu.entryconfig(_LangMenuIndex.ENGLISH, label=lang_dict.get('menu_lang_en', 'English'))
+        self.lang_menu.entryconfig(_LangMenuIndex.JAPANESE, label=lang_dict.get('menu_lang_ja', '日本語'))
         
-        # 탭 라벨 업데이트
-        self.notebook.tab(0, text=lang_dict['tab_renamer'])
-        self.notebook.tab(1, text=lang_dict['tab_unity'])
-        self.notebook.tab(2, text=lang_dict['tab_av'])
-        self.notebook.tab(3, text=lang_dict['tab_story'])
-        self.notebook.tab(4, text=lang_dict['tab_remover'])
+        self.notebook.tab(_TabIndex.RENAMER, text=lang_dict.get('tab_renamer', "[※] Manifest File Renamer"))
+        self.notebook.tab(_TabIndex.UNITY, text=lang_dict.get('tab_unity', "unity3d File Converter"))
+        self.notebook.tab(_TabIndex.AV, text=lang_dict.get('tab_av', "Audio / Video Converter"))
+        self.notebook.tab(_TabIndex.STORY, text=lang_dict.get('tab_story', "storydata Viewer"))
+        self.notebook.tab(_TabIndex.REMOVER, text=lang_dict.get('tab_remover', "Original Resource Remover"))
 
-    def _show_about_dialog(self):
-        lang_dict = LANGUAGES.get(self.app_lang_var.get(), LANGUAGES['ko'])
+    def _show_about_info(self) -> None:
+        """프로그램 정보 대화상자를 표시합니다."""
+        lang_dict = MAIN_MENU_LANGUAGES.get(self.app_lang_var.get(), MAIN_MENU_LANGUAGES.get('ko', {}))
+        show_about_dialog(lang_dict, self.about_info, self)
         
-        # 언어 사전에 정의된 포맷 문자열 처리
-        msg = lang_dict['about_msg'].format(
-            version=APP_VERSION,
-            update=APP_LAST_UPDATE,
-            developer=APP_DEVELOPER,
-            website=APP_WEBSITE,
-            year=APP_COPYRIGHT_YEAR
-        )
-        messagebox.showinfo(lang_dict['about_title'], msg, parent=self)
+    def on_closing(self) -> None:
+        """앱 종료 시 등록된 모든 모듈의 자원을 해제합니다."""
+        for app in self.apps:
+            controller = getattr(app, 'controller', None)
+            if isinstance(controller, ModuleController):
+                try:
+                    controller.cleanup()
+                except (AttributeError, RuntimeError) as e:
+                    logging.warning("Error during cleanup: %s", e)
+                    
+        # 앱 전체 공유 자원 해제 (앱 전역 임시 폴더 삭제 등)
+        if hasattr(self, 'container') and hasattr(self.container, 'cleanup_shared'):
+            self.container.cleanup_shared()
+                    
+        self.destroy()
 
 if __name__ == '__main__':
-    # freeze_support 등 multiprocessing 초기화 코드가 필요할 수 있으나 현재는 패스
     app = MainLauncher()
-
-    def _on_app_closing():
-        """앱 종료 시 미리보기 임시 파일을 정리합니다."""
-        # AV Converter 미리보기 임시 파일 정리
-        if hasattr(app, 'app3') and hasattr(app.app3, '_cleanup_preview_temp'):
-            app.app3._cleanup_preview_temp()
-        app.destroy()
-
-    app.protocol("WM_DELETE_WINDOW", _on_app_closing)
+    app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()

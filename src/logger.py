@@ -18,10 +18,10 @@ def write_error_log(app_info: dict[str, Any], context_name: str, exc_type: type[
     생성된 로그 파일의 절대 경로를 반환합니다.
     """
     # 실행 경로: 메인 실행 파일(main.py)의 절대 경로를 우선 확보
-    if getattr(sys, 'frozen', False):
+    if sys.argv and sys.argv[0]:
         exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
     else:
-        exec_path = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
+        exec_path = os.path.abspath(os.getcwd())
     
     log_dir = Path(exec_path) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -87,7 +87,7 @@ def setup_global_logging(tk_root: Any = None, app_info: dict[str, Any] | None = 
         root_logger.addHandler(logging.NullHandler())
 
     # 2. 처리되지 않은 예외에 대한 훅 설정 (메인 스레드)
-    def handle_exception(exc_type, exc_value, exc_traceback):
+    def handle_exception(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: TracebackType | None) -> None:
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
@@ -101,7 +101,7 @@ def setup_global_logging(tk_root: Any = None, app_info: dict[str, Any] | None = 
     sys.excepthook = handle_exception
 
     # 3. 스레드 예외에 대한 훅 설정 (백그라운드 스레드)
-    def handle_thread_exception(args):
+    def handle_thread_exception(args: threading.ExceptHookArgs) -> None:
         thread_name = args.thread.name if args.thread else 'Unknown Thread'
         logging.error("Unhandled Thread Exception in %s", thread_name,
                       exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
@@ -116,7 +116,7 @@ def setup_global_logging(tk_root: Any = None, app_info: dict[str, Any] | None = 
     if tk_root:
         from tkinter import messagebox
 
-        def handle_tk_exception(exc_type, exc_value, exc_traceback):
+        def handle_tk_exception(exc_type: type[BaseException], exc_value: BaseException, exc_traceback: TracebackType | None) -> None:
             logging.error("Unhandled Tkinter GUI Exception", exc_info=(exc_type, exc_value, exc_traceback))
             
             # 언어 설정 가져오기 (기본값 'en')
@@ -143,6 +143,4 @@ def setup_global_logging(tk_root: Any = None, app_info: dict[str, Any] | None = 
                 messagebox.showerror(title, err_msg, parent=tk_root)
         
         tk_root.report_callback_exception = handle_tk_exception
-
-    logging.info("Global customized exception logging initialized.")
 
