@@ -2,7 +2,7 @@ from __future__ import annotations
 # src/story_viewer/logic.py
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 from src.constants import SEPARATOR_MEDIUM
 
@@ -140,23 +140,44 @@ class SearchEngine:
         return SearchEngine.check_file_content(data, content_criteria, char_type_search, char_type_speaker)
 
 class StoryFormatter:
-    """스토리 데이터를 UI에 표시하기 쉬운 텍스트 및 태그 포맷으로 변환하는 클래스입니다."""
-    def __init__(self) -> None:
-        """StoryFormatter 객체를 초기화하고 필드 출력 순서를 설정합니다."""
-        self.field_order = [
-            'title', 'outline', 'movie', 'shake_anime', 'place',
-            'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
-            'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 
-            'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'emotion_end', 'se', 'fadein_all', 
-            'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 
-            'choice', 'goto', 'text_size', 'scale', 'ui_visible', 'transition', 'black_out', 'white_out', 'bright_change', 
-            'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 
-            'shake', 'sway', 'out_l', 'out_r', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
-            'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 
-            'unknown'
-        ]
+    """스토리 데이터를 UI에 표시하기 쉬운 텍스트 및 태그 포맷으로 변환하는 유틸리티 클래스입니다.
 
-    def format_story_data(self, data: dict[str, Any], view_mode: str) -> list[tuple[str, str | None]]:
+    모든 메서드가 정적(stateless)이므로 인스턴스 생성 없이 클래스에서 직접 호출할 수 있습니다.
+    """
+    _FIELD_ORDER: list[str] = [
+        'title', 'outline', 'movie', 'shake_anime', 'place',
+        'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
+        'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 
+        'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'emotion_end', 'se', 'fadein_all', 
+        'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 
+        'choice', 'goto', 'text_size', 'scale', 'ui_visible', 'transition', 'black_out', 'white_out', 'bright_change', 
+        'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 
+        'shake', 'sway', 'out_l', 'out_r', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
+        'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 
+        'unknown'
+    ]
+
+    _DISPATCH_TABLE: dict[str, Callable[..., None]] | None = None
+
+    @classmethod
+    def _get_dispatch_table(cls) -> dict[str, Callable[..., None]]:
+        """필드별 포매터 디스패치 테이블을 반환합니다 (최초 1회만 생성)."""
+        if cls._DISPATCH_TABLE is None:
+            cls._DISPATCH_TABLE = {
+                'print': cls._format_print,
+                'chara_full': cls._format_generic_id_list,
+                'fadein': cls._format_generic_id_list,
+                'fadeout': cls._format_generic_id_list,
+                'face': cls._format_generic_id_list,
+                'nod': cls._format_simple_id_list,
+                'shake': cls._format_simple_id_list,
+                'focus': cls._format_simple_id_list,
+                'choice': cls._format_choice,
+            }
+        return cls._DISPATCH_TABLE
+
+    @staticmethod
+    def format_story_data(data: dict[str, Any], view_mode: str) -> list[tuple[str, str | None]]:
         """스토리 데이터를 UI에 표시할 수 있는 포맷된 텍스트 및 태그 리스트로 변환합니다.
 
         Args:
@@ -166,7 +187,8 @@ class StoryFormatter:
         Returns:
             (포맷팅된 문자열, 태그) 튜플의 리스트.
         """
-        content_list = []
+        dispatch = StoryFormatter._get_dispatch_table()
+        content_list: list[tuple[str, str | None]] = []
         scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')) 
         
         for key in scene_keys:
@@ -175,58 +197,41 @@ class StoryFormatter:
             if view_mode == 'simple':
                 keys_to_display = [k for k in ['title', 'outline', 'vo', 'print'] if k in scene]
             else:
-                existing_keys = [k for k in self.field_order if k in scene]
-                other_keys = sorted([k for k in scene.keys() if k not in self.field_order])
+                existing_keys = [k for k in StoryFormatter._FIELD_ORDER if k in scene]
+                other_keys = sorted([k for k in scene.keys() if k not in StoryFormatter._FIELD_ORDER])
                 keys_to_display = existing_keys + other_keys
 
             for field in keys_to_display:
                 value = scene[field]
                 content_list.append(("    " + f"{field}\n", 'key'))
-                formatter = getattr(self, f'_format_{field}', self._format_default)
+                formatter = dispatch.get(field, StoryFormatter._format_default)
                 formatter(value, content_list)
                 content_list.append(("\n", None))
             content_list.append((SEPARATOR_MEDIUM + "\n\n", None))
         return content_list
 
-    def _format_print(self, value: dict[str, Any], content_list: list[tuple[str, str | None]]) -> None:
+    @staticmethod
+    def _format_print(value: dict[str, Any], content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         name, text = str(value.get('name', '???')), value.get('text', '')
         formatted_text = text.replace('\n', '\n' + indent)
         content_list.extend([(indent + f"- name: {name}\n", 'print_sub_key'), (indent + f"- text: “{formatted_text}”\n", 'print_sub_key')])
 
-    def _format_chara_full(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        self._format_generic_id_list(value, content_list)
-
-    def _format_fadein(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        self._format_generic_id_list(value, content_list)
-
-    def _format_fadeout(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        self._format_generic_id_list(value, content_list)
-
-    def _format_face(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        self._format_generic_id_list(value, content_list)
-
-    def _format_nod(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        self._format_simple_id_list(value, content_list)
-
-    def _format_shake(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        self._format_simple_id_list(value, content_list)
-
-    def _format_focus(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        self._format_simple_id_list(value, content_list)
-
-    def _format_choice(self, value: list[dict[str, Any]], content_list: list[tuple[str, str | None]]) -> None:
+    @staticmethod
+    def _format_choice(value: list[dict[str, Any]], content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         for i, item in enumerate(value, 1):
             content_list.extend([(indent + f"{i}. {item['text']}", 'choice'), (f" (→ S# {item['tag']})\n", 'choice_tag')])
 
-    def _format_default(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+    @staticmethod
+    def _format_default(value: Any, content_list: list[tuple[str, str | None]]) -> None:
         content_list.append(("        " + f"{str(value)}\n", 'value'))
 
-    def _format_generic_id_list(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+    @staticmethod
+    def _format_generic_id_list(value: Any, content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         if not isinstance(value, list):
-            self._format_default(value, content_list)
+            StoryFormatter._format_default(value, content_list)
             return
         for item in value:
             if isinstance(item, list) and item:

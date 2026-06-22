@@ -8,6 +8,7 @@ import UnityPy
 
 from src.queue_events import LogEvent, CompletionEvent
 from src.parsers.story_deserializer import StoryDataDeserializer
+from src.exceptions import AssetProcessingError
 
 
 class AssetProcessor:
@@ -182,7 +183,7 @@ class AssetProcessor:
 
             # 전용 핸들러가 없는 기타 타입: 제네릭 JSON으로 추출
             return self._export_generic_json(obj)
-        except (ValueError, OSError, TypeError, AttributeError, KeyError) as e:
+        except (ValueError, OSError, TypeError, AttributeError, KeyError, AssetProcessingError) as e:
             # 처리 실패 시 예외 로깅 및 대체 저장 시도
             self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj_type, 'error': e})
             if obj_type == "Mesh":
@@ -265,7 +266,7 @@ class AssetProcessor:
             script_bytes = data.m_Script.encode('utf-8', 'surrogateescape')
 
             if not script_bytes:
-                raise ValueError("Story_data is empty or cannot be converted to bytes.")
+                raise AssetProcessingError(obj.name, "Story_data is empty or cannot be converted to bytes")
 
             # 역직렬화 및 JSON 저장
             deserialized_data = StoryDataDeserializer.deserialize(script_bytes)

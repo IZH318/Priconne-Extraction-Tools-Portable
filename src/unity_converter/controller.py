@@ -9,6 +9,7 @@ from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from src.languages import UNITY_CONVERTER_LANGUAGES as LANGUAGES
+from src.breadcrumbs import add_breadcrumb
 from src.queue_events import LogEvent, CompletionEvent
 from src.utils.about_dialog import show_about_dialog
 from .extractor import process_single_file, AssetProcessor
@@ -16,10 +17,11 @@ from .asset_browser import AssetBrowserWindow
 from src.constants import UNITY_SUPPORTED_EXTENSIONS as SUPPORTED_EXTENSIONS
 from src.constants import DEFAULT_UNITY_VERSION, UNITY_VERSION_PRESETS
 from src.queue_polling import QueuePollingMixin
+from src.log_history import LogHistoryMixin
 from src.utils.file_list_mixin import FileListMixin
 from .view import AssetExtractorView
 
-class AssetExtractorController(QueuePollingMixin, FileListMixin):
+class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
     # --- Lifecycle & Initialization ---
     def __init__(self, frame: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None, app_temp_dir: str | None = None) -> None:
         """AssetExtractorController를 초기화합니다.
@@ -160,18 +162,17 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         """
         try:
             self.view.update_ui_text()
-            self._redisplay_logs()
+            self.redraw_all_logs()
         except tk.TclError:
             pass
 
-    def _redisplay_logs(self) -> None:
-        """언어가 변경되었을 때 기존 로그 이벤트들을 새 언어에 맞춰 다시 출력합니다."""
-        self.view.log_text.config(state=tk.NORMAL)
-        self.view.log_text.delete('1.0', tk.END)
-        for event in self.log_events:
-            self._render_log_event(event)
-        self.view.log_text.config(state=tk.DISABLED)
-        self.view.log_text.see(tk.END)
+    def _get_log_configs(self) -> list[tuple[list, tk.Text]]:
+        """재렌더링 대상 (히스토리 리스트, Text 위젯) 쌍의 리스트를 반환합니다."""
+        return [(self.log_events, self.view.log_text)]
+
+    def _render_single_entry(self, entry: Any, index: int, history: list, widget: tk.Text) -> None:
+        """단일 로그 이벤트를 Text 위젯에 포매팅하여 출력합니다."""
+        self._render_log_event(entry, widget)
 
     def _add_log_event(self, message_key: str, level: str = 'INFO', format_args: dict[str, Any] | None = None, prefix: str | None = None) -> LogEvent:
         """로그 이벤트를 생성하여 반환합니다.
@@ -399,6 +400,7 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
             
         self.is_running = True
         self.cancel_token.reset()
+        add_breadcrumb("conv", "애셋 추출 시작", {"files": len(self.file_paths), "output": self.output_path})
         self.view.toggle_controls(False)
         self.processed_files_count = 0
         self.total_extracted_assets = 0

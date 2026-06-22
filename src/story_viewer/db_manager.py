@@ -4,10 +4,16 @@ import shutil
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+from urllib.parse import urlparse
+import queue
 
 from src.constants import DB_DOWNLOAD_BASE_URL
 from src.queue_events import ActionEvent
+from src.exceptions import DatabaseIntegrityError
+
+if TYPE_CHECKING:
+    from .view import StoryViewerView
 
 # SQLite 파일 식별을 위한 매직 바이트 (16바이트 헤더)
 _SQLITE_MAGIC = b'SQLite format 3\x00'
@@ -29,9 +35,9 @@ class StoryDBManager:
         master: tk.Tk | tk.Toplevel,
         server_db_info: dict[str, Any],
         get_lang_dict: Callable[[], dict[str, str]],
-        task_queue: Any,
-        view: Any,
-        get_all_files: Callable[[], dict],
+        task_queue: queue.Queue[ActionEvent],
+        view: StoryViewerView,
+        get_all_files: Callable[[], dict[str, str]],
     ) -> None:
         """StoryDBManager를 초기화합니다.
 
@@ -78,7 +84,9 @@ class StoryDBManager:
             is_online = False
             try:
                 import socket
-                socket.create_connection(("github.com", 443), timeout=2).close()
+                # 실제 다운로드 대상 호스트에 대해 연결 확인 (하드코딩 방지)
+                download_host = urlparse(DB_DOWNLOAD_BASE_URL).hostname or "raw.githubusercontent.com"
+                socket.create_connection((download_host, 443), timeout=5).close()
                 is_online = True
             except OSError:
                 pass
@@ -155,9 +163,9 @@ class StoryDBManager:
                         header = db_file.read(16)
                     if header != _SQLITE_MAGIC:
                         os.remove(dest_path)
-                        raise RuntimeError(f"Downloaded file '{f}' is not a valid SQLite database (header mismatch).")
+                        raise DatabaseIntegrityError(f, "header mismatch")
                 self._task_queue.put(ActionEvent(action=lambda: self._on_download_success(top)))
-            except (OSError, RuntimeError) as e:
+            except (OSError, DatabaseIntegrityError) as e:
                 self._task_queue.put(ActionEvent(action=lambda err=e: self._on_download_error(top, err)))
                 
         t = threading.Thread(target=_download_thread, daemon=True)

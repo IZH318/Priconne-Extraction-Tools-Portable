@@ -39,18 +39,6 @@ class CompletionEvent(QueueEvent):
     success: bool = True
     result: Any = None
 
-# ---- Resource Remover 용 커스텀 이벤트 ----
-@dataclass
-class SearchDoneEvent(QueueEvent):
-    target_files: list[Any]
-    lang_dict: dict[str, str]
-
-@dataclass
-class DeleteDoneEvent(QueueEvent):
-    deleted_count: int
-    errors: list[str]
-    log_path: str
-    lang_dict: dict[str, str]
 
 # ---- Story Viewer 용 람다 래퍼 이벤트 ----
 @dataclass

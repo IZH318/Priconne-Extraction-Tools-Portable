@@ -2,11 +2,17 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from typing import Any, Callable
+import tkinter as tk
+from typing import Any, Callable, TYPE_CHECKING
+import queue
 
 from src.queue_events import ActionEvent
 from .logic import StoryDataLoader, StoryFormatter
 from . import db_helper
+
+if TYPE_CHECKING:
+    from .view import StoryViewerView
+    from .db_manager import StoryDBManager
 
 
 class StoryExportHandler:
@@ -23,16 +29,16 @@ class StoryExportHandler:
     def __init__(
         self,
         get_lang_dict: Callable[[], dict[str, str]],
-        task_queue: Any,
+        task_queue: queue.Queue[ActionEvent],
         master: tk.Tk | tk.Toplevel,
-        view_mode_var: Any,
+        view_mode_var: tk.StringVar,
         get_current_filenames: Callable[[], list[str]],
         get_loaded_filenames: Callable[[], list[str]],
         get_all_files: Callable[[], dict[str, str]],
         get_search_data: Callable[[], dict[str, list[str]]],
         get_server_db_info: Callable[[], dict[str, Any]],
-        get_db_manager: Callable[[], Any],
-        view: Any,
+        get_db_manager: Callable[[], StoryDBManager],
+        view: StoryViewerView,
     ) -> None:
         """StoryExportHandler를 초기화합니다.
 
@@ -138,8 +144,7 @@ class StoryExportHandler:
                         
                     output_path = os.path.join(output_folder, os.path.splitext(filename)[0] + ".txt")
                     try:
-                        formatter = StoryFormatter()
-                        text_to_write = "".join([text for text, _ in formatter.format_story_data(data, self._view_mode_var.get())])
+                        text_to_write = "".join([text for text, _ in StoryFormatter.format_story_data(data, self._view_mode_var.get())])
                         with open(output_path, 'w', encoding='utf-8') as f:
                             f.write(text_to_write)
                         success_count += 1

@@ -2,11 +2,23 @@ from __future__ import annotations
 """
 다국어 데이터 로더 모듈.
 languages.json을 안전하게 로드하고, 모듈별 언어 딕셔너리를 제공합니다.
+
+TypedDict 타입을 적용하여 IDE 자동완성 및 정적 타입 검사를 지원합니다.
+lang_types.py의 TypedDict 클래스는 gen_lang_types.py로 자동 생성됩니다.
 """
 import json
 import logging
 from pathlib import Path
 import copy
+
+from src.lang_types import (
+    AVConverterLangDict,
+    RenamerLangDict,
+    ResourceRemoverLangDict,
+    StoryViewerLangDict,
+    UnityConverterLangDict,
+    MainMenuLangDict,
+)
 
 _json_path = Path(__file__).parent / 'languages.json'
 
@@ -20,12 +32,12 @@ except json.JSONDecodeError as _e:
     logging.error("languages.json is malformed: %s. Using empty fallback.", _e)
     _full_data = {}
 
-AV_CONVERTER_LANGUAGES: dict = _full_data.get('av_converter', {})
-RENAMER_LANGUAGES: dict = _full_data.get('renamer', {})
-RESOURCE_REMOVER_LANGUAGES: dict = _full_data.get('resource_remover', {})
-STORY_VIEWER_LANGUAGES: dict = _full_data.get('story_viewer', {})
-UNITY_CONVERTER_LANGUAGES: dict = _full_data.get('unity_converter', {})
-MAIN_MENU_LANGUAGES: dict = _full_data.get('main_menu', {})
+AV_CONVERTER_LANGUAGES: dict[str, AVConverterLangDict] = _full_data.get('av_converter', {})
+RENAMER_LANGUAGES: dict[str, RenamerLangDict] = _full_data.get('renamer', {})
+RESOURCE_REMOVER_LANGUAGES: dict[str, ResourceRemoverLangDict] = _full_data.get('resource_remover', {})
+STORY_VIEWER_LANGUAGES: dict[str, StoryViewerLangDict] = _full_data.get('story_viewer', {})
+UNITY_CONVERTER_LANGUAGES: dict[str, UnityConverterLangDict] = _full_data.get('unity_converter', {})
+MAIN_MENU_LANGUAGES: dict[str, MainMenuLangDict] = _full_data.get('main_menu', {})
 
 
 def get_logger_lang_data_map() -> dict:
@@ -35,4 +47,5 @@ def get_logger_lang_data_map() -> dict:
     이 모듈에서 이미 로드한 _full_data를 재사용합니다.
     """
     return copy.deepcopy(_full_data)
+
 

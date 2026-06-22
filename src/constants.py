@@ -1,8 +1,12 @@
 from __future__ import annotations
+import os
 from typing import Final
 
-# === External URLs ===
-DB_DOWNLOAD_BASE_URL: Final[str] = "https://raw.githubusercontent.com/Expugn/priconne-database/master/"
+# === External URLs (환경 변수로 오버라이드 가능) ===
+DB_DOWNLOAD_BASE_URL: Final[str] = os.environ.get(
+    'PRICONNE_DB_URL',
+    "https://raw.githubusercontent.com/Expugn/priconne-database/master/"
+)
 
 # === Application Metadata ===
 APP_VERSION: Final[str] = "3.0.0"
@@ -30,7 +34,10 @@ RENAMER_TARGET_FOLDERS: Final[tuple[str, ...]] = ('a', 'b', 'm', 'manifest', 's'
 
 # === AV Converter Tool ===
 AV_TEMP_EXTENSIONS: Final[tuple[str, ...]] = ('.adx', '.bin', '.m2v', '.wav')
-FFMPEG_URL: Final[str] = "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+FFMPEG_URL: Final[str] = os.environ.get(
+    'PRICONNE_FFMPEG_URL',
+    "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+)
 FFMPEG_ZIP_FILENAME: Final[str] = "ffmpeg_temp.zip"
 FFMPEG_EXE_NAME: Final[str] = "ffmpeg.exe"
 SENTINEL_VIDEO_DONE: Final[str] = "__VIDEO_DONE__"

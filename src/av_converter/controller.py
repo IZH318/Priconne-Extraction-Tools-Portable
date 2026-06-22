@@ -3,18 +3,18 @@ import logging
 import queue
 import os
 import shutil
-import sys
 import tempfile
 import threading
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from typing import Callable
+from typing import Any, Callable
 
 from src.cancellation_token import CancellationToken
 from src.constants import SEPARATOR_LONG as SEPARATOR, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSITE, GUI_POLLING_INTERVAL_MS, SENTINEL_VIDEO_DONE
 from src.languages import AV_CONVERTER_LANGUAGES as LANGUAGES
+from src.breadcrumbs import add_breadcrumb
 from src.queue_events import (
     QueueEvent, LogEvent, LogBlockEvent, ProgressEvent, CompletionEvent
 )
@@ -24,9 +24,10 @@ from .log_renderer import AVLogRenderer
 from .preview_handler import AVPreviewHandler
 from .view import AVConverterView
 from src.queue_polling import QueuePollingMixin
+from src.log_history import LogHistoryMixin
 from src.utils.file_list_mixin import FileListMixin
 
-class AVConverterController(QueuePollingMixin, FileListMixin):
+class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
     def __init__(self, frame: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None, app_temp_dir: str | None = None) -> None:
         """AVConverterController 객체를 초기화합니다.
 
@@ -47,9 +48,11 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         self.lang_data = LANGUAGES.get(self.current_lang, {})
         self.lang_var.trace_add("write", self._on_language_change)
         
-        self.base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent.parent))
+        from src.utils.base_path import get_application_base_path
+        self.base_path = get_application_base_path()
         self.log_queue = queue.Queue()
-        self.cancel_token = CancellationToken()
+        self.video_cancel_token = CancellationToken()
+        self.audio_cancel_token = CancellationToken()
         self.logic = ConversionLogic(self.log_queue, self.base_path)
         
         self.view = AVConverterView(frame, self)
@@ -96,8 +99,7 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             get_tool_paths=lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path},
         )
 
-        self.video_log_history = []
-        self.audio_log_history = []
+        # 참고: video_log_history, audio_log_history는 73-74행에서 이미 초기화됨
         self._log_renderer.log_initial_status()
         self._init_queue_polling(self.view)
 
@@ -115,13 +117,22 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         if lang_code in LANGUAGES:
             self.lang_data = LANGUAGES[lang_code]
             self.view.switch_language(lang_code)
-            self._log_renderer.redraw_logs(
-                [
-                    ('video', self.video_log_history, self.view.video_log_text),
-                    ('audio', self.audio_log_history, self.view.audio_log_text),
-                ],
-                self.last_log_timestamp,
-            )
+            self.redraw_all_logs()
+
+    def _get_log_configs(self) -> list[tuple[list, Any]]:
+        """재렌더링 대상 (히스토리 리스트, Text 위젯) 쌍의 리스트를 반환합니다."""
+        return [
+            (self.video_log_history, self.view.video_log_text),
+            (self.audio_log_history, self.view.audio_log_text),
+        ]
+
+    def redraw_all_logs(self) -> None:
+        """모든 로그 위젯의 내용을 히스토리 기반으로 재렌더링합니다."""
+        configs_with_tabs = [
+            ('video', self.video_log_history, self.view.video_log_text),
+            ('audio', self.audio_log_history, self.view.audio_log_text),
+        ]
+        self._log_renderer.redraw_logs(configs_with_tabs, self.last_log_timestamp)
 
     def _find_tools(self) -> None:
         """UsmToolkit.exe와 vgmstream-cli.exe 파일 경로를 탐색하고 설정합니다."""
@@ -131,16 +142,25 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
                 self.usmtoolkit_path = Path(root) / "UsmToolkit.exe"
             if not self.vgmstream_path and "vgmstream-cli.exe" in lower_files and "vgmstream" in str(Path(root)).lower():
                 self.vgmstream_path = Path(root) / "vgmstream-cli.exe"
-                # UsmToolkit의 구버전 하드코딩(test.exe) 호환성을 위해 파일 복사
-                test_exe_path = Path(root) / "test.exe"
-                if not test_exe_path.exists():
-                    try:
-                        shutil.copy2(self.vgmstream_path, test_exe_path)
-                    except OSError:
-                        pass
             # 두 도구를 모두 찾았으면 탐색 조기 종료
             if self.usmtoolkit_path and self.vgmstream_path:
                 break
+        # 도구 탐색 완료 후 호환성 패치 수행
+        self._ensure_usmtoolkit_compatibility()
+
+    def _ensure_usmtoolkit_compatibility(self) -> None:
+        """UsmToolkit 구버전의 하드코딩된 'test.exe' 참조를 위한 호환성 패치를 수행합니다.
+
+        UsmToolkit의 일부 구버전은 vgmstream을 'test.exe'라는 고정된 이름으로
+        호출하므로, vgmstream-cli.exe를 test.exe로 복사하여 호환성을 보장합니다.
+        """
+        if self.vgmstream_path and self.vgmstream_path.exists():
+            test_exe_path = self.vgmstream_path.parent / "test.exe"
+            if not test_exe_path.exists():
+                try:
+                    shutil.copy2(self.vgmstream_path, test_exe_path)
+                except OSError:
+                    pass
 
     def show_about_info(self) -> None:
         """프로그램 정보 대화상자를 표시합니다."""
@@ -315,6 +335,7 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         if not output_dir:
             self._add_log_entry('video', 'error_no_output_video')
             return
+        add_breadcrumb("conv", "비디오 변환 시작", {"files": len(self.video_full_paths), "output": output_dir})
         self._start_ffmpeg_preparation(output_dir)
 
     def _start_ffmpeg_preparation(self, output_dir: str) -> None:
@@ -359,14 +380,15 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         """
         self._add_spacing(tab_type)
         widgets = self.view.video_widgets if tab_type == 'video' else self.view.audio_widgets
+        cancel_token = self.video_cancel_token if tab_type == 'video' else self.audio_cancel_token
         
         self.view.set_ui_state(tab_type, 'disabled')
-        self.cancel_token.reset()
+        cancel_token.reset()
         
         widgets['action_btn'].config(
             state=tk.NORMAL, 
             text=self.lang_data.get('cancel_conversion', 'Cancel'),
-            command=self.cancel_token.cancel
+            command=cancel_token.cancel
         )
         
         thread = threading.Thread(target=target_func, daemon=True, args=args)
@@ -381,7 +403,7 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         self._start_conversion_thread(
             'video',
             self.logic.run_video_conversion,
-            (self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.cancel_token)
+            (self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.video_cancel_token)
         )
 
     def start_audio_conversion(self, output_dir: str, overwrite: bool) -> None:
@@ -393,10 +415,12 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             self._add_log_entry('audio', 'error_no_output_audio')
             return
 
+        add_breadcrumb("conv", "오디오 변환 시작", {"files": len(self.audio_full_paths), "output": output_dir})
+
         self._start_conversion_thread(
             'audio',
             self.logic.run_audio_conversion,
-            (self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.cancel_token)
+            (self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.audio_cancel_token)
         )
 
     def _add_log_entry(self, target_tab: str, log_key: str, **kwargs: Any) -> None:

@@ -1,9 +1,13 @@
 from __future__ import annotations
+import queue
 import tkinter as tk
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
 from src.queue_events import LogEvent
+
+if TYPE_CHECKING:
+    from .logic import ConversionLogic, FFmpegDownloader
 
 
 class AVLogRenderer:
@@ -22,10 +26,10 @@ class AVLogRenderer:
         get_lang_data: Callable[[], dict[str, str]],
         add_log_entry: Callable[..., None],
         add_spacing: Callable[[str], None],
-        log_queue: Any,
-        logic: Any,
+        log_queue: queue.Queue[LogEvent],
+        logic: ConversionLogic,
         get_tool_paths: Callable[[], dict[str, Path | None]],
-        get_ffmpeg_downloader: Callable[[], Any],
+        get_ffmpeg_downloader: Callable[[], FFmpegDownloader],
     ) -> None:
         """AVLogRenderer를 초기화합니다.
 

@@ -13,6 +13,8 @@ from typing import Any, Callable, TYPE_CHECKING
 if TYPE_CHECKING:
     from src.cancellation_token import CancellationToken
 
+from src.exceptions import DownloadError, FileIntegrityError
+
 from src.constants import (
     SEPARATOR_SHORT, AV_TEMP_EXTENSIONS, FFMPEG_URL, 
     FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
@@ -143,7 +145,6 @@ class ConversionLogic:
         target_tab = 'video'
         self._log_entry(target_tab, 'conv_start_video')
         self._log_entry(target_tab, 'conv_video_skip_notice')
-        self.log_queue.put(LogEvent(target=target_tab, is_spacing=True))
         
         if not usmtoolkit_path:
             self._log_entry(target_tab, 'conv_error_usmtoolkit_not_found')
@@ -189,7 +190,6 @@ class ConversionLogic:
         target_tab = 'audio'
         self._log_entry(target_tab, 'conv_start_audio')
         self._log_entry(target_tab, 'conv_audio_overwrite_notice' if overwrite else 'conv_audio_skip_notice')
-        self.log_queue.put(LogEvent(target=target_tab, is_spacing=True))
 
         if not vgmstream_path:
             self._log_entry(target_tab, 'conv_error_vgmstream_not_found')
@@ -380,7 +380,7 @@ class FFmpegDownloader:
             self._log_entry('ffmpeg_download_start', url=FFMPEG_URL)
             with urllib.request.urlopen(FFMPEG_URL) as response, open(local_zip_path, 'wb') as out_file:
                 if response.status != 200:
-                    raise RuntimeError(f"HTTP Error: {response.status} {response.reason}")
+                    raise DownloadError(f"HTTP Error: {response.status} {response.reason}")
                 shutil.copyfileobj(response, out_file)
             
             # 1-1. 다운로드된 파일 무결성 검증 (ZIP magic bytes + 아카이브 테스트)
@@ -389,7 +389,7 @@ class FFmpegDownloader:
             with open(local_zip_path, 'rb') as f:
                 magic = f.read(4)
             if magic[:2] != b'PK':
-                raise ValueError("Downloaded file is not a valid ZIP archive (magic bytes mismatch).")
+                raise FileIntegrityError(str(local_zip_path), "not a valid ZIP archive (magic bytes mismatch)")
             with zipfile.ZipFile(local_zip_path, 'r') as zip_test:
                 bad_file = zip_test.testzip()
                 if bad_file is not None:
@@ -405,14 +405,13 @@ class FFmpegDownloader:
                 # ZIP 파일 내에서 ffmpeg.exe 경로 탐색
                 ffmpeg_internal_path = next((name for name in zip_ref.namelist() if name.endswith(f'/bin/{FFMPEG_EXE_NAME}')), None)
                 if not ffmpeg_internal_path:
-                    d = self.get_lang_data()
-                    raise RuntimeError(d['ffmpeg_zip_structure_error'])
+                    raise FileIntegrityError(str(local_zip_path), "expected folder structure not found in ZIP")
                 # 필요한 파일만 추출 후 이동
                 zip_ref.extract(ffmpeg_internal_path, temp_extract_dir)
                 shutil.move(str(temp_extract_dir / ffmpeg_internal_path), str(self.ffmpeg_path))
             self._log_entry('ffmpeg_extract_complete', path=self.ffmpeg_path)
             return True
-        except (urllib.error.URLError, OSError, zipfile.BadZipFile, RuntimeError, ValueError) as e:
+        except (urllib.error.URLError, OSError, zipfile.BadZipFile, DownloadError, FileIntegrityError) as e:
             self._log_entry('ffmpeg_download_fail', error=e)
             return False
         finally:

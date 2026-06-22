@@ -3,11 +3,16 @@ from __future__ import annotations
 """
 Story Viewer의 DB 접근 로직을 집중 관리하는 모듈.
 이벤트 목록 조회, 이벤트 ID 검색 등 sqlite3 관련 작업을 캡슐화합니다.
+
+SQL 조립은 _build_query() / _build_select_all_query()로 집중 관리됩니다.
+식별자 검증은 _validate_identifier()를 통해 화이트리스트 방식으로 처리합니다.
 """
 import os
 import re
 import sqlite3
 from typing import Any
+
+from src.exceptions import UnsafeIdentifierError
 
 # SQL 식별자(테이블/컬럼명) 화이트리스트 패턴: 영숫자, 언더스코어만 허용
 # 참고: priconne-database의 해시 기반 테이블/컬럼명은 'v1_' prefix가 있어
@@ -28,8 +33,59 @@ def _validate_identifier(name: str) -> str:
         ValueError: 허용되지 않는 문자가 포함된 경우.
     """
     if not _SAFE_IDENTIFIER_RE.match(name):
-        raise ValueError(f"Unsafe SQL identifier rejected: {name!r}")
+        raise UnsafeIdentifierError(name)
     return name
+
+
+def _build_query(
+    table: str,
+    columns: list[str],
+    *,
+    distinct: bool = False,
+    where_col: str | None = None,
+    where_op: str = "=",
+) -> str:
+    """검증된 식별자로 SELECT 쿼리를 조립합니다.
+
+    모든 SQL 문자열 조립은 이 함수를 통해서만 수행되며,
+    식별자 검증 → 쿼리 조립을 한 곳에서 관리합니다.
+
+    Args:
+        table: 조회 대상 테이블명 (검증됨).
+        columns: 조회할 컬럼명 리스트 (각각 검증됨).
+        distinct: DISTINCT 키워드 적용 여부.
+        where_col: WHERE 절에 사용할 컬럼명 (None이면 WHERE 없음).
+        where_op: WHERE 절의 비교 연산자 (기본값: "=").
+
+    Returns:
+        조립된 SQL 쿼리 문자열 (파라미터 자리는 ? 로 표시).
+    """
+    tbl = _validate_identifier(table)
+    cols = ", ".join(f'"{_validate_identifier(c)}"' for c in columns)
+    distinct_kw = "DISTINCT " if distinct else ""
+    query = f'SELECT {distinct_kw}{cols} FROM "{tbl}"'
+
+    if where_col is not None:
+        w_col = _validate_identifier(where_col)
+        query += f' WHERE "{w_col}" {where_op} ?'
+
+    return query
+
+
+def _build_select_all_query(table: str) -> tuple[str, str]:
+    """테이블의 전체 컬럼을 동적으로 조회하기 위한 PRAGMA + SELECT 쿼리 쌍을 반환합니다.
+
+    Args:
+        table: 조회 대상 테이블명 (검증됨).
+
+    Returns:
+        (PRAGMA 쿼리, SELECT 쿼리 템플릿 접두사) 튜플.
+        SELECT 쿼리는 PRAGMA 결과로 컬럼 목록을 채워야 합니다.
+    """
+    tbl = _validate_identifier(table)
+    pragma_query = f'PRAGMA table_info("{tbl}")'
+    select_prefix = f'FROM "{tbl}"'
+    return pragma_query, select_prefix
 
 
 def _get_db_path(db_info: dict[str, Any]) -> str:
@@ -54,9 +110,11 @@ def fetch_event_names(db_info: dict[str, Any]) -> list[str]:
     db_path = _get_db_path(db_info)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
-        col = _validate_identifier(db_info['event_name_col_list'])
-        tbl = _validate_identifier(db_info['event_list_table'])
-        query = f'SELECT DISTINCT "{col}" FROM "{tbl}"'
+        query = _build_query(
+            table=db_info['event_list_table'],
+            columns=[db_info['event_name_col_list']],
+            distinct=True,
+        )
         cursor.execute(query)
         return [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
 
@@ -78,10 +136,12 @@ def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
     db_path = _get_db_path(db_info)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
-        id_col = _validate_identifier(db_info['event_id_col_details'])
-        tbl = _validate_identifier(db_info['event_details_table'])
-        info_col = _validate_identifier(db_info['event_info_col_details'])
-        query = f'SELECT "{id_col}" FROM "{tbl}" WHERE "{info_col}" LIKE ?'
+        query = _build_query(
+            table=db_info['event_details_table'],
+            columns=[db_info['event_id_col_details']],
+            where_col=db_info['event_info_col_details'],
+            where_op="LIKE",
+        )
         cursor.execute(query, (f"{event_name}%",))
         return {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
 
@@ -106,15 +166,16 @@ def fetch_event_list_for_export(db_info: dict[str, Any]) -> tuple[list[str], lis
     db_path = _get_db_path(db_info)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.cursor()
-        tbl = _validate_identifier(db_info['event_list_table'])
+        pragma_query, select_suffix = _build_select_all_query(db_info['event_list_table'])
         
         # 테이블의 모든 컬럼 이름 가져오기
-        cursor.execute(f'PRAGMA table_info("{tbl}")')
+        cursor.execute(pragma_query)
         columns = [col_info[1] for col_info in cursor.fetchall()]
         
         # 컬럼 목록을 명시적으로 나열하여 조회 (SELECT * 대신 안전한 방식)
         validated_cols = ', '.join(f'"{_validate_identifier(c)}"' for c in columns)
-        cursor.execute(f'SELECT {validated_cols} FROM "{tbl}"')
+        cursor.execute(f'SELECT {validated_cols} {select_suffix}')
         rows = cursor.fetchall()
         
         return columns, rows
+

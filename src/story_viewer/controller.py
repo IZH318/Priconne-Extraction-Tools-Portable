@@ -7,8 +7,10 @@ import json
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from typing import Any
 
 from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
+from src.breadcrumbs import add_breadcrumb
 from src.utils.about_dialog import show_about_dialog
 from .windows_search import SearchWindow
 from .windows_export import ExportWindow
@@ -180,6 +182,7 @@ class StoryViewerController(QueuePollingMixin):
             filetypes=[(lang_dict.get('filetype_json', "JSON Files"), "*.json"), (lang_dict.get('filetype_all', "All Files"), "*.*")]
         )
         if file_paths:
+            add_breadcrumb("io", "스토리 파일 열기", {"count": len(file_paths)})
             self._start_loading_task(paths=file_paths)
 
     def open_folder(self) -> None:
@@ -187,6 +190,7 @@ class StoryViewerController(QueuePollingMixin):
         lang_dict = self.get_lang_dict()
         folder_path = filedialog.askdirectory(title=lang_dict.get('dialog_title_open_folder', "Select the folder with storydata files"))
         if folder_path:
+            add_breadcrumb("io", "스토리 폴더 열기", {"path": folder_path})
             self._start_loading_task(folder_path=folder_path)
 
     def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None) -> None:
@@ -405,8 +409,7 @@ class StoryViewerController(QueuePollingMixin):
             if self.current_file_path:
                 is_valid, data, _ = StoryDataLoader.is_valid_storydata(self.current_file_path)
                 if is_valid:
-                    formatter = StoryFormatter()
-                    self.view.update_story_text(formatter.format_story_data(data, self.view_mode_var.get()))
+                    self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get()))
                     self.view.update_status_bar('status_bar_displaying', filename=filename)
                 else:
                     self.view.update_status_bar('status_bar_cache_error', filename=filename)
@@ -442,8 +445,7 @@ class StoryViewerController(QueuePollingMixin):
             filename = os.path.basename(self.current_file_path)
             is_valid, data, _ = StoryDataLoader.is_valid_storydata(self.current_file_path)
             if is_valid:
-                formatter = StoryFormatter()
-                self.view.update_story_text(formatter.format_story_data(data, self.view_mode_var.get()))
+                self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get()))
 
     # Export functionality helper methods
     def export_master_thread(self, selected_options: dict[str, Any], output_folder: str) -> None:

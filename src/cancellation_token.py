@@ -1,6 +1,8 @@
 from __future__ import annotations
 import threading
 
+from src.exceptions import OperationCancelledError
+
 class CancellationToken:
     """
     백그라운드 스레드 및 비동기 작업의 생명주기(취소)를 안전하게 제어하기 위한 표준화된 객체입니다.
@@ -25,4 +27,4 @@ class CancellationToken:
     def throw_if_cancelled(self) -> None:
         """만약 작업이 취소되었다면 자체적인 예외를 발생시킵니다. (선택적)"""
         if self.is_cancelled:
-            raise InterruptedError("Operation was cancelled by the user.")
+            raise OperationCancelledError()

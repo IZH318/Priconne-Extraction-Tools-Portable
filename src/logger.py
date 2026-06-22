@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 from types import TracebackType
 
+from src.breadcrumbs import format_breadcrumbs
+
 def write_error_log(app_info: dict[str, Any], context_name: str, exc_type: type[BaseException] | None, exc_value: BaseException | None, exc_traceback: TracebackType | None) -> str:
     """
     타임스탬프가 포함된 새 로그 파일을 생성하고 오류 상세 정보를 표준 형식으로 기록합니다.
@@ -68,6 +70,12 @@ def write_error_log(app_info: dict[str, Any], context_name: str, exc_type: type[
         f.write("Stack Trace :\n")
         f.write(f"{stack_trace_text if stack_trace_text else 'No stack trace available.'}\n")
         f.write(f"{separator}\n\n")
+
+        # Breadcrumbs: 에러 발생 직전의 행동 궤적
+        breadcrumb_text = format_breadcrumbs()
+        if breadcrumb_text:
+            f.write(f"{breadcrumb_text}\n")
+            f.write(f"{separator}\n\n")
         
     return str(log_filepath)
 
@@ -79,9 +87,13 @@ def setup_global_logging(tk_root: Any = None, app_info: dict[str, Any] | None = 
     if app_info is None:
         app_info = {}
 
-    # 1. NullHandler를 설정하여 모든 표준 출력을 억제 (콘솔 로깅 비활성화)
+    # 1. 로그 레벨 설정 (환경 변수 PRICONNE_LOG_LEVEL로 조절 가능, 기본값: ERROR)
+    #    개발/디버깅 시: set PRICONNE_LOG_LEVEL=DEBUG
+    log_level_name = os.environ.get('PRICONNE_LOG_LEVEL', 'ERROR').upper()
+    log_level = getattr(logging, log_level_name, logging.ERROR)
+
     root_logger = logging.getLogger()
-    root_logger.setLevel(logging.ERROR)
+    root_logger.setLevel(log_level)
     
     if not root_logger.handlers:
         root_logger.addHandler(logging.NullHandler())

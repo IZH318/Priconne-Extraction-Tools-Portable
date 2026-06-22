@@ -1,13 +1,15 @@
 from __future__ import annotations
 import tkinter as tk
 from tkinter import messagebox, ttk
+from typing import Any
 import queue
 import threading
 import os
 
 from src.languages import RESOURCE_REMOVER_LANGUAGES as LANGUAGES
+from src.breadcrumbs import add_breadcrumb
 from src.constants import EXTENSION_CATEGORIES
-from src.queue_events import SearchDoneEvent, DeleteDoneEvent
+from src.queue_events import CompletionEvent
 from src.queue_polling import QueuePollingMixin
 from .logic import ResourceRemoverLogic
 from .view import ResourceRemoverView
@@ -61,10 +63,12 @@ class ResourceRemoverController(QueuePollingMixin):
     def _on_poll_cycle(self) -> None:
         """태스크 큐에 쌓인 이벤트(검색 완료, 삭제 완료 등)를 처리합니다."""
         for event in self._drain_queue(self.task_queue):
-            if isinstance(event, SearchDoneEvent):
-                self._handle_search_done(event.target_files, event.lang_dict)
-            elif isinstance(event, DeleteDoneEvent):
-                self._handle_delete_done(event.deleted_count, event.errors, event.log_path, event.lang_dict)
+            if not isinstance(event, CompletionEvent):
+                continue
+            if event.target == 'search':
+                self._handle_search_done(event.result)
+            elif event.target == 'delete':
+                self._handle_delete_done(event.result)
 
     def get_lang_dict(self) -> dict[str, str]:
         """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
@@ -95,7 +99,7 @@ class ResourceRemoverController(QueuePollingMixin):
 
     def start_removal(self) -> None:
         """선택된 카테고리의 리소스 파일 삭제를 시작합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
+        lang_dict = self.get_lang_dict()
 
         selected_exts = self._get_selected_extensions()
         if not selected_exts:
@@ -106,29 +110,29 @@ class ResourceRemoverController(QueuePollingMixin):
         self.view.set_control_state('disabled')
         self.status_var.set(lang_dict.get('status_searching', "Searching..."))
         self.view.set_status_color("blue")
+        add_breadcrumb("io", "리소스 삭제 시작", {"extensions": selected_exts, "trash": self.use_trash})
         
-        threading.Thread(target=self._search_thread, args=(selected_exts, lang_dict), daemon=True).start()
+        threading.Thread(target=self._search_thread, args=(selected_exts,), daemon=True).start()
 
-    def _search_thread(self, selected_exts: list[str], lang_dict: dict[str, str]) -> None:
+    def _search_thread(self, selected_exts: list[str]) -> None:
         """삭제할 리소스 파일을 백그라운드 스레드에서 검색합니다.
 
         Args:
             selected_exts: 검색할 대상 확장자 리스트.
-            lang_dict: 현재 언어의 다국어 딕셔너리.
         """
         target_files = self.logic.count_resources(selected_exts)
-        self.task_queue.put(SearchDoneEvent(
-            target_files=target_files,
-            lang_dict=lang_dict
+        self.task_queue.put(CompletionEvent(
+            target='search',
+            result=target_files
         ))
 
-    def _handle_search_done(self, target_files: list[str], lang_dict: dict[str, str]) -> None:
+    def _handle_search_done(self, target_files: list[str]) -> None:
         """파일 검색 완료 이벤트를 처리하고 삭제 확인 대화상자를 표시합니다.
 
         Args:
             target_files: 검색된 삭제 대상 파일 경로 리스트.
-            lang_dict: 현재 언어의 다국어 딕셔너리.
         """
+        lang_dict = self.get_lang_dict()
         file_count = len(target_files)
         
         if file_count == 0:
@@ -146,38 +150,37 @@ class ResourceRemoverController(QueuePollingMixin):
             self.status_var.set(lang_dict.get('status_processing', "Processing..."))
             self.view.set_status_color("blue")
             selected_exts = self._get_selected_extensions()
-            threading.Thread(target=self._delete_thread, args=(target_files, selected_exts, lang_dict, use_trash), daemon=True).start()
+            threading.Thread(target=self._delete_thread, args=(target_files, selected_exts, use_trash), daemon=True).start()
         else:
             self.view.set_control_state('normal')
             self.status_var.set(lang_dict.get('status_ready', 'Ready...'))
             self.view.set_status_color("black")
 
-    def _delete_thread(self, target_files: list[str], selected_exts: list[str], lang_dict: dict[str, str], use_trash: bool) -> None:
+    def _delete_thread(self, target_files: list[str], selected_exts: list[str], use_trash: bool) -> None:
         """선택된 리소스 파일을 백그라운드 스레드에서 삭제(또는 휴지통으로 이동)합니다.
 
         Args:
             target_files: 삭제 대상 파일 경로 리스트.
             selected_exts: 삭제된 확장자 리스트 (로그용).
-            lang_dict: 현재 언어의 다국어 딕셔너리.
             use_trash: 휴지통 사용 여부.
         """
         deleted_count, errors, log_filename = self.logic.remove_resources(target_files=target_files, extensions_to_remove=selected_exts, use_trash=use_trash)
-        self.task_queue.put(DeleteDoneEvent(
-            deleted_count=deleted_count,
-            errors=errors,
-            log_path=log_filename,
-            lang_dict=lang_dict
+        self.task_queue.put(CompletionEvent(
+            target='delete',
+            result={'deleted_count': deleted_count, 'errors': errors, 'log_path': log_filename}
         ))
 
-    def _handle_delete_done(self, deleted_count: int, errors: list[str], log_filename: str | None, lang_dict: dict[str, str]) -> None:
+    def _handle_delete_done(self, result: dict[str, Any]) -> None:
         """파일 삭제 완료 이벤트를 처리하고 결과 메시지를 표시합니다.
 
         Args:
-            deleted_count: 성공적으로 삭제된 파일 수.
-            errors: 삭제 중 발생한 에러 메시지 리스트.
-            log_filename: 삭제 로그 파일 경로 (생성된 경우).
-            lang_dict: 현재 언어의 다국어 딕셔너리.
+            result: 삭제 결과 딕셔너리 (deleted_count, errors, log_path).
         """
+        lang_dict = self.get_lang_dict()
+        deleted_count = result['deleted_count']
+        errors = result['errors']
+        log_filename = result['log_path']
+
         self.view.set_control_state('normal')
         self.is_complete = True
             

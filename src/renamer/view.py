@@ -21,6 +21,7 @@ class RenamerView(ttk.Frame):
         self.create_widgets()
 
     def create_widgets(self) -> None:
+        """뷰의 모든 하위 위젯들을 생성하고 배치합니다."""
         top_frame = ttk.Frame(self)
         top_frame.pack(padx=10, pady=10, fill=tk.X)
         
@@ -49,9 +50,11 @@ class RenamerView(ttk.Frame):
         self.log_area.pack(padx=10, pady=(0, 10), expand=True, fill=tk.BOTH)
 
     def update_ui_text(self) -> None:
-        self.start_button.config(text=self.controller.get_string('start_button'))
-        self.folder_label.config(text=self.controller.get_string('game_client_folder'))
-        self.btn_open_folder.config(text=self.controller.get_string('folder_open'))
+        """현재 선택된 언어에 맞춰 UI 텍스트를 업데이트합니다."""
+        d = self.controller.get_lang_dict()
+        self.start_button.config(text=d['start_button'])
+        self.folder_label.config(text=d['game_client_folder'])
+        self.btn_open_folder.config(text=d['folder_open'])
         
     def set_base_path_text(self, path: str) -> None:
         self.folder_entry_var.set(path)

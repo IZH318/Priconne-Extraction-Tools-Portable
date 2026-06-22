@@ -140,7 +140,12 @@ class StoryViewerView(ttk.Frame):
                 pass
         self.status_bar.config(text=message)
 
-    def update_story_text(self, content_list) -> None:
+    def update_story_text(self, content_list: list[tuple[str, str | None]]) -> None:
+        """스토리 텍스트 표시 영역을 주어진 콘텐츠로 업데이트합니다.
+
+        Args:
+            content_list: (텍스트, 태그명) 튜플 리스트. 태그가 None이면 기본 스타일 적용.
+        """
         self.story_text.config(state=tk.NORMAL)
         self.story_text.delete('1.0', tk.END)
         for content, tag in content_list:

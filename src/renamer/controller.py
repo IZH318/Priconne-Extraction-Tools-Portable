@@ -5,15 +5,18 @@ import queue
 import threading
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from tkinter import ttk
 from src.languages import RENAMER_LANGUAGES as LANGUAGES
+from src.breadcrumbs import add_breadcrumb
 from .logic import RenameHashedFile
 from .view import RenamerView
 from src.constants import APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSITE, GUI_UPDATE_INTERVAL_MS
 from src.queue_events import LogEvent, ProgressEvent
 from src.queue_polling import QueuePollingMixin
+from src.log_history import LogHistoryMixin
 
-class RenamerController(QueuePollingMixin):
+class RenamerController(QueuePollingMixin, LogHistoryMixin):
     """
     MVC 아키텍처 중 Controller(상태 및 뷰모델 관리)를 전담하는 클래스입니다.
     View로부터 이벤트를 전달받아 Background Worker(RenamerLogic)를 제어하고, View에 렌더링을 명령합니다.
@@ -102,7 +105,7 @@ class RenamerController(QueuePollingMixin):
             self.log_data.clear()
             self.show_initial_message()
         
-        self.re_render_logs()
+        self.redraw_all_logs()
 
     def show_about_info(self) -> None:
         """
@@ -111,7 +114,7 @@ class RenamerController(QueuePollingMixin):
         self._add_raw_text("")
         self._add_log_event('SHOW_ABOUT_INFO')
         self._add_raw_text("")
-        self.re_render_logs()
+        self.redraw_all_logs()
 
     def show_initial_message(self) -> None:
         self._add_log_event('program_started')
@@ -127,7 +130,7 @@ class RenamerController(QueuePollingMixin):
         self._add_log_event('initial_info_start')
         self._add_raw_text("")
 
-    def re_render_logs(self) -> None:
+    def redraw_all_logs(self) -> None:
         output_buffer = []
 
         for i, (timestamp, key, kwargs) in enumerate(self.log_data):
@@ -191,7 +194,7 @@ class RenamerController(QueuePollingMixin):
             # 로그를 초기화하고 새 경로로 초기 메시지 재표시
             self.log_data.clear()
             self.show_initial_message()
-            self.re_render_logs()
+            self.redraw_all_logs()
 
     def start_processing_thread(self) -> None:
         from tkinter import messagebox
@@ -205,7 +208,8 @@ class RenamerController(QueuePollingMixin):
         
         self.log_data.clear()
         self.show_initial_message()
-        self.re_render_logs()
+        self.redraw_all_logs()
+        add_breadcrumb("conv", "리네이머 작업 시작", {"path": str(self._base_path)})
         
         self.is_processing = True
         self.view.set_start_button_state(tk.DISABLED)
@@ -239,7 +243,7 @@ class RenamerController(QueuePollingMixin):
 
             for event in log_items_batch:
                 self._add_log_event(event.key, event.kwargs if event.kwargs else None)
-            self.re_render_logs()
+            self.redraw_all_logs()
 
         if progress_updates:
             for event in progress_updates:
@@ -255,7 +259,7 @@ class RenamerController(QueuePollingMixin):
                 for event in final_log_items:
                     self._add_log_event(event.key, event.kwargs if event.kwargs else None)
             
-            self.re_render_logs()
+            self.redraw_all_logs()
 
             self.is_processing = False
             self._active_thread = None

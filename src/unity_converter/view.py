@@ -2,7 +2,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, Text, Scrollbar, PanedWindow, font
 from tkinterdnd2 import DND_FILES
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .controller import AssetExtractorController
