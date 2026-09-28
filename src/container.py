@@ -3,6 +3,7 @@ import logging
 import shutil
 import tempfile
 import tkinter as tk
+from dataclasses import dataclass
 from pathlib import Path
 
 from src.constants import (
@@ -10,6 +11,23 @@ from src.constants import (
     APP_WEBSITE, APP_COPYRIGHT_YEAR
 )
 from src.logger import setup_global_logging
+
+
+@dataclass(frozen=True)
+class SharedDependencies:
+    """GUI 모듈에 주입되는 공유 의존성 번들입니다.
+
+    frozen=True로 설정하여, 한 번 생성된 의존성 번들이
+    의도치 않게 수정되는 것을 방지합니다.
+
+    Attributes:
+        app_lang_var: 앱 전역 언어 설정 StringVar.
+        about_info: About 대화상자에 표시될 정보 딕셔너리.
+        app_temp_dir: 미리보기 등을 위한 공유 임시 폴더 경로 (문자열).
+    """
+    app_lang_var: tk.StringVar
+    about_info: dict[str, str]
+    app_temp_dir: str
 
 class AppContainer:
     """
@@ -69,13 +87,14 @@ class AppContainer:
         if self.app_temp_dir.exists():
             shutil.rmtree(self.app_temp_dir, ignore_errors=True)
 
-    def get_shared_dependencies(self) -> dict:
+    def get_shared_dependencies(self) -> SharedDependencies:
+        """GUI 모듈의 생성자(Controller 등)에 넘겨주기 위한 공유 의존성 번들을 반환합니다.
+
+        Returns:
+            SharedDependencies: 타입 안전한 의존성 데이터클래스 인스턴스.
         """
-        GUI 모듈의 생성자(Controller 등)에 넘겨주기 위한 주요 의존성 딕셔너리를 반환합니다.
-        추후 DB 연결 객체, 설정 로더, 글로벌 알림 이벤트 버스 등을 여기에 추가로 주입할 수 있습니다.
-        """
-        return {
-            'app_lang_var': self.app_lang_var,
-            'about_info': self.about_info,
-            'app_temp_dir': str(self.app_temp_dir)
-        }
+        return SharedDependencies(
+            app_lang_var=self.app_lang_var,
+            about_info=self.about_info,
+            app_temp_dir=str(self.app_temp_dir),
+        )

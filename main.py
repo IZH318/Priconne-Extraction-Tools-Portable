@@ -3,7 +3,6 @@ import sys
 import logging
 import tkinter as tk
 from tkinter import ttk
-from typing import Any
 from pathlib import Path
 from tkinterdnd2 import TkinterDnD
 
@@ -13,7 +12,7 @@ from src.unity_converter import AssetExtractorApp
 from src.av_converter import AVConverterApp
 from src.story_viewer import StoryViewerApp
 from src.resource_remover import ResourceRemoverApp
-from src.container import AppContainer
+from src.container import AppContainer, SharedDependencies
 from src.protocols import ModuleController
 from src.languages import MAIN_MENU_LANGUAGES
 from src.utils.about_dialog import show_about_dialog
@@ -57,8 +56,8 @@ class MainLauncher(TkinterDnD.Tk):
         
         # 2. 컨테이너로부터 공유 인스턴스(의존성) 참조 획득
         deps = self.container.get_shared_dependencies()
-        self.app_lang_var = deps['app_lang_var']
-        self.about_info = deps['about_info']
+        self.app_lang_var = deps.app_lang_var
+        self.about_info = deps.about_info
 
         # 3. 메인 윈도우 UI 및 레이아웃 구성
         self._configure_window()
@@ -110,7 +109,7 @@ class MainLauncher(TkinterDnD.Tk):
         self.menu_bar.add_cascade(label="", menu=self.file_menu)
         self.menu_bar.add_cascade(label="", menu=self.lang_menu)
 
-    def _create_tabs(self, deps: dict[str, Any]) -> None:
+    def _create_tabs(self, deps: SharedDependencies) -> None:
         """각 툴 모듈을 담을 노트북 탭 구조를 생성하고, 컨테이너 리소스를 주입합니다."""
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -121,28 +120,38 @@ class MainLauncher(TkinterDnD.Tk):
 
         # 1. Manifest File Renamer
         self.tab1 = ttk.Frame(self.notebook)
-        self.apps.append(FileRenamerGUI(self.tab1, app_lang_var=deps['app_lang_var'], about_info=deps['about_info']))
+        self.apps.append(FileRenamerGUI(self.tab1, app_lang_var=deps.app_lang_var, about_info=deps.about_info))
         self.notebook.add(self.tab1, text="")
         
         # 2. unity3d File Converter
         self.tab2 = ttk.Frame(self.notebook)
-        self.apps.append(AssetExtractorApp(self.tab2, app_lang_var=deps['app_lang_var'], about_info=deps['about_info'], app_temp_dir=deps.get('app_temp_dir')))
+        self.apps.append(AssetExtractorApp(self.tab2, app_lang_var=deps.app_lang_var, about_info=deps.about_info, app_temp_dir=deps.app_temp_dir))
         self.notebook.add(self.tab2, text="")
         
         # 3. Audio/Video Converter
         self.tab3 = ttk.Frame(self.notebook)
-        self.apps.append(AVConverterApp(self.tab3, app_lang_var=deps['app_lang_var'], about_info=deps['about_info'], app_temp_dir=deps.get('app_temp_dir')))
+        self.apps.append(AVConverterApp(self.tab3, app_lang_var=deps.app_lang_var, about_info=deps.about_info, app_temp_dir=deps.app_temp_dir))
         self.notebook.add(self.tab3, text="")
         
         # 4. Story Viewer
         self.tab4 = ttk.Frame(self.notebook)
-        self.apps.append(StoryViewerApp(self.tab4, app_lang_var=deps['app_lang_var'], about_info=deps['about_info']))
+        self.apps.append(StoryViewerApp(self.tab4, app_lang_var=deps.app_lang_var, about_info=deps.about_info))
         self.notebook.add(self.tab4, text="")
         
         # 5. Resource Remover
         self.tab5 = ttk.Frame(self.notebook)
-        self.apps.append(ResourceRemoverApp(self.tab5, app_lang_var=deps['app_lang_var'], about_info=deps['about_info']))
+        self.apps.append(ResourceRemoverApp(self.tab5, app_lang_var=deps.app_lang_var, about_info=deps.about_info))
         self.notebook.add(self.tab5, text="")
+
+        # 모든 모듈의 Controller가 ModuleController 프로토콜을 준수하는지 시작 시점에 검증
+        for app in self.apps:
+            controller = getattr(app, 'controller', None)
+            if controller is not None and not isinstance(controller, ModuleController):
+                logging.warning(
+                    "%s.controller does not implement ModuleController protocol. "
+                    "cleanup() may be skipped on exit.",
+                    type(app).__name__,
+                )
 
     def _on_language_change(self, *args: str) -> None:
         """언어 변수가 변경될 때 런처 UI 요소 텍스트를 업데이트합니다."""

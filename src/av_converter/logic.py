@@ -18,7 +18,7 @@ from src.exceptions import DownloadError, FileIntegrityError
 from src.constants import (
     SEPARATOR_SHORT, AV_TEMP_EXTENSIONS, FFMPEG_URL, 
     FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
-    SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE,
+    SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE, TabType,
 )
 from src.subprocess_runner import SubprocessRunner
 from src.queue_events import (
@@ -41,7 +41,7 @@ class ConversionLogic:
         self.log_queue = log_queue
         self.base_path = base_path
 
-    def _log_entry(self, target_tab: str, log_key: str, **kwargs: Any) -> None:
+    def _log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
         """로그 메시지를 통신 큐에 추가합니다."""
         self.log_queue.put(LogEvent(target=target_tab, key=log_key, kwargs=kwargs))
 
@@ -354,14 +354,24 @@ class FFmpegDownloader:
             executor를 컨텍스트 매니저(with) 없이 사용합니다.
             with 문은 __exit__ 시 shutdown(wait=True)를 호출하여
             Future 반환 전에 블로킹되기 때문입니다.
-            submit된 작업 완료 후 executor는 GC에 의해 자동 정리됩니다.
+            done_callback에서 try/finally로 shutdown을 보장하여
+            콜백 예외 시에도 리소스 누수를 방지합니다.
         
         Returns:
             Future: 작업의 완료 여부와 결과를 확인할 수 있는 Future 객체.
         """
         executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = executor.submit(self._actual_download_and_extract)
-        future.add_done_callback(lambda _: executor.shutdown(wait=False))
+
+        def _shutdown_executor(_future: concurrent.futures.Future) -> None:
+            try:
+                _future.result()
+            except Exception:
+                pass
+            finally:
+                executor.shutdown(wait=False)
+
+        future.add_done_callback(_shutdown_executor)
         return future
 
     def _actual_download_and_extract(self) -> bool:

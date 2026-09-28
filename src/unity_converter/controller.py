@@ -115,12 +115,12 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         return {name for name, var in self.asset_type_vars.items() if var.get()}
 
     @property
-    def asset_skip_types(self) -> list[str]:
+    def asset_skip_types(self) -> set[str]:
         """추출에서 건너뛸 에셋 타입 목록을 반환합니다."""
         return AssetProcessor.SKIP_TYPES
 
     @property
-    def asset_default_enabled(self) -> list[str]:
+    def asset_default_enabled(self) -> set[str]:
         """기본으로 활성화할 에셋 타입 목록을 반환합니다."""
         return AssetProcessor.DEFAULT_ENABLED
 

@@ -38,11 +38,10 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         self.view = RenamerView(frame, self)
         self.about_info = about_info or self._DEFAULT_ABOUT_INFO
         
-        self.current_lang = 'ko'
         if app_lang_var:
             self.lang_var = app_lang_var
         else:
-            self.lang_var = tk.StringVar(value=self.current_lang)
+            self.lang_var = tk.StringVar(value='ko')
         self.lang_var.trace_add("write", self._on_language_change)
         
         self.log_data = []  # tuple[timestamp, key, kwargs]
@@ -66,17 +65,12 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         self._init_queue_polling(self.view, interval_ms=GUI_UPDATE_INTERVAL_MS)
 
     def get_string(self, key: str, **kwargs: Any) -> str:
-        return LANGUAGES[self.current_lang].get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
+        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
+        return lang_dict.get(key, f"NO_TRANSLATION_FOR_{key}").format(**kwargs)
 
     def get_lang_dict(self) -> dict[str, str]:
         """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
-        return LANGUAGES.get(self.current_lang, LANGUAGES.get('ko', {}))
-
-    def set_language(self, lang_code: str) -> None:
-        if self.current_lang != lang_code:
-            self.current_lang = lang_code
-            self.file_processor.set_get_string_func(self.get_string)
-            self.update_ui_language()
+        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
 
     def _on_language_change(self, *args: Any) -> None:
         """언어 변경 이벤트를 처리하고 UI 텍스트를 업데이트합니다.
@@ -84,8 +78,8 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         Args:
             *args: 가변 인자 리스트.
         """
-        new_lang = self.lang_var.get()
-        self.set_language(new_lang)
+        self.file_processor.set_get_string_func(self.get_string)
+        self.update_ui_language()
 
     def update_ui_language(self, is_initial_setup: bool = False) -> None:
         self.view.update_ui_text()

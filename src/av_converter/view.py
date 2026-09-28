@@ -4,6 +4,8 @@ from tkinter import ttk, filedialog, scrolledtext, Listbox, Menu
 from tkinterdnd2 import DND_FILES
 from typing import Any, TYPE_CHECKING
 
+from src.constants import TabType
+
 if TYPE_CHECKING:
     from .controller import AVConverterController
 
@@ -13,8 +15,6 @@ class AVConverterView(ttk.Frame):
         super().__init__(master)
         self.controller = controller
         self.pack(fill=tk.BOTH, expand=True)
-        
-        self.lang_data = self.controller.get_lang_dict()
         
         self.audio_widgets = {}
         self.video_widgets = {}
@@ -33,19 +33,15 @@ class AVConverterView(ttk.Frame):
         self.audio_tab = ttk.Frame(self.notebook)
         self.video_tab = ttk.Frame(self.notebook)
         
-        self.notebook.add(self.audio_tab, text=self.lang_data['audio_tab'])
-        self.notebook.add(self.video_tab, text=self.lang_data['video_tab'])
+        self.notebook.add(self.audio_tab, text=self.controller.get_lang_dict()['audio_tab'])
+        self.notebook.add(self.video_tab, text=self.controller.get_lang_dict()['video_tab'])
         
         self.audio_widgets, self.audio_log_text, self.audio_ui_elements = self._build_conversion_tab_ui(self.audio_tab, 'audio', self.audio_filenames_var)
         self.video_widgets, self.video_log_text, self.video_ui_elements = self._build_conversion_tab_ui(self.video_tab, 'video', self.video_filenames_var)
 
-    def switch_language(self, lang_code: str) -> None:
-        """지정된 언어 코드로 UI 언어를 전환합니다."""
-        self.lang_data = self.controller.get_lang_dict()
-        self._update_ui_text()
-
-    def _update_ui_text(self) -> None:
-        d = self.lang_data
+    def update_ui_text(self) -> None:
+        """현재 선택된 언어로 UI 텍스트를 업데이트합니다."""
+        d = self.controller.get_lang_dict()
         self.notebook.tab(self.audio_tab, text=d['audio_tab'])
         self.notebook.tab(self.video_tab, text=d['video_tab'])
         
@@ -71,8 +67,8 @@ class AVConverterView(ttk.Frame):
             if 'overwrite_check' in widgets:
                 widgets['overwrite_check'].config(text=d['overwrite_option'])
 
-    def _build_conversion_tab_ui(self, parent_tab: ttk.Frame, tab_type: str, filenames_var: tk.StringVar) -> tuple[dict, scrolledtext.ScrolledText, dict]:
-        d = self.lang_data
+    def _build_conversion_tab_ui(self, parent_tab: ttk.Frame, tab_type: TabType, filenames_var: tk.StringVar) -> tuple[dict, scrolledtext.ScrolledText, dict]:
+        d = self.controller.get_lang_dict()
         is_audio_tab = (tab_type == 'audio')
 
         main_bottom_controls_frame = ttk.Frame(parent_tab)
@@ -182,14 +178,14 @@ class AVConverterView(ttk.Frame):
         return widgets_dict, log_text_widget, ui_elements_for_lang_update
 
     def _select_output_folder(self, entry_widget: ttk.Entry) -> None:
-        folder = filedialog.askdirectory(title=self.lang_data.get('dialog_select_output', 'Select an output folder'))
+        folder = filedialog.askdirectory(title=self.controller.get_lang_dict().get('dialog_select_output', 'Select an output folder'))
         if folder:
             entry_widget.config(state=tk.NORMAL)
             entry_widget.delete(0, tk.END)
             entry_widget.insert(0, folder)
             entry_widget.config(state='readonly')
 
-    def _create_right_click_menu(self, listbox: Listbox, tab_type: str) -> None:
+    def _create_right_click_menu(self, listbox: Listbox, tab_type: TabType) -> None:
         menu = Menu(listbox, tearoff=0)
         menu.add_command(label="", command=lambda: self.controller.remove_selected_from_list(listbox, tab_type))
         menu.add_command(label="", command=lambda: self.controller.clear_list(tab_type))
@@ -197,7 +193,7 @@ class AVConverterView(ttk.Frame):
         menu.add_command(label="", command=lambda: self.controller.preview_selected(listbox, tab_type))
         
         def show_menu(event):
-            d = self.lang_data
+            d = self.controller.get_lang_dict()
             menu.entryconfig(0, label=d['remove_selected'], state=tk.NORMAL if listbox.curselection() else "disabled")
             menu.entryconfig(1, label=d['remove_all'], state=tk.NORMAL if listbox.size() > 0 else "disabled")
             menu.entryconfig(3, label=d.get('preview_menu', 'Preview'), state=tk.NORMAL if listbox.curselection() else "disabled")
@@ -207,7 +203,7 @@ class AVConverterView(ttk.Frame):
         listbox.bind("<Delete>", lambda e: self.controller.remove_selected_from_list(listbox, tab_type))
 
     def create_progress_popup(self, width: int = 300, height: int = 80) -> tk.Toplevel:
-        d = self.lang_data
+        d = self.controller.get_lang_dict()
         popup = tk.Toplevel(self)
         popup.title(d.get('preview_menu', 'Preview'))
         sx, sy = popup.winfo_screenwidth(), popup.winfo_screenheight()
@@ -228,7 +224,7 @@ class AVConverterView(ttk.Frame):
             pass
 
     def show_track_selector(self, stream_count: int, stream_map_builder: Any, on_double_click_callback: Any) -> None:
-        d = self.lang_data
+        d = self.controller.get_lang_dict()
         popup = tk.Toplevel(self)
         popup.title(d.get('preview_track_title', 'Select Track'))
         win_w, win_h = 450, 400
@@ -260,7 +256,7 @@ class AVConverterView(ttk.Frame):
             
         tree.bind('<Double-Button-1>', on_double_click)
 
-    def set_ui_state(self, tab_type: str, state: str) -> None:
+    def set_ui_state(self, tab_type: TabType, state: str) -> None:
         widgets = self.video_widgets if tab_type == 'video' else self.audio_widgets
         for widget_name, widget in widgets.items():
             if widget_name in ['progress', 'status_label', 'output_entry', 'listbox']: 
@@ -268,8 +264,8 @@ class AVConverterView(ttk.Frame):
             new_state = 'readonly' if isinstance(widget, ttk.Entry) and state == 'disabled' else state
             widget.config(state=new_state)
 
-    def reset_ui_state(self, tab_type: str) -> None:
-        d = self.lang_data
+    def reset_ui_state(self, tab_type: TabType) -> None:
+        d = self.controller.get_lang_dict()
         widgets = self.video_widgets if tab_type == 'video' else self.audio_widgets
         self.set_ui_state(tab_type, 'normal')
         

@@ -1,6 +1,9 @@
 from __future__ import annotations
 import os
-from typing import Final
+from typing import Final, Literal
+
+# === AV Converter Tab Type ===
+TabType = Literal['video', 'audio']
 
 # === External URLs (환경 변수로 오버라이드 가능) ===
 DB_DOWNLOAD_BASE_URL: Final[str] = os.environ.get(

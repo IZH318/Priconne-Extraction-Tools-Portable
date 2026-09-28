@@ -7,6 +7,8 @@ from tkinter import messagebox
 from typing import Any, Callable
 from pathlib import Path
 
+from src.constants import TabType
+
 from src.utils.platform_open import open_with_default_app
 
 
@@ -47,7 +49,7 @@ class AVPreviewHandler:
         self._preview_temp_dir = preview_temp_dir
         self._get_tool_paths = get_tool_paths
 
-    def preview_selected(self, listbox: tk.Listbox, tab_type: str) -> None:
+    def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
         """리스트박스에서 선택된 파일의 미리보기를 실행합니다.
 
         Args:

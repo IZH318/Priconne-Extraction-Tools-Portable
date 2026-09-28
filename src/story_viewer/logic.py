@@ -240,7 +240,8 @@ class StoryFormatter:
             else:
                 content_list.append((indent + f"- {str(item)}\n", 'value'))
 
-    def _format_simple_id_list(self, value: Any, content_list: list[tuple[str, str | None]]) -> None:
+    @staticmethod
+    def _format_simple_id_list(value: Any, content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         if not isinstance(value, list): value = [value]
         for item in value:

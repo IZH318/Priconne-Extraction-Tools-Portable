@@ -12,7 +12,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
 from src.cancellation_token import CancellationToken
-from src.constants import SEPARATOR_LONG as SEPARATOR, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSITE, GUI_POLLING_INTERVAL_MS, SENTINEL_VIDEO_DONE
+from src.constants import SEPARATOR_LONG as SEPARATOR, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSITE, GUI_POLLING_INTERVAL_MS, SENTINEL_VIDEO_DONE, TabType
 from src.languages import AV_CONVERTER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
 from src.queue_events import (
@@ -40,12 +40,10 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         """
         self.master = master
         
-        self.current_lang = 'ko'
         if app_lang_var:
             self.lang_var = app_lang_var
         else:
-            self.lang_var = tk.StringVar(value=self.current_lang)
-        self.lang_data = LANGUAGES.get(self.current_lang, {})
+            self.lang_var = tk.StringVar(value='ko')
         self.lang_var.trace_add("write", self._on_language_change)
         
         from src.utils.base_path import get_application_base_path
@@ -64,8 +62,10 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         
         if app_temp_dir:
             self._preview_temp_dir = app_temp_dir
+            self._owns_temp_dir = False
         else:
             self._preview_temp_dir = tempfile.mkdtemp(prefix='priconne_preview_')
+            self._owns_temp_dir = True
         
         self.usmtoolkit_path = None
         self.vgmstream_path = None
@@ -78,11 +78,11 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
 
         self._find_tools()
         ffmpeg_parent_dir = self.usmtoolkit_path.parent if self.usmtoolkit_path else self.base_path
-        self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir, lambda: self.lang_data)
+        self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir, self.get_lang_dict)
         self.last_log_timestamp = {'video': None, 'audio': None}
 
         self._log_renderer = AVLogRenderer(
-            get_lang_data=lambda: self.lang_data,
+            get_lang_data=self.get_lang_dict,
             add_log_entry=self._add_log_entry,
             add_spacing=self._add_spacing,
             log_queue=self.log_queue,
@@ -91,7 +91,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             get_ffmpeg_downloader=lambda: self.ffmpeg_downloader,
         )
         self._preview = AVPreviewHandler(
-            get_lang_data=lambda: self.lang_data,
+            get_lang_data=self.get_lang_dict,
             get_paths=lambda tab_type: self.audio_full_paths if tab_type == 'audio' else self.video_full_paths,
             logic=self.logic,
             view=self.view,
@@ -115,8 +115,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         """
         lang_code = self.lang_var.get()
         if lang_code in LANGUAGES:
-            self.lang_data = LANGUAGES[lang_code]
-            self.view.switch_language(lang_code)
+            self.view.update_ui_text()
             self.redraw_all_logs()
 
     def _get_log_configs(self) -> list[tuple[list, Any]]:
@@ -168,7 +167,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         show_about_dialog(lang_dict, self.about_info, self.view)
 
 
-    def add_files_cmd(self, tab_type: str) -> None:
+    def add_files_cmd(self, tab_type: TabType) -> None:
         """파일 선택 대화상자를 열어 변환 대상 파일을 목록에 추가합니다.
 
         Args:
@@ -180,7 +179,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         filenames_var = self.view.audio_filenames_var if is_audio else self.view.video_filenames_var
         self._add_paths_to_list(self._select_files(file_types), file_types, full_paths, filenames_var, tab_type)
 
-    def add_folder_cmd(self, tab_type: str) -> None:
+    def add_folder_cmd(self, tab_type: TabType) -> None:
         """폴더 선택 대화상자를 열어 폴더 내 변환 대상 파일을 목록에 추가합니다.
 
         Args:
@@ -192,7 +191,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         filenames_var = self.view.audio_filenames_var if is_audio else self.view.video_filenames_var
         self._add_paths_to_list(self._select_folder_and_search(file_types), file_types, full_paths, filenames_var, tab_type)
 
-    def on_dnd_drop(self, event: Any, listbox: tk.Listbox, tab_type: str) -> None:
+    def on_dnd_drop(self, event: Any, listbox: tk.Listbox, tab_type: TabType) -> None:
         """드래그 앤 드롭 이벤트를 처리하여 파일을 목록에 추가합니다.
 
         Args:
@@ -231,7 +230,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         Returns:
             선택된 파일 경로 리스트.
         """
-        return list(filedialog.askopenfilenames(title=self.lang_data.get('dialog_select_files', 'Select files'), filetypes=file_types) or [])
+        return list(filedialog.askopenfilenames(title=self.get_lang_dict().get('dialog_select_files', 'Select files'), filetypes=file_types) or [])
 
     def _select_folder_and_search(self, file_types: list[tuple[str, str]]) -> list[str]:
         """폴더 선택 대화상자를 띄우고 선택된 폴더 내 모든 파일 경로 리스트를 반환합니다.
@@ -242,7 +241,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         Returns:
             검색된 파일 경로 리스트.
         """
-        folder = filedialog.askdirectory(title=self.lang_data.get('dialog_select_folder', 'Select a folder'))
+        folder = filedialog.askdirectory(title=self.get_lang_dict().get('dialog_select_folder', 'Select a folder'))
         if not folder:
             return []
         exts = [ext.strip('*.') for _, p in file_types for ext in p.split()]
@@ -262,7 +261,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         """
         fv.set([os.path.basename(p) for p in fp])
         
-    def _add_paths_to_list(self, new_paths: list[str], file_types: list[tuple[str, str]], full_paths: list[str], filenames_var: tk.Variable, tab_type: str) -> None:
+    def _add_paths_to_list(self, new_paths: list[str], file_types: list[tuple[str, str]], full_paths: list[str], filenames_var: tk.Variable, tab_type: TabType) -> None:
         """선택된 파일 경로들을 중복 검사 후 목록에 추가하고 UI를 갱신합니다.
 
         Args:
@@ -288,7 +287,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self._add_log_entry(tab_type, 'log_total_files', total=len(full_paths))
         self._add_spacing(tab_type)
 
-    def remove_selected_from_list(self, listbox: tk.Listbox, tab_type: str) -> None:
+    def remove_selected_from_list(self, listbox: tk.Listbox, tab_type: TabType) -> None:
         """목록에서 선택된 항목들을 제거합니다.
 
         Args:
@@ -306,7 +305,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             self._add_log_entry(tab_type, 'log_files_removed', count=count)
             self._add_spacing(tab_type)
 
-    def clear_list(self, tab_type: str) -> None:
+    def clear_list(self, tab_type: TabType) -> None:
         """목록의 모든 항목을 제거하여 초기화합니다.
 
         Args:
@@ -370,7 +369,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
                 
         self.view.after(GUI_POLLING_INTERVAL_MS, check_ffmpeg_status)
     
-    def _start_conversion_thread(self, tab_type: str, target_func: Any, args: tuple) -> None:
+    def _start_conversion_thread(self, tab_type: TabType, target_func: Any, args: tuple) -> None:
         """실제 변환 로직을 실행할 백그라운드 스레드를 생성하고 시작합니다.
 
         Args:
@@ -387,7 +386,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         
         widgets['action_btn'].config(
             state=tk.NORMAL, 
-            text=self.lang_data.get('cancel_conversion', 'Cancel'),
+            text=self.get_lang_dict().get('cancel_conversion', 'Cancel'),
             command=cancel_token.cancel
         )
         
@@ -423,7 +422,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             (self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.audio_cancel_token)
         )
 
-    def _add_log_entry(self, target_tab: str, log_key: str, **kwargs: Any) -> None:
+    def _add_log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
         """새로운 로그 이벤트를 큐에 추가합니다.
 
         Args:
@@ -433,7 +432,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         """
         self.log_queue.put(LogEvent(target=target_tab, key=log_key, kwargs=kwargs))
 
-    def log_system_message(self, target_tab: str, message: str) -> None:
+    def log_system_message(self, target_tab: TabType, message: str) -> None:
         """시스템 레벨의 메시지(에러 등)를 로그에 직접 추가합니다.
         
         Args:
@@ -442,7 +441,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         """
         self.log_queue.put(LogEvent(target=target_tab, key='raw', kwargs={'text': message}))
 
-    def _add_spacing(self, target_tab: str) -> None:
+    def _add_spacing(self, target_tab: TabType) -> None:
         """로그에 빈 줄(간격)을 추가하는 이벤트를 큐에 넣습니다.
 
         연속된 spacing 이벤트를 방지하여 이중 줄바꿈이 발생하지 않습니다.
@@ -511,7 +510,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         Args:
             msg: 처리할 ProgressEvent 객체.
         """
-        d = self.lang_data
+        d = self.get_lang_dict()
         target_tab = msg.target
         widgets = self.view.video_widgets if target_tab == 'video' else self.view.audio_widgets
         
@@ -532,7 +531,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         Args:
             msg: 처리할 CompletionEvent 객체.
         """
-        d = self.lang_data
+        d = self.get_lang_dict()
         tab_type = 'video' if msg.target == SENTINEL_VIDEO_DONE else 'audio'
         widgets = self.view.video_widgets if tab_type == 'video' else self.view.audio_widgets
         total = getattr(self, f'{tab_type}_total_files')
@@ -540,7 +539,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         widgets['status_label'].config(text=d['status_complete'].format(current=current, total=total))
         self.view.reset_ui_state(tab_type)
 
-    def preview_selected(self, listbox: tk.Listbox, tab_type: str) -> None:
+    def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
         """리스트박스에서 선택된 파일의 미리보기를 실행합니다.
 
         Args:
@@ -552,7 +551,10 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
     def cleanup(self) -> None:
         """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다.
 
-        프리뷰 임시 파일의 정리는 전역 임시 폴더(app_temp_dir)를 사용하므로,
+        전역 임시 폴더(app_temp_dir)가 주입된 경우에는
         AppContainer.cleanup_shared()에서 통합 관리합니다.
+        자체 생성한 임시 폴더인 경우에만 직접 삭제합니다.
         """
         self._stop_polling()
+        if self._owns_temp_dir and os.path.exists(self._preview_temp_dir):
+            shutil.rmtree(self._preview_temp_dir, ignore_errors=True)
