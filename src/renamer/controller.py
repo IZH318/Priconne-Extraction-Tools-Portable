@@ -85,8 +85,20 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         self.view.update_ui_text()
         
         if not self.is_processing:
-            if self.total_files_count > 0 and self.view.get_progress_value() >= 100:
-                self.view.set_progress_text(self.get_string('status_complete_count', count=self.total_files_count))
+            total_processed = getattr(self.file_processor, 'processed_count_rename', 0) + getattr(self.file_processor, 'processed_count_check', 0)
+            has_error = getattr(self.file_processor, 'has_error', False)
+            if has_error:
+                if self.total_files_count > 0 and total_processed > 0:
+                    self.view.set_progress_text(f"{self.get_string('error_title')}: {total_processed} / {self.total_files_count}")
+                else:
+                    self.view.set_progress_text(self.get_string('error_title'))
+            elif self.total_files_count > 0:
+                if total_processed >= self.total_files_count:
+                    self.view.set_progress_text(self.get_string('status_complete_count', count=self.total_files_count))
+                elif total_processed > 0:
+                    self.view.set_progress_text(f"{self.get_string('status_complete')} ({total_processed} / {self.total_files_count})")
+                else:
+                    self.view.set_progress_text(f"{self.get_string('error_title')} (0 / {self.total_files_count})")
             else:
                 self.view.set_progress_text(self.get_string('status_waiting'))
         else:
@@ -196,7 +208,9 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
             messagebox.showerror(self.get_string('error_title'), self.get_string('dialog_select_folder'))
             return
             
-        if not (self._base_path / "manifest.db").exists():
+        manifest_db_path = self._base_path / "manifest.db"
+        manifest_dir = self._base_path / "manifest"
+        if not manifest_db_path.exists() and not manifest_dir.is_dir():
             messagebox.showerror(self.get_string('error_title'), self.get_string('error_db_not_found'))
             return
         
@@ -257,12 +271,38 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
 
             self.is_processing = False
             self._active_thread = None
-            self.view.set_progress_value(100)
-            if self.total_files_count > 0:
-                self.view.set_progress_text(self.get_string('status_complete_count', count=self.total_files_count))
-            else:
-                self.view.set_progress_text(self.get_string('status_complete'))
             self.view.set_start_button_state(tk.NORMAL)
+
+            # 처리 결과에 따른 정확한 상태 표시 (오류 및 미완료 거짓 반환 방지)
+            total_processed = getattr(self.file_processor, 'processed_count_rename', 0) + getattr(self.file_processor, 'processed_count_check', 0)
+            has_error = getattr(self.file_processor, 'has_error', False)
+
+            if has_error:
+                # 오류 발생 시: 100% 완료로 표시하지 않고 오류 상태 표시
+                if self.total_files_count > 0 and total_processed > 0:
+                    pct = int((total_processed / self.total_files_count) * 100)
+                    self.view.set_progress_value(pct)
+                    self.view.set_progress_text(f"{self.get_string('error_title')}: {total_processed} / {self.total_files_count}")
+                else:
+                    self.view.set_progress_value(0)
+                    self.view.set_progress_text(self.get_string('error_title'))
+            elif self.total_files_count > 0:
+                if total_processed >= self.total_files_count:
+                    # 모든 파일 정상 처리 완료
+                    self.view.set_progress_value(100)
+                    self.view.set_progress_text(self.get_string('status_complete_count', count=self.total_files_count))
+                elif total_processed > 0:
+                    # 일부 파일만 처리되고 일부는 미처리/실패
+                    pct = int((total_processed / self.total_files_count) * 100)
+                    self.view.set_progress_value(pct)
+                    self.view.set_progress_text(f"{self.get_string('status_complete')} ({total_processed} / {self.total_files_count})")
+                else:
+                    # 처리된 파일이 0개인 경우 (전체 실패)
+                    self.view.set_progress_value(0)
+                    self.view.set_progress_text(f"{self.get_string('error_title')} (0 / {self.total_files_count})")
+            else:
+                self.view.set_progress_value(0)
+                self.view.set_progress_text(self.get_string('status_waiting'))
 
     def cleanup(self) -> None:
         """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다."""

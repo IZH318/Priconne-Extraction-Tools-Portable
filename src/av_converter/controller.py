@@ -134,16 +134,18 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self._log_renderer.redraw_logs(configs_with_tabs, self.last_log_timestamp)
 
     def _find_tools(self) -> None:
-        """UsmToolkit.exe와 vgmstream-cli.exe 파일 경로를 탐색하고 설정합니다."""
-        for root, _, files in os.walk(self.base_path.parent):
-            lower_files = [f.lower() for f in files]
-            if not self.usmtoolkit_path and "usmtoolkit.exe" in lower_files:
-                self.usmtoolkit_path = Path(root) / "UsmToolkit.exe"
-            if not self.vgmstream_path and "vgmstream-cli.exe" in lower_files and "vgmstream" in str(Path(root)).lower():
-                self.vgmstream_path = Path(root) / "vgmstream-cli.exe"
-            # 두 도구를 모두 찾았으면 탐색 조기 종료
-            if self.usmtoolkit_path and self.vgmstream_path:
-                break
+        """usmtoolkit 폴더 및 vgmstream 하위 폴더에서 도구 실행 파일 경로를 설정합니다."""
+        usm_dir = self.base_path / "usmtoolkit"
+        vgm_dir = usm_dir / "vgmstream"
+
+        cand_usm = usm_dir / "UsmToolkit.exe"
+        if cand_usm.is_file():
+            self.usmtoolkit_path = cand_usm
+
+        cand_vgm = vgm_dir / "vgmstream-cli.exe"
+        if cand_vgm.is_file():
+            self.vgmstream_path = cand_vgm
+
         # 도구 탐색 완료 후 호환성 패치 수행
         self._ensure_usmtoolkit_compatibility()
 

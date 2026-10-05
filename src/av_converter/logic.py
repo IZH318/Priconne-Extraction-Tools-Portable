@@ -112,6 +112,15 @@ class ConversionLogic:
                             log_entries.append(('conv_log_details_header', {}))
                             log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_log_lines])
                     
+                    # 성공 분기라도 stderr에 경고/알림이 있는 경우 기존 텍스트 로그 스타일로 추가
+                    raw_stderr = (result.stderr or "").strip()
+                    if raw_stderr:
+                        filtered_stderr = [line for line in raw_stderr.splitlines() if line.strip()]
+                        if filtered_stderr:
+                            log_entries.append(('raw', {'text': ''}))
+                            log_entries.append(('conv_log_details_error_header', {}))
+                            log_entries.extend([('raw', {'text': f"    > [STDERR] {line}"}) for line in filtered_stderr])
+
                     # 변환 과정에서 생성된 임시 파일 삭제
                     temp_file_dir = usm_file.parent
                     for ext in AV_TEMP_EXTENSIONS:

@@ -7,7 +7,7 @@ from typing import Any
 import UnityPy
 
 from src.queue_events import LogEvent, CompletionEvent
-from src.parsers.story_deserializer import StoryDataDeserializer
+from src.parsers.story_deserializer import StoryDataDeserializer, StoryDataCorruptedError
 from src.exceptions import AssetProcessingError
 
 
@@ -276,7 +276,7 @@ class AssetProcessor:
                 json.dump(deserialized_data, f, indent=4, ensure_ascii=False)
             self.log('storydata_deserialization_success', 'SUCCESS', {'asset_name': asset_name})
         
-        except (struct_error, ValueError, IndexError, TypeError) as e:
+        except (struct_error, ValueError, IndexError, TypeError, StoryDataCorruptedError) as e:
             # 실패 시 로그 기록
             self.log('storydata_deserialization_fail', 'ERROR', {'asset_name': asset_name, 'error': e})
         

@@ -5,6 +5,11 @@ from struct import unpack, error as struct_error
 from typing import Any
 
 
+class StoryDataCorruptedError(Exception):
+    """스토리 바이너리 데이터가 손상되었거나 비정상적인 무한 반복이 감지되었을 때 발생하는 예외입니다."""
+    pass
+
+
 class StoryDataDeserializer:
     """Unity AssetBundle 내 StoryData 바이너리를 역직렬화하는 클래스입니다.
 
@@ -157,7 +162,16 @@ class StoryDataDeserializer:
         fs = 0 # 파일 스트림 포인터
         raw_commands = []
         i = 2
+        max_command_limit = max(100_000, len(bytes_))
+        iteration_count = 0
+
         while i < len(bytes_):
+            iteration_count += 1
+            if iteration_count > max_command_limit:
+                raise StoryDataCorruptedError(
+                    f"Abnormal infinite loop detected in story binary data (iteration {iteration_count} exceeded limit {max_command_limit})."
+                )
+
             args: list[bytes | int] = []
             try:
                 # 2바이트(Big-endian)를 읽어 명령어 인덱스 파싱
@@ -250,3 +264,31 @@ class StoryDataDeserializer:
                     block[command_id.name.lower()].append(args[0] if len(args) == 1 else args)
 
         return story
+
+    @staticmethod
+    def show_corrupted_error_dialog(parent: Any = None, lang: str = 'ko') -> None:
+        """스토리 데이터 손상 및 무한 반복(루프) 감지 시 다국어 메시지 박스를 표시합니다."""
+        import json
+        from pathlib import Path
+        from tkinter import messagebox
+
+        title = "스토리 파일 분석 실패"
+        msg = (
+            "선택하신 스토리 파일이 손상되었거나 올바른 형식이 아닙니다.\n\n"
+            "파일 내부 데이터 손상으로 인해 비정상적인 무한 반복(루프)이 감지되어, "
+            "프로그램과 컴퓨터가 멈추는 것을 방지하기 위해 분석 작업을 안전하게 중단했습니다.\n\n"
+            "원본 게임 파일이 정상적으로 다운로드되었는지 확인해 주세요."
+        )
+
+        lang_path = Path(__file__).resolve().parent.parent / "languages.json"
+        if lang_path.is_file():
+            try:
+                with open(lang_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                sv = data.get('story_viewer', {}).get(lang, {})
+                title = sv.get('msgbox_story_loop_limit_title', title)
+                msg = sv.get('msgbox_story_loop_limit_msg', msg)
+            except Exception:
+                pass
+
+        messagebox.showerror(title, msg, parent=parent)

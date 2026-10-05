@@ -22,13 +22,17 @@ from src.lang_types import (
 
 _json_path = Path(__file__).parent / 'languages.json'
 
+_load_error: str | None = None
+
 try:
     with open(_json_path, 'r', encoding='utf-8') as _f:
         _full_data = json.load(_f)
 except FileNotFoundError:
+    _load_error = f"languages.json not found at {_json_path}"
     logging.error("languages.json not found at %s. Using empty fallback.", _json_path)
     _full_data = {}
 except json.JSONDecodeError as _e:
+    _load_error = f"languages.json is malformed: {_e}"
     logging.error("languages.json is malformed: %s. Using empty fallback.", _e)
     _full_data = {}
 
@@ -47,5 +51,14 @@ def get_logger_lang_data_map() -> dict:
     이 모듈에서 이미 로드한 _full_data를 재사용합니다.
     """
     return copy.deepcopy(_full_data)
+
+
+def get_language_load_error() -> str | None:
+    """languages.json 로드 중 발생한 오류 메시지를 반환합니다. 정상 로드 시 None입니다."""
+    if _load_error is not None:
+        return _load_error
+    if not _full_data:
+        return "languages.json is empty or contains no valid language data."
+    return None
 
 

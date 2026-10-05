@@ -1,4 +1,5 @@
 from __future__ import annotations
+import atexit
 import logging
 import os
 import threading
@@ -78,6 +79,7 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         """멀티프로세싱 Manager 객체를 반환하거나 필요시 초기화합니다."""
         if self._manager is None:
             self._manager = Manager()
+            atexit.register(self.cleanup)
         return self._manager
 
     @property
@@ -105,6 +107,10 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             self._manager = None
             self._log_queue = None
             self._completion_queue = None
+            try:
+                atexit.unregister(self.cleanup)
+            except Exception:
+                pass
 
     def _get_enabled_types(self) -> set[str]:
         """체크박스에서 활성화된 에셋 타입 목록을 반환합니다.

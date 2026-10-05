@@ -1,0 +1,11 @@
+# 모든 텍스트 파일의 줄 끝을 LF로 강제
+* text=auto eol=lf
+
+# 바이너리 파일은 변환하지 않음
+*.png binary
+*.ico binary
+*.db binary
+*.unity3d binary
+*.usm binary
+*.awb binary
+*.acb binary

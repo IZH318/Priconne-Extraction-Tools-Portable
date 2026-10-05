@@ -66,7 +66,18 @@ class AppContainer:
         logger에 전달할 lang_data_map은 languages.py 모듈에서 이미 로드된
         전역 데이터를 재사용하여 languages.json 이중 로드를 방지합니다.
         """
-        from src.languages import get_logger_lang_data_map
+        from src.languages import get_logger_lang_data_map, get_language_load_error
+        
+        load_err = get_language_load_error()
+        if load_err:
+            from tkinter import messagebox
+            logging.error("Failed to load languages.json: %s", load_err)
+            messagebox.showerror(
+                "언어 파일 로드 실패 (Language Load Error)",
+                f"languages.json 파일을 읽을 수 없습니다.\n({load_err})\n\n번역 파일이 누락되었거나 손상되었는지 확인해 주세요.\n프로그램이 기본값으로 실행됩니다.",
+                parent=self.root
+            )
+
         setup_global_logging(self.root, self.app_info_for_logger, self.app_lang_var, get_logger_lang_data_map())
         
         # 이전 실행 세션에서 남은 찌꺼기 파일 초기화 후 다시 폴더 진열
