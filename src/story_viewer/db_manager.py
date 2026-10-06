@@ -81,28 +81,15 @@ class StoryDBManager:
 
         if missing_db_files and not self.db_warning_shown:
             paths_str = "\n".join(missing_db_files)
-            is_online = False
-            try:
-                import socket
-                # 실제 다운로드 대상 호스트에 대해 연결 확인 (하드코딩 방지)
-                download_host = urlparse(DB_DOWNLOAD_BASE_URL).hostname or "raw.githubusercontent.com"
-                socket.create_connection((download_host, 443), timeout=5).close()
-                is_online = True
-            except OSError:
-                pass
-                
-            if is_online:
-                if messagebox.askyesno(
-                    lang_dict.get('db_download_prompt_title', 'Download DB'), 
-                    lang_dict.get('db_download_prompt_msg', 'Missing:\n{paths}').format(paths=paths_str), 
-                    parent=self._master
-                ):
-                    self._start_db_download(missing_db_files, script_dir)
-                    return True
-                else:
-                    self._show_offline_warning(paths_str, lang_dict, reason='cancel')
+            if messagebox.askyesno(
+                lang_dict.get('db_download_prompt_title', 'Download DB'), 
+                lang_dict.get('db_download_prompt_msg', 'Missing:\n{paths}').format(paths=paths_str), 
+                parent=self._master
+            ):
+                self._start_db_download(missing_db_files, script_dir)
+                return True
             else:
-                self._show_offline_warning(paths_str, lang_dict, reason='offline')
+                self._show_offline_warning(paths_str, lang_dict, reason='cancel')
 
         self.db_check_done = True
         return False
@@ -155,7 +142,7 @@ class StoryDBManager:
                 for f in files_to_download:
                     url = base_url + f
                     dest_path = os.path.join(dest_dir, f)
-                    with urllib.request.urlopen(url) as response:
+                    with urllib.request.urlopen(url, timeout=30) as response:
                         with open(dest_path, 'wb') as out_file:
                             shutil.copyfileobj(response, out_file)
                     # 다운로드된 파일이 유효한 SQLite DB인지 무결성 검증

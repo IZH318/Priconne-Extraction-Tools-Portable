@@ -1,7 +1,15 @@
-# 모든 텍스트 파일의 줄 끝을 LF로 강제
+# ======================================================================
+# Git Attributes Configuration
+# ======================================================================
+
+# Force LF line endings for all text files by default
 * text=auto eol=lf
 
-# 바이너리 파일은 변환하지 않음
+# Windows batch scripts must preserve CRLF line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files - Do not modify line endings
 *.png binary
 *.ico binary
 *.db binary
@@ -9,3 +17,5 @@
 *.usm binary
 *.awb binary
 *.acb binary
+*.whl binary
+*.zip binary

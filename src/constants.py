@@ -13,7 +13,7 @@ DB_DOWNLOAD_BASE_URL: Final[str] = os.environ.get(
 
 # === Application Metadata ===
 APP_VERSION: Final[str] = "3.0.0"
-APP_LAST_UPDATE: Final[str] = "2026-03-17"
+APP_LAST_UPDATE: Final[str] = "2026-10-06"
 APP_DEVELOPER: Final[str] = "(Github) IZH318"
 APP_WEBSITE: Final[str] = "https://github.com/IZH318"
 APP_COPYRIGHT_YEAR: Final[str] = "2026"

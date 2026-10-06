@@ -99,22 +99,21 @@ class AVPreviewHandler:
             messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_audio', 'vgmstream not found.'), parent=self._view)
             return
         
-        def on_analyze_done(stream_count):
-            if stream_count == 0:
+        def on_analyze_done(streams_info: list[tuple[int, str]]) -> None:
+            if not streams_info:
                 messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_error', 'Preview failed: {error}').format(error='No streams'), parent=self._view)
                 return
             
-            if stream_count == 1:
-                stream_name = self._logic.get_stream_name(file_path, 1, vgmstream_path)
-                self._play_audio_stream(file_path, 1, vgmstream_path, stream_name)
+            if len(streams_info) == 1:
+                stream_num, stream_name = streams_info[0]
+                self._play_audio_stream(file_path, stream_num, vgmstream_path, stream_name)
             else:
                 def map_builder(tree):
                     stream_map = {}
                     name_map = {}
-                    for i in range(1, stream_count + 1):
-                        name = self._logic.get_stream_name(file_path, i, vgmstream_path)
-                        item_id = tree.insert('', tk.END, values=(i, name))
-                        stream_map[item_id] = i
+                    for stream_num, name in streams_info:
+                        item_id = tree.insert('', tk.END, values=(stream_num, name))
+                        stream_map[item_id] = stream_num
                         name_map[item_id] = name
                     tree.stream_map = stream_map
                     tree.name_map = name_map
@@ -124,10 +123,10 @@ class AVPreviewHandler:
                     if hasattr(tree, 'stream_map') and item_id in tree.stream_map:
                         self._play_audio_stream(file_path, tree.stream_map[item_id], vgmstream_path, tree.name_map[item_id])
                         
-                self._view.show_track_selector(stream_count, map_builder, on_double_click)
+                self._view.show_track_selector(len(streams_info), map_builder, on_double_click)
         
         self._run_preview_task(
-            lambda: self._logic.get_stream_count(file_path, vgmstream_path),
+            lambda: self._logic.get_audio_streams_info(file_path, vgmstream_path),
             on_analyze_done
         )
 

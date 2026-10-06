@@ -256,7 +256,11 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         log_batch = self._drain_queue(self.log_queue)
 
         completion_batch_size = 0
+        is_extraction_done = False
         for event in self._drain_queue(self.completion_queue):
+            if getattr(event, 'target', '') == '__EXTRACTION_DONE__':
+                is_extraction_done = True
+                continue
             completion_batch_size += 1
             if hasattr(event, 'result') and isinstance(event.result, int):
                 self.total_extracted_assets += event.result
@@ -277,6 +281,9 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         if completion_batch_size > 0:
             self.processed_files_count += completion_batch_size
             self.view.update_progress_bar()
+
+        if is_extraction_done:
+            self._on_extraction_complete()
 
     def select_files(self) -> None:
         """파일 선택 대화상자를 열고 .unity3d 파일을 추가합니다."""
@@ -421,7 +428,7 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
     def _run_process_pool(self) -> None:
         """프로세스 풀을 사용하여 파일을 병렬 처리합니다."""
         num_workers = min(cpu_count(), len(self.file_paths))
-        self._log('processing_started', format_args={'num_workers': num_workers})
+        self.log_queue.put(LogEvent(target="", key='processing_started', level='INFO', kwargs={'num_workers': num_workers}))
         
         unity_version = self._current_unity_version
         enabled_types = self._current_enabled_types
@@ -432,11 +439,11 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             }
             for future in concurrent.futures.as_completed(future_to_path):
                 if self.cancel_token.is_cancelled:
-                    self._log('extraction_cancelled', "ERROR")
+                    self.log_queue.put(LogEvent(target="", key='extraction_cancelled', level='ERROR'))
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
         
-        self.frame.after(0, self._on_extraction_complete)
+        self.completion_queue.put(CompletionEvent(target='__EXTRACTION_DONE__'))
 
     def _on_extraction_complete(self) -> None:
         """추출 작업이 모두 완료되었을 때 호출되는 콜백입니다."""

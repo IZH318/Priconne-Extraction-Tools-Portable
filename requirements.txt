@@ -1,5 +1,4 @@
-Pillow==10.2.0
-UnityPy==1.25.0
-xxhash==3.5.0
-tkinterdnd2==0.4.3
+tkinterdnd2==0.6.3
+xxhash==4.0.1
 send2trash==2.1.0
+UnityPy==1.25.2

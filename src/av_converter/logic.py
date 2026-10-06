@@ -119,7 +119,7 @@ class ConversionLogic:
                         if filtered_stderr:
                             log_entries.append(('raw', {'text': ''}))
                             log_entries.append(('conv_log_details_error_header', {}))
-                            log_entries.extend([('raw', {'text': f"    > [STDERR] {line}"}) for line in filtered_stderr])
+                            log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_stderr])
 
                     # 변환 과정에서 생성된 임시 파일 삭제
                     temp_file_dir = usm_file.parent
@@ -235,7 +235,10 @@ class ConversionLogic:
 
     def get_stream_count(self, file_path: Path | str, vgmstream_path: Path | str) -> int:
         """vgmstream을 이용해 AWB 파일 내의 오디오 스트림 개수를 확인합니다."""
-        result = self._run_subprocess([str(vgmstream_path), "-m", str(file_path)])
+        try:
+            result = self._run_subprocess([str(vgmstream_path), "-m", str(file_path)])
+        except (OSError, subprocess.SubprocessError):
+            return 0
         if result.returncode != 0:
             return 0
         for line in result.stdout.splitlines():
@@ -248,7 +251,10 @@ class ConversionLogic:
 
     def get_stream_name(self, file_path: Path | str, stream_num: int, vgmstream_path: Path | str) -> str:
         """vgmstream을 이용해 특정 스트림의 이름을 가져옵니다."""
-        result = self._run_subprocess([str(vgmstream_path), "-m", "-s", str(stream_num), str(file_path)])
+        try:
+            result = self._run_subprocess([str(vgmstream_path), "-m", "-s", str(stream_num), str(file_path)])
+        except (OSError, subprocess.SubprocessError):
+            return f"{Path(file_path).stem}_{stream_num:04d}"
         if result.returncode != 0:
             return f"{Path(file_path).stem}_{stream_num:04d}"
         for line in result.stdout.splitlines():
@@ -257,6 +263,21 @@ class ConversionLogic:
                 if name:
                     return name
         return f"{Path(file_path).stem}_{stream_num:04d}"
+
+    def get_audio_streams_info(self, file_path: Path | str, vgmstream_path: Path | str) -> list[tuple[int, str]]:
+        """vgmstream을 이용해 AWB 파일 내 모든 오디오 스트림의 번호와 이름을 일괄 수집합니다.
+
+        백그라운드 스레드에서 실행되어 메인 UI 스레드의 블로킹을 방지합니다.
+        """
+        stream_count = self.get_stream_count(file_path, vgmstream_path)
+        if stream_count <= 0:
+            return []
+        
+        streams = []
+        for i in range(1, stream_count + 1):
+            name = self.get_stream_name(file_path, i, vgmstream_path)
+            streams.append((i, name))
+        return streams
 
     def _convert_audio_container(self, item_path_str: str, output_dir: str, vgmstream_path: Path | str, overwrite: bool) -> tuple[int, list[tuple[str, dict]]]:
         """

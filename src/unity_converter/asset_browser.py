@@ -7,9 +7,6 @@ import shutil
 import threading
 from typing import Any
 
-import UnityPy
-from UnityPy import config
-
 from src.constants import DEFAULT_UNITY_VERSION
 from src.utils.platform_open import open_with_default_app
 
@@ -106,6 +103,8 @@ class AssetBrowserWindow(tk.Toplevel):
     def _load_assets(self) -> None:
         """UnityPy로 파일을 로드하고 트리에 에셋을 표시합니다."""
         try:
+            import UnityPy
+            from UnityPy import config
             config.FALLBACK_UNITY_VERSION = self.unity_version
             env = UnityPy.load(self.file_path)
         except (OSError, ValueError, RuntimeError) as e:
@@ -202,8 +201,7 @@ class AssetBrowserWindow(tk.Toplevel):
         """이미지 에셋을 .png로 추출하여 OS 기본 프로그램으로 엽니다."""
         img = data.image
         if img is None:
-            messagebox.showinfo(self.lang_dict.get('asset_preview_title', 'Preview'), self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
-            return
+            raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
 
         temp_path = os.path.join(self._preview_temp_dir, f"{self._sanitize_name(name)}.png")
         img.save(temp_path)
@@ -212,8 +210,7 @@ class AssetBrowserWindow(tk.Toplevel):
     def _export_audio(self, data: Any, name: str) -> None:
         """오디오 에셋을 추출하여 OS 기본 프로그램으로 엽니다."""
         if not data.samples:
-            messagebox.showinfo(self.lang_dict.get('asset_preview_title', 'Preview'), self.lang_dict.get('asset_no_data', 'No data.'), parent=self)
-            return
+            raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
 
         safe_name = self._sanitize_name(name)
         for sample_name, audio_data in data.samples.items():

@@ -4,7 +4,6 @@ import re
 import json
 from struct import error as struct_error
 from typing import Any
-import UnityPy
 
 from src.queue_events import LogEvent, CompletionEvent
 from src.parsers.story_deserializer import StoryDataDeserializer, StoryDataCorruptedError
@@ -120,6 +119,7 @@ class AssetProcessor:
 
     def process_all_assets(self) -> int:
         """파일 내의 모든 에셋을 순회하며 처리를 시작하는 메인 함수입니다."""
+        import UnityPy
         self.env = UnityPy.load(self.file_path) # 파일 로드
         num_assets = len(self.env.objects)
         if num_assets == 0:
