@@ -160,6 +160,7 @@ class RenamerLangDict(TypedDict, total=False):
 
 class ResourceRemoverLangDict(TypedDict, total=False):
     """'resource_remover' 모듈의 다국어 키 정의."""
+    btn_select_dir: str
     btn_start: str
     chk_assetbundle: str
     chk_audio: str
@@ -167,8 +168,12 @@ class ResourceRemoverLangDict(TypedDict, total=False):
     chk_video: str
     confirm_msg_permanent: str
     confirm_msg_trash: str
+    confirm_path_prefix: str
+    confirm_summary: str
     confirm_title: str
     desc: str
+    dialog_select_folder: str
+
     error_delete_failed: str
     error_title: str
     fail_msg: str

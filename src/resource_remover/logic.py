@@ -71,26 +71,60 @@ class ResourceRemoverLogic:
         # 로그 파일 생성
         log_filename: Path | None = None
         if deleted_files or errors:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            # 로그 파일이 기준 경로에 생성되도록 보장
-            log_dir = self.base_path
-            log_filename = log_dir / f"deletion_log_{timestamp}.txt"
+            now = datetime.now()
+            timestamp_str = now.strftime("%Y-%m-%d_%H%M%S")
+            # 로그 파일이 중앙 집중된 logs 폴더에 생성되도록 보장
+            log_dir = get_application_base_path() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_filename = log_dir / f"DeletionLog_{timestamp_str}.log"
             try:
+                import platform
+                import multiprocessing
+                import sys
+                from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+                
+                python_ver = platform.python_version()
+                os_ver = platform.platform()
+                cpu_cores = multiprocessing.cpu_count()
+                
+                if sys.argv and sys.argv[0]:
+                    exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+                else:
+                    exec_path = os.path.abspath(os.getcwd())
+
                 with open(log_filename, 'w', encoding='utf-8') as f:
-                    f.write(f"Resource Deletion Log - {timestamp}\n")
-                    f.write(f"Base Path: {self.base_path}\n")
-                    f.write(f"Target Extensions: {extensions_to_remove}\n")
-                    f.write(f"Moved to Trash: {use_trash}\n")
-                    f.write(f"{SEPARATOR_SHORT}\n")
-                    f.write(f"Deleted: {len(deleted_files)} file(s)\n")
-                    for p in deleted_files:
-                        f.write(f"[OK] {p}\n")
+                    f.write(f"{SEPARATOR_LONG}\n")
+                    f.write(f"[SESSION] Resource Deletion Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                    f.write(f"{SEPARATOR_LONG}\n")
+                    f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
+                    f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
+                    f.write(f"[ENGINE]  Python Version:  {python_ver}\n")
+                    f.write(f"[SYSTEM]  OS Version:      {os_ver}\n")
+                    f.write(f"[SYSTEM]  Processor Count: {cpu_cores} Cores\n")
+                    f.write(f"[PATH]    Exec Path:       {exec_path}\n")
+                    f.write(f"[REPORT]  Target Exts:     {', '.join(extensions_to_remove)}\n")
+                    f.write(f"[REPORT]  Moved to Trash:  {use_trash}\n")
+                    f.write(f"[REPORT]  Total Deleted:   {len(deleted_files)}\n")
+                    f.write(f"[REPORT]  Total Errors:    {len(errors)}\n")
+                    f.write(f"{SEPARATOR_LONG}\n\n")
+
+                    if deleted_files:
+                        for idx, p in enumerate(deleted_files, 1):
+                            f.write(f"[OK ITEM #{idx}]\n")
+                            f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                            f.write(f"Context   : Resource Deletion\n")
+                            f.write(f"File      : {p}\n")
+                            f.write(f"{SEPARATOR_LONG}\n\n")
+                            
                     if errors:
-                        f.write(f"{SEPARATOR_SHORT}\n")
-                        f.write(f"Errors: {len(errors)} file(s)\n")
-                        for e in errors:
-                            f.write(f"[ERROR] {e}\n")
+                        for idx, e in enumerate(errors, 1):
+                            f.write(f"[ERROR ITEM #{idx}]\n")
+                            f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                            f.write(f"Context   : Resource Deletion\n")
+                            f.write(f"Message   : {e}\n")
+                            f.write(f"{SEPARATOR_LONG}\n\n")
             except OSError as e:
+                import logging
                 logging.warning("Failed to create log file %s: %s", log_filename, e)
                 log_filename = None  # 로그 파일 생성 실패 표시
                 

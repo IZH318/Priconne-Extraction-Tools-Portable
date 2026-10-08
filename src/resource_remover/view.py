@@ -34,6 +34,15 @@ class ResourceRemoverView(ttk.Frame):
         self.lbl_desc = ttk.Label(container, text="", justify=tk.CENTER)
         self.lbl_desc.pack(pady=(10, 10))
 
+        path_frame = ttk.Frame(container)
+        path_frame.pack(fill=tk.X, pady=5, padx=40)
+        
+        self.entry_path = ttk.Entry(path_frame, textvariable=self.controller.target_path_var, state="readonly")
+        self.entry_path.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        self.btn_select_dir = ttk.Button(path_frame, text="", command=self.controller.select_directory)
+        self.btn_select_dir.pack(side=tk.RIGHT, padx=(10, 0))
+
         self.chk_frame = ttk.LabelFrame(container, text="", padding=10)
         self.chk_frame.pack(pady=5, padx=40, fill=tk.X)
 
@@ -58,7 +67,7 @@ class ResourceRemoverView(ttk.Frame):
         self.btn_start = ttk.Button(control_frame, text="", command=self.controller.start_removal)
         self.btn_start.pack(side=tk.RIGHT, padx=5)
 
-        self.lbl_status = ttk.Label(container, textvariable=self.controller.status_var)
+        self.lbl_status = ttk.Label(container, textvariable=self.controller.status_var, justify=tk.CENTER)
         self.lbl_status.pack(side=tk.BOTTOM, pady=10)
 
     def update_ui_text(self) -> None:
@@ -67,6 +76,7 @@ class ResourceRemoverView(ttk.Frame):
 
         try:
             self.lbl_desc.config(text=lang_dict.get('desc', 'Description'))
+            self.btn_select_dir.config(text=lang_dict.get('btn_select_dir', 'Select Folder'))
             self.chk_frame.config(text=lang_dict.get('chk_frame_title', 'Categories'))
             if self.controller.is_use_trash_enabled:
                 self.lbl_warn.config(text=lang_dict.get('warn_trash', 'Files will be moved to the Recycle Bin.'), foreground="blue")
@@ -96,6 +106,8 @@ class ResourceRemoverView(ttk.Frame):
             self.btn_start.config(state=state)
         if hasattr(self, 'chk_trash'):
             self.chk_trash.config(state=state)
+        if hasattr(self, 'btn_select_dir'):
+            self.btn_select_dir.config(state=state)
 
     def set_status_color(self, color: str) -> None:
         """상태 메시지 라벨의 텍스트 색상을 설정합니다.

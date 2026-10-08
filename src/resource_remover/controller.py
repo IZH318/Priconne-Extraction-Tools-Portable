@@ -5,12 +5,15 @@ from typing import Any
 import queue
 import threading
 import os
+from pathlib import Path
+from tkinter import filedialog
 
 from src.languages import RESOURCE_REMOVER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
 from src.constants import EXTENSION_CATEGORIES
 from src.queue_events import CompletionEvent
 from src.queue_polling import QueuePollingMixin
+from src.utils.base_path import get_application_base_path
 from .logic import ResourceRemoverLogic
 from .view import ResourceRemoverView
 
@@ -29,6 +32,7 @@ class ResourceRemoverController(QueuePollingMixin):
         self.master = master
         self.logic = ResourceRemoverLogic()
         self.about_info = about_info or {}
+        self.target_path_var = tk.StringVar(value=str(get_application_base_path()))
         
         self.use_trash_var = tk.BooleanVar(value=True)
         self.chk_vars = {}
@@ -97,6 +101,18 @@ class ResourceRemoverController(QueuePollingMixin):
                 selected.extend(cat["extensions"])
         return selected
 
+    def select_directory(self) -> None:
+        """삭제 대상 폴더를 선택하는 다이얼로그를 엽니다."""
+        lang_dict = self.get_lang_dict()
+        selected = filedialog.askdirectory(
+            title=lang_dict.get('dialog_select_folder', 'Select Folder'),
+            initialdir=self.target_path_var.get(),
+            parent=self.master
+        )
+        if selected:
+            self.target_path_var.set(selected)
+            self.logic.base_path = Path(selected)
+
     def start_removal(self) -> None:
         """선택된 카테고리의 리소스 파일 삭제를 시작합니다."""
         lang_dict = self.get_lang_dict()
@@ -142,14 +158,27 @@ class ResourceRemoverController(QueuePollingMixin):
             messagebox.showinfo(lang_dict.get('info_title', 'Info'), lang_dict.get('no_files_found', 'No files found to delete.'), parent=self.view)
             return
 
+        target_path = self.target_path_var.get()
+        selected_exts = self._get_selected_extensions()
+        exts_str = ", ".join(selected_exts)
+
+        # 1단계: 요약 정보 표시
+        summary_msg = lang_dict.get('confirm_summary', 'Target Path:\n{path}\n\nTarget File Types: {extensions}\n\nFound Files: {count}\n\nProceed?').format(path=target_path, extensions=exts_str, count=file_count)
+        
+        if not messagebox.askyesno(lang_dict.get('confirm_title', 'Confirm Deletion'), summary_msg, parent=self.view):
+            self.view.set_control_state('normal')
+            self.status_var.set(lang_dict.get('status_ready', 'Ready...'))
+            self.view.set_status_color("black")
+            return
+
+        # 2단계: 휴지통 옵션 기반 경고
         use_trash = self.use_trash_var.get()
         msg_key = 'confirm_msg_trash' if use_trash else 'confirm_msg_permanent'
-        msg = lang_dict.get(msg_key, 'Proceed?').format(count=file_count)
+        warning_msg = lang_dict.get(msg_key, 'Proceed?').format(count=file_count)
 
-        if messagebox.askyesno(lang_dict.get('confirm_title', 'Confirm Deletion'), msg, parent=self.view):
+        if messagebox.askyesno(lang_dict.get('warn_title', 'Warning'), warning_msg, parent=self.view):
             self.status_var.set(lang_dict.get('status_processing', "Processing..."))
             self.view.set_status_color("blue")
-            selected_exts = self._get_selected_extensions()
             threading.Thread(target=self._delete_thread, args=(target_files, selected_exts, use_trash), daemon=True).start()
         else:
             self.view.set_control_state('normal')

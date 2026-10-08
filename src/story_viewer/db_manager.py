@@ -126,7 +126,14 @@ class StoryDBManager:
         
         top = tk.Toplevel(self._master)
         top.title(lang_dict.get('db_download_prompt_title', 'Downloading DB...'))
-        top.geometry("300x100")
+        
+        # 화면 정가운데 표시
+        top.update_idletasks()
+        w, h = 300, 100
+        x = (top.winfo_screenwidth() // 2) - (w // 2)
+        y = (top.winfo_screenheight() // 2) - (h // 2)
+        top.geometry(f"{w}x{h}+{x}+{y}")
+        
         top.transient(self._master)
         top.grab_set()
         lbl = ttk.Label(top, text="Downloading...")

@@ -68,10 +68,13 @@ $RECYCLE.BIN/
 # ======================================================================
 # Miscellaneous Work Files and Reference Materials
 # ======================================================================
+/_Backup/
 /_ORG/
+/_Source/
 /_UnityPy_Reference/
 /_임시추출/
 /docs/
 /logs/
 /.editorconfig
 /AGENTS.md
+/Essential Software Pack (x64).zip

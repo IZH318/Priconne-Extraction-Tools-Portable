@@ -15,8 +15,6 @@ set "MSG_ERROR_HEADER=[ERROR] An error occurred during environment setup or inst
 set "MSG_ERROR_CHECK_PYTHON=- Please ensure Python 3.10 is installed AND set as default."
 set "MSG_ERROR_HOW_TO_CHECK=-(How to check: Run 'py --version' or 'python --version' in your terminal)"
 set "MSG_ERROR_ADMIN=- Try running this script as an administrator."
-set "MSG_SUCCESS_HEADER=[SUCCESS] Virtual environment and all packages are fully ready."
-set "MSG_RUN_PROMPT=Press any key to execute main.py in the virtual environment."
 set "MSG_RUNNING_MAIN=[Running main.py inside virtual environment...]"
 set "MSG_EXIT_PROMPT=Program finished. Press any key to exit."
 
@@ -46,12 +44,12 @@ if not exist ".venv\Scripts\python.exe" (
 echo  %MSG_INSTALLING%
 echo.
 
-set "LINKS_ARGS=--find-links=./packages"
+set "LINKS_ARGS=--find-links="./packages""
 for /f "delims=" %%i in ('dir /b /s /ad "packages" 2^>nul') do (
     set "REL_PATH=%%i"
     set "REL_PATH=!REL_PATH:%~dp0=./!"
     set "REL_PATH=!REL_PATH:\=/!"
-    set "LINKS_ARGS=!LINKS_ARGS! --find-links=!REL_PATH!"
+    set "LINKS_ARGS=!LINKS_ARGS! --find-links="!REL_PATH!""
 )
 
 .venv\Scripts\python.exe -m pip install --no-index !LINKS_ARGS! -r requirements.txt
@@ -61,14 +59,6 @@ goto :handle_success
 
 
 :handle_success
-echo.
-echo ======================================================================
-echo  %MSG_SUCCESS_HEADER%
-echo ======================================================================
-echo.
-echo  %MSG_RUN_PROMPT%
-pause >nul
-
 cls
 echo.
 echo  %MSG_RUNNING_MAIN%
