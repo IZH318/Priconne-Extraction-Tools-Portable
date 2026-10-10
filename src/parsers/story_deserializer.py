@@ -272,12 +272,12 @@ class StoryDataDeserializer:
         from pathlib import Path
         from tkinter import messagebox
 
-        title = "스토리 파일 분석 실패"
+        title = "Story File Analysis Failed"
         msg = (
-            "선택하신 스토리 파일이 손상되었거나 올바른 형식이 아닙니다.\n\n"
-            "파일 내부 데이터 손상으로 인해 비정상적인 무한 반복(루프)이 감지되어, "
-            "프로그램과 컴퓨터가 멈추는 것을 방지하기 위해 분석 작업을 안전하게 중단했습니다.\n\n"
-            "원본 게임 파일이 정상적으로 다운로드되었는지 확인해 주세요."
+            "The selected story file is corrupted or in an invalid format.\n\n"
+            "An abnormal infinite loop was detected due to corrupted internal data. "
+            "Processing has been safely aborted to prevent application freezing.\n\n"
+            "Please verify that the original game file is not corrupted."
         )
 
         lang_path = Path(__file__).resolve().parent.parent / "languages.json"

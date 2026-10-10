@@ -49,6 +49,7 @@ class AssetBrowserWindow(tk.Toplevel):
 
     def __init__(self, master: tk.Tk | tk.Toplevel, file_path: str, lang_dict: dict[str, str], unity_version: str | None = None, app_temp_dir: str | None = None) -> None:
         super().__init__(master)
+        self.withdraw()
         self.file_path = file_path
         self.lang_dict = lang_dict
         self.unity_version = unity_version or DEFAULT_UNITY_VERSION
@@ -76,6 +77,7 @@ class AssetBrowserWindow(tk.Toplevel):
         self._load_assets()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.deiconify()
 
     def _build_ui(self) -> None:
         """트리뷰 UI를 구성합니다."""
@@ -154,6 +156,7 @@ class AssetBrowserWindow(tk.Toplevel):
 
         # 진행 상태 팝업
         popup = tk.Toplevel(self)
+        popup.withdraw()
         popup.title(self.lang_dict.get('preview_converting', 'Processing...'))
         win_w, win_h = 300, 80
         sx = popup.winfo_screenwidth()
@@ -167,6 +170,7 @@ class AssetBrowserWindow(tk.Toplevel):
         progress = ttk.Progressbar(popup, mode='indeterminate')
         progress.pack(fill=tk.X, padx=20, pady=(0, 10))
         progress.start(15)
+        popup.deiconify()
 
         def export_worker():
             error = None

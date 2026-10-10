@@ -1,18 +1,30 @@
 {
+    "Common": {
+        "version_api_url": "https://api.github.com/repos/Expugn/priconne-database/contents/version.json",
+        "version_raw_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/version.json"
+    },
     "JP": {
         "db_path": "master_jp.db",
-        "event_list_table": "v1_8931e2893a2d2290dbf498046bc66faafeebc40b6764dd69334ad51f5aca2e9f",
-        "event_name_col_list": "e3f0f79d746654f52125f3c28eb487d9e102f02077fe104d1423f08e80e056e3",
-        "event_details_table": "v1_04d08b8c6bf704241326eca45b6d63cc1a6dd38d03ff256df15b8ec8d4cd2649",
-        "event_info_col_details": "20d0bf56a9ca7d14b3172ac4dd383fee10c010d4ecd30c9854302d10390d774e",
-        "event_id_col_details": "69d3bbead1844607ef41ecb520a4d5385cae02eddca377aa13721ec7fd01e0ec"
+        "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_jp.db",
+        "baseline_db_path": "master_jp_10052900.db",
+        "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db",
+        "version_key": "JP",
+        "event_list_table": "event_story_data",
+        "event_name_col_list": "title",
+        "event_details_table": "event_story_detail",
+        "event_info_col_details": "sub_title",
+        "event_id_col_details": "story_id"
     },
     "KR": {
         "db_path": "master_kr.db",
-        "event_list_table": "v1_4e380b72af2e31867844884ba838095ad9ea8f02bf83037a3c8ed47b8943f164",
-        "event_name_col_list": "abb720eaefdc23b376dc5b817b683e633eb66fe9a3941025ae27413c56d56fad",
-        "event_details_table": "v1_ebabad5e41c1f71b3e5d705a8fe81411012e124827b4cbde3dfb2469674f598f",
-        "event_info_col_details": "45d39837db60a2b9aca5a03c3c17a9999201e08e97c3cff92bb95786dd344355",
-        "event_id_col_details": "9a0ef39c5ee7f28590676ed2b6b857c10aad6d01983252fa6b978b0cb3991880"
+        "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_kr.db",
+        "baseline_db_path": "master_kr_10049000.db",
+        "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/3f64e986b647847fb3c833f03905b7e5adcfb0db/master_kr.db",
+        "version_key": "KR",
+        "event_list_table": "event_story_data",
+        "event_name_col_list": "title",
+        "event_details_table": "event_story_detail",
+        "event_info_col_details": "sub_title",
+        "event_id_col_details": "story_id"
     }
 }

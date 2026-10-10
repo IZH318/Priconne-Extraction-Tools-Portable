@@ -39,6 +39,7 @@ class ExportWindow(tk.Toplevel):
             server_db_info: 서버 DB 메타데이터.
         """
         super().__init__(master)
+        self.withdraw()
         self._master = master
         self._get_lang_dict = get_lang_dict
         self._export_func = export_func
@@ -68,6 +69,7 @@ class ExportWindow(tk.Toplevel):
 
         self._toggle_story_data_options()
         self._toggle_event_list_options()
+        self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:
         """대화상자를 화면 중앙에 배치합니다.

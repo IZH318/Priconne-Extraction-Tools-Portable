@@ -217,7 +217,7 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         self.log_data.clear()
         self.show_initial_message()
         self.redraw_all_logs()
-        add_breadcrumb("conv", "리네이머 작업 시작", {"path": str(self._base_path)})
+        add_breadcrumb("conv", "Started renamer task", {"path": str(self._base_path)})
         
         self.is_processing = True
         self.view.set_start_button_state(tk.DISABLED)

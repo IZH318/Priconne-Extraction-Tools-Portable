@@ -35,6 +35,7 @@ class SearchWindow(tk.Toplevel):
         search_data: dict[str, Any],
         db_status: dict[str, bool],
         server_db_info: dict[str, Any],
+        db_manager: Any = None,
     ) -> None:
         """SearchWindow 객체를 초기화합니다.
 
@@ -49,8 +50,10 @@ class SearchWindow(tk.Toplevel):
             search_data: 콤보박스에 표시할 자동완성 데이터 딕셔너리.
             db_status: 각 지역 DB(JP, KR)의 로드 상태.
             server_db_info: 서버 DB 메타데이터.
+            db_manager: DB 매니저 인스턴스.
         """
         super().__init__(master)
+        self.withdraw()
         self._master = master
         self._get_lang_dict = get_lang_dict
         self._get_lang_code = get_lang_code
@@ -61,6 +64,7 @@ class SearchWindow(tk.Toplevel):
         self.search_data = search_data
         self.db_status = db_status
         self.server_db_info = server_db_info
+        self.db_manager = db_manager
 
         self.search_vars = {
             'filename': tk.StringVar(), 'title': tk.StringVar(), 'outline': tk.StringVar(),
@@ -75,6 +79,7 @@ class SearchWindow(tk.Toplevel):
         self._on_server_selection_change()
         self.focus_set()
         self._center_window(480, 390)
+        self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:
         """대화상자를 화면 중앙에 배치합니다.
@@ -200,19 +205,24 @@ class SearchWindow(tk.Toplevel):
         self.event_combobox['values'] = []
         self.search_vars['event_name'].set('')
         
-        if not db_info or not self.db_status.get(selected_server):
+        if not db_info or not self.db_manager:
             self.event_combobox.config(state=tk.DISABLED)
             return
-        
-        self.event_combobox.config(state='readonly')
-        
-        try:
-            from . import db_helper
-            event_names = db_helper.fetch_event_names(db_info)
-            self.event_combobox['values'] = event_names
-        except sqlite3.Error as e:
-            messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
-            self.event_combobox.config(state=tk.DISABLED)
+
+        def _on_ready():
+            if not self.db_manager.db_status.get(selected_server):
+                self.event_combobox.config(state=tk.DISABLED)
+                return
+            self.event_combobox.config(state='readonly')
+            try:
+                from . import db_helper
+                event_names = db_helper.fetch_event_names(db_info)
+                self.event_combobox['values'] = event_names
+            except sqlite3.Error as e:
+                messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
+                self.event_combobox.config(state=tk.DISABLED)
+                
+        self.db_manager.check_and_cache_db_status(on_ready=_on_ready)
 
     def start_search(self) -> None:
         """사용자가 입력한 조건을 바탕으로 백그라운드 검색 작업을 시작합니다."""

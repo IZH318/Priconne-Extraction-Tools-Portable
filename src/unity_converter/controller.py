@@ -413,7 +413,7 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             
         self.is_running = True
         self.cancel_token.reset()
-        add_breadcrumb("conv", "애셋 추출 시작", {"files": len(self.file_paths), "output": self.output_path})
+        add_breadcrumb("conv", "Started asset extraction", {"files": len(self.file_paths), "output": self.output_path})
         self.view.toggle_controls(False)
         self.processed_files_count = 0
         self.total_extracted_assets = 0

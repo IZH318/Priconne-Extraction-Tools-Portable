@@ -109,10 +109,10 @@ class StoryViewerView(ttk.Frame):
         self.btn_open_folder.config(text=lang_dict['folder_open'])
         self.btn_export.config(text=lang_dict['export'])
 
-        self.open_frame.config(text=lang_dict.get('open_frame_title', '파일 선택'))
+        self.open_frame.config(text=lang_dict.get('open_frame_title', 'Open'))
         self.detail_options_group.config(text=lang_dict['detail_options_group'])
         
-        self.display_mode_label.config(text=lang_dict.get('display_mode_label', '파일 이름 표시:'))
+        self.display_mode_label.config(text=lang_dict.get('display_mode_label', 'Display Filename As:'))
         val1 = lang_dict['display_original_filename']
         val2 = lang_dict['display_title']
         self.display_mode_combo.config(values=[val1, val2])

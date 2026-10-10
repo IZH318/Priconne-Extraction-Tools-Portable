@@ -73,8 +73,8 @@ class AppContainer:
             from tkinter import messagebox
             logging.error("Failed to load languages.json: %s", load_err)
             messagebox.showerror(
-                "언어 파일 로드 실패 (Language Load Error)",
-                f"languages.json 파일을 읽을 수 없습니다.\n({load_err})\n\n번역 파일이 누락되었거나 손상되었는지 확인해 주세요.\n프로그램이 기본값으로 실행됩니다.",
+                "Language Load Error",
+                f"Cannot read languages.json file.\n({load_err})\n\nPlease check if the translation file is missing or corrupted.\nThe program will run with default settings.",
                 parent=self.root
             )
 

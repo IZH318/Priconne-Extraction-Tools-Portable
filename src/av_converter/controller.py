@@ -336,7 +336,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         if not output_dir:
             self._add_log_entry('video', 'error_no_output_video')
             return
-        add_breadcrumb("conv", "비디오 변환 시작", {"files": len(self.video_full_paths), "output": output_dir})
+        add_breadcrumb("conv", "Started video conversion", {"files": len(self.video_full_paths), "output": output_dir})
         self._start_ffmpeg_preparation(output_dir)
 
     def _start_ffmpeg_preparation(self, output_dir: str) -> None:
@@ -416,7 +416,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             self._add_log_entry('audio', 'error_no_output_audio')
             return
 
-        add_breadcrumb("conv", "오디오 변환 시작", {"files": len(self.audio_full_paths), "output": output_dir})
+        add_breadcrumb("conv", "Started audio conversion", {"files": len(self.audio_full_paths), "output": output_dir})
 
         self._start_conversion_thread(
             'audio',

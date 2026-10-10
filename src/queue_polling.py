@@ -63,7 +63,7 @@ class QueuePollingMixin:
         Raises:
             NotImplementedError: 하위 클래스에서 구현하지 않은 경우.
         """
-        raise NotImplementedError("하위 클래스에서 _on_poll_cycle()을 구현해야 합니다.")
+        raise NotImplementedError("Subclass must implement _on_poll_cycle().")
 
     def _stop_polling(self) -> None:
         """폴링 루프를 중지합니다.

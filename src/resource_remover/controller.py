@@ -126,7 +126,7 @@ class ResourceRemoverController(QueuePollingMixin):
         self.view.set_control_state('disabled')
         self.status_var.set(lang_dict.get('status_searching', "Searching..."))
         self.view.set_status_color("blue")
-        add_breadcrumb("io", "리소스 삭제 시작", {"extensions": selected_exts, "trash": self.use_trash_var.get()})
+        add_breadcrumb("io", "Started resource removal", {"extensions": selected_exts, "trash": self.use_trash_var.get()})
         
         threading.Thread(target=self._search_thread, args=(selected_exts,), daemon=True).start()
 

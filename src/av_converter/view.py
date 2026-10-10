@@ -205,6 +205,7 @@ class AVConverterView(ttk.Frame):
     def create_progress_popup(self, width: int = 300, height: int = 80) -> tk.Toplevel:
         d = self.controller.get_lang_dict()
         popup = tk.Toplevel(self)
+        popup.withdraw()
         popup.title(d.get('preview_menu', 'Preview'))
         sx, sy = popup.winfo_screenwidth(), popup.winfo_screenheight()
         popup.geometry(f'{width}x{height}+{sx // 2 - width // 2}+{sy // 2 - height // 2}')
@@ -215,6 +216,7 @@ class AVConverterView(ttk.Frame):
         progress = ttk.Progressbar(popup, mode='indeterminate')
         progress.pack(fill=tk.X, padx=20, pady=(0, 10))
         progress.start(15)
+        popup.deiconify()
         return popup
 
     def destroy_popup_safely(self, popup: tk.Toplevel) -> None:
@@ -226,12 +228,14 @@ class AVConverterView(ttk.Frame):
     def show_track_selector(self, stream_count: int, stream_map_builder: Any, on_double_click_callback: Any) -> None:
         d = self.controller.get_lang_dict()
         popup = tk.Toplevel(self)
+        popup.withdraw()
         popup.title(d.get('preview_track_title', 'Select Track'))
         win_w, win_h = 450, 400
         sx, sy = popup.winfo_screenwidth(), popup.winfo_screenheight()
         popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
         popup.transient(self.winfo_toplevel())
         popup.grab_set()
+        popup.deiconify()
         
         frame = ttk.Frame(popup)
         frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)

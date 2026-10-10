@@ -1,0 +1,449 @@
+import os
+import re
+import sqlite3
+import logging
+from typing import Dict, List, Tuple, Any, Optional
+
+# ==============================================================================
+# schema_lineage_v1.2 휴리스틱 및 역난독화 엔진 (extract_event_stories.py 기반)
+# ==============================================================================
+
+SUPPORTED_EXTENSIONS: Tuple[str, ...] = (".db", ".sqlite", ".sqlite3")
+SQLITE_READONLY_URI_MODE: str = "?mode=ro"
+
+DEFAULT_COLUMN_DIFF_TOLERANCE: int = 5
+DYNAMIC_FULL_CENSUS_LIMIT: int = 1500
+NEIGHBOR_WINDOW_DISTANCE: int = 4
+SMALL_TABLE_ROW_THRESHOLD: int = 5
+FAST_TRACK_SCORE_THRESHOLD: float = 0.95
+
+ROW_OVERLAP_RATIO: float = 0.65
+TABLE_MATCH_RATIO: float = 0.60
+COL_VALUE_MATCH_RATIO: float = 0.80
+MIN_RESIDUAL_OVERLAP_RATIO: float = 0.15
+
+WEIGHT_SAMPLE_MATCH: float = 0.80
+WEIGHT_AVG_OVERLAP: float = 0.15
+WEIGHT_COL_PROXIMITY: float = 0.05
+
+
+def escape_identifier(identifier: str) -> str:
+    """SQLite 식별자(테이블 및 컬럼명)를 안전하게 이스케이프합니다."""
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def natural_sort_key(s: str) -> List[Any]:
+    """버전명이나 숫자가 포함된 문자열을 올바른 순서대로 정렬합니다."""
+    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
+
+
+def extract_signature_samples(conn: sqlite3.Connection, table_name: str) -> Tuple[int, List[frozenset], bool]:
+    cursor = conn.cursor()
+    escaped_tbl = escape_identifier(table_name)
+
+    cursor.execute(f"PRAGMA table_info({escaped_tbl});")
+    col_count = len(cursor.fetchall())
+
+    cursor.execute(f"SELECT COUNT(*) FROM {escaped_tbl};")
+    res = cursor.fetchone()
+    total_rows = res[0] if res else 0
+
+    is_small_table = total_rows <= SMALL_TABLE_ROW_THRESHOLD
+    if total_rows <= 10:
+        sample_size = total_rows
+    elif total_rows <= 200:
+        sample_size = max(10, min(total_rows, total_rows // 2))
+    else:
+        sample_size = 50
+
+    cursor.execute(f"SELECT * FROM {escaped_tbl} ORDER BY rowid ASC LIMIT {sample_size};")
+    rows = cursor.fetchall()
+
+    min_tokens = 1 if is_small_table else 2
+    signature_rows = []
+    for r in rows:
+        row_set = frozenset(str(val) for val in r if val is not None and str(val).strip() != "")
+        if len(row_set) >= min_tokens:
+            signature_rows.append(row_set)
+
+    return col_count, signature_rows, is_small_table
+
+
+def calculate_match_score(
+    conn: sqlite3.Connection, 
+    candidate_tbl: str, 
+    base_col_count: int, 
+    signature_rows: list,
+    col_tolerance: int,
+    is_small_table: bool
+) -> float:
+    if not signature_rows:
+        return 0.0
+
+    cursor = conn.cursor()
+    escaped_tbl = escape_identifier(candidate_tbl)
+
+    cursor.execute(f"PRAGMA table_info({escaped_tbl});")
+    cand_col_count = len(cursor.fetchall())
+    col_diff = abs(cand_col_count - base_col_count)
+    if col_diff > col_tolerance:
+        return -1.0
+
+    cursor.execute(f"SELECT COUNT(*) FROM {escaped_tbl};")
+    res = cursor.fetchone()
+    cand_total = res[0] if res else 0
+
+    inspect_limit = cand_total if cand_total <= DYNAMIC_FULL_CENSUS_LIMIT else max(len(signature_rows) * 5, 500)
+    cursor.execute(f"SELECT * FROM {escaped_tbl} ORDER BY rowid ASC LIMIT {inspect_limit};")
+    cand_rows = cursor.fetchall()
+    if not cand_rows:
+        return 0.0
+
+    cand_row_sets = [frozenset(str(val) for val in r if val is not None and str(val).strip() != "") for r in cand_rows]
+
+    matched_count = 0
+    total_overlap = 0.0
+
+    for sig_set in signature_rows:
+        best_overlap = 0.0
+        for c_set in cand_row_sets:
+            if not sig_set:
+                continue
+            overlap = len(sig_set & c_set) / len(sig_set)
+            if overlap > best_overlap:
+                best_overlap = overlap
+                if best_overlap >= 1.0:
+                    break
+
+        req_overlap = ROW_OVERLAP_RATIO if not is_small_table else max(0.5, ROW_OVERLAP_RATIO)
+        if best_overlap >= req_overlap:
+            matched_count += 1
+            total_overlap += best_overlap
+
+    sample_match_ratio = matched_count / len(signature_rows)
+    avg_overlap = (total_overlap / matched_count) if matched_count > 0 else 0.0
+    col_proximity = 1.0 - (col_diff / (col_tolerance + 1))
+
+    return (sample_match_ratio * WEIGHT_SAMPLE_MATCH) + (avg_overlap * WEIGHT_AVG_OVERLAP) + (col_proximity * WEIGHT_COL_PROXIMITY)
+
+
+def resolve_column_mapping(
+    ref_conn: sqlite3.Connection, 
+    ref_tbl: str, 
+    cand_conn: sqlite3.Connection, 
+    cand_tbl: str, 
+    original_base_types: dict = None
+) -> Tuple[List[str], Dict[str, str]]:
+    try:
+        ref_cur = ref_conn.cursor()
+        cand_cur = cand_conn.cursor()
+
+        ref_esc = escape_identifier(ref_tbl)
+        cand_esc = escape_identifier(cand_tbl)
+
+        ref_cur.execute(f"PRAGMA table_info({ref_esc});")
+        ref_info = ref_cur.fetchall()
+        ref_col_names = [r[1] for r in ref_info]
+        ref_types = {r[1]: (r[2].upper().strip() if r[2] else "NONE") for r in ref_info}
+
+        cand_cur.execute(f"PRAGMA table_info({cand_esc});")
+        cand_info = cand_cur.fetchall()
+        cand_col_names = [r[1] for r in cand_info]
+        cand_types = {r[1]: (r[2].upper().strip() if r[2] else "NONE") for r in cand_info}
+
+        ref_cur.execute(f"SELECT COUNT(*) FROM {ref_esc};")
+        res = ref_cur.fetchone()
+        total_ref_rows = res[0] if res else 0
+
+        dynamic_limit = total_ref_rows if total_ref_rows <= DYNAMIC_FULL_CENSUS_LIMIT else 2000
+        ref_cur.execute(f"SELECT * FROM {ref_esc} ORDER BY rowid ASC LIMIT {dynamic_limit};")
+        ref_rows = ref_cur.fetchall()
+
+        cand_cur.execute(f"SELECT * FROM {cand_esc} ORDER BY rowid ASC LIMIT {max(dynamic_limit * 2, 500)};")
+        cand_rows = cand_cur.fetchall()
+
+        if not ref_rows or not cand_rows:
+            return ["  (No sufficient rows)"], {}
+
+        cand_row_sets = [frozenset(str(v) for v in r if v is not None and str(v).strip() != "") for r in cand_rows]
+
+        aligned_ref_rows = []
+        aligned_cand_rows = []
+
+        for r_row in ref_rows:
+            r_set = frozenset(str(v) for v in r_row if v is not None and str(v).strip() != "")
+            if not r_set:
+                continue
+            best_c_idx = -1
+            best_c_overlap = 0.0
+            for c_idx, c_set in enumerate(cand_row_sets):
+                overlap = len(r_set & c_set) / len(r_set)
+                if overlap > best_c_overlap:
+                    best_c_overlap = overlap
+                    best_c_idx = c_idx
+
+            if best_c_overlap >= ROW_OVERLAP_RATIO and best_c_idx != -1:
+                aligned_ref_rows.append(r_row)
+                aligned_cand_rows.append(cand_rows[best_c_idx])
+
+        total_aligned = len(aligned_ref_rows)
+        if total_aligned < 2:
+            return ["  (Insufficient aligned rows)"], {}
+
+        ref_vectors = {r_name: [str(r[idx]) if r[idx] is not None else "" for r in aligned_ref_rows] for idx, r_name in enumerate(ref_col_names)}
+        cand_vectors = {c_name: [str(r[idx]) if r[idx] is not None else "" for r in aligned_cand_rows] for idx, c_name in enumerate(cand_col_names)}
+
+        ref_cardinality = {r: len(set(ref_vectors[r])) for r in ref_col_names}
+        cand_cardinality = {c: len(set(cand_vectors[c])) for c in cand_col_names}
+
+        pair_evaluations = []
+        for c_name, c_vec in cand_vectors.items():
+            c_type = cand_types.get(c_name, "NONE")
+            c_card = cand_cardinality[c_name]
+
+            for r_name, r_vec in ref_vectors.items():
+                r_type = ref_types.get(r_name, "NONE")
+                orig_type = original_base_types.get(r_name, r_type) if original_base_types else r_type
+
+                matches = sum(1 for v1, v2 in zip(c_vec, r_vec) if v1 == v2)
+                value_sim = matches / total_aligned
+
+                r_card = ref_cardinality[r_name]
+                card_sim = min(c_card, r_card) / max(c_card, r_card) if max(c_card, r_card) > 0 else 1.0
+
+                type_compat = (
+                    (c_type == orig_type) or 
+                    (c_type in ("INT", "INTEGER") and orig_type in ("INT", "INTEGER")) or
+                    (c_type in ("TEXT", "VARCHAR", "CHAR") and orig_type in ("TEXT", "VARCHAR", "CHAR")) or
+                    (c_type == "NONE" and orig_type == "NONE")
+                )
+
+                comp_score = (value_sim * 0.85) + (card_sim * 0.10) + (0.05 if type_compat else 0.0)
+                pair_evaluations.append({
+                    "cand": c_name, "ref": r_name, "value_sim": value_sim,
+                    "card_sim": card_sim, "comp_score": comp_score
+                })
+
+        pair_evaluations.sort(key=lambda x: (x["comp_score"], x["value_sim"], x["card_sim"]), reverse=True)
+
+        claimed_cands = set()
+        claimed_refs = set()
+        matched_assignments = {}
+
+        for pair in pair_evaluations:
+            if pair["cand"] in claimed_cands or pair["ref"] in claimed_refs:
+                continue
+            if pair["value_sim"] >= COL_VALUE_MATCH_RATIO:
+                claimed_cands.add(pair["cand"])
+                claimed_refs.add(pair["ref"])
+                matched_assignments[pair["cand"]] = pair
+
+        for pair in pair_evaluations:
+            if pair["cand"] in claimed_cands or pair["ref"] in claimed_refs:
+                continue
+            if pair["value_sim"] >= MIN_RESIDUAL_OVERLAP_RATIO:
+                claimed_cands.add(pair["cand"])
+                claimed_refs.add(pair["ref"])
+                matched_assignments[pair["cand"]] = pair
+
+        ref_col_index = {name: idx for idx, name in enumerate(ref_col_names)}
+        cand_col_index = {name: idx for idx, name in enumerate(cand_col_names)}
+
+        vector_groups = {}
+        for c_name, pair in matched_assignments.items():
+            v_tuple = tuple(cand_vectors[c_name])
+            if v_tuple not in vector_groups:
+                vector_groups[v_tuple] = []
+            vector_groups[v_tuple].append((c_name, pair))
+
+        new_cand_to_human_map = {}
+        mapping_lines = []
+
+        for v_tuple, group in vector_groups.items():
+            if len(group) == 1:
+                c_name, pair = group[0]
+                new_cand_to_human_map[c_name] = pair["ref"]
+                mapping_lines.append(f"  {c_name} ===> {pair['ref']}")
+            else:
+                cand_pool = [item[0] for item in group]
+                ref_pool = [item[1]["ref"] for item in group]
+
+                anchor_pairs = [
+                    (p["cand"], p["ref"]) for p in matched_assignments.values() 
+                    if p["cand"] not in cand_pool and p["ref"] not in ref_pool
+                ]
+
+                affinity_scores = []
+                for c_cand in cand_pool:
+                    c_idx = cand_col_index[c_cand]
+                    for r_ref in ref_pool:
+                        r_idx = ref_col_index.get(r_ref, 0)
+                        score = 0.0
+                        for c_anc, r_anc in anchor_pairs:
+                            anc_c_idx = cand_col_index[c_anc]
+                            anc_r_idx = ref_col_index.get(r_anc, 0)
+                            dist_cand = abs(c_idx - anc_c_idx)
+                            dist_ref = abs(r_idx - anc_r_idx)
+                            if dist_cand <= NEIGHBOR_WINDOW_DISTANCE and dist_ref <= NEIGHBOR_WINDOW_DISTANCE:
+                                dist_sum = dist_cand + dist_ref
+                                score += (1.0 / (abs(dist_cand - dist_ref) + 1.0)) + (1.0 / dist_sum)
+
+                        affinity_scores.append((score, c_cand, r_ref))
+
+                affinity_scores.sort(key=lambda x: x[0], reverse=True)
+                assigned_cands = set()
+                assigned_refs = set()
+
+                for score, c_cand, r_ref in affinity_scores:
+                    if c_cand not in assigned_cands and r_ref not in assigned_refs:
+                        if score > 0.0:
+                            assigned_cands.add(c_cand)
+                            assigned_refs.add(r_ref)
+                            new_cand_to_human_map[c_cand] = r_ref
+                            mapping_lines.append(f"  {c_cand} ===> {r_ref} (Spatial Neighbor-Affinity)")
+
+                rem_c = [c for c in cand_pool if c not in assigned_cands]
+                rem_r = [r for r in ref_pool if r not in assigned_refs]
+                if rem_c and rem_r:
+                    rem_c.sort(key=lambda x: cand_col_index.get(x, 0))
+                    rem_r.sort(key=lambda x: ref_col_index.get(x, 0))
+                    for c, r in zip(rem_c, rem_r):
+                        new_cand_to_human_map[c] = r
+                        mapping_lines.append(f"  {c} ===> {r} (Ordinal Fallback)")
+
+        return mapping_lines, new_cand_to_human_map
+
+    except Exception as e:
+        return [f"  (Failed to resolve column mapping: {str(e)})"], {}
+
+
+class StoryDataExtractor:
+    def __init__(self, baseline_db_path: str, latest_db_path: str):
+        self.base_db = os.path.abspath(baseline_db_path)
+        self.target_db = self._resolve_target_db(latest_db_path)
+        self._table_cache: Dict[str, Tuple[str, Dict[str, str]]] = {}
+
+    def _resolve_target_db(self, path: str) -> str:
+        if os.path.isfile(path):
+            return os.path.abspath(path)
+
+        if os.path.isdir(path):
+            candidates = []
+            for root_dir, _, files in os.walk(path):
+                for f in files:
+                    if f.lower().endswith(SUPPORTED_EXTENSIONS):
+                        candidates.append({
+                            "path": os.path.join(root_dir, f),
+                            "folder": os.path.basename(root_dir),
+                            "filename": f
+                        })
+
+            if not candidates:
+                raise FileNotFoundError(f"No SQLite DB files found in the directory: {path}")
+
+            candidates.sort(key=lambda x: (natural_sort_key(x["folder"]), natural_sort_key(x["filename"])))
+            return os.path.abspath(candidates[-1]["path"])
+
+        raise FileNotFoundError(f"Not a valid DB file or directory: {path}")
+
+    def _get_ro_connection(self, db_path: str) -> sqlite3.Connection:
+        return sqlite3.connect(f"file:{db_path}{SQLITE_READONLY_URI_MODE}", uri=True)
+
+    def _find_and_deobfuscate_table(self, base_table_name: str) -> Tuple[str, Dict[str, str]]:
+        if base_table_name in self._table_cache:
+            return self._table_cache[base_table_name]
+
+        with self._get_ro_connection(self.base_db) as base_conn, \
+             self._get_ro_connection(self.target_db) as target_conn:
+
+            base_col_count, base_sigs, is_small = extract_signature_samples(base_conn, base_table_name)
+            base_cur = base_conn.cursor()
+            base_cur.execute(f"PRAGMA table_info({escape_identifier(base_table_name)});")
+            orig_base_types = {r[1]: (r[2].upper().strip() if r[2] else "NONE") for r in base_cur.fetchall()}
+
+            target_cur = target_conn.cursor()
+            target_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+            cand_tables = [r[0] for r in target_cur.fetchall()]
+
+            best_table = None
+            best_score = -1.0
+
+            if base_table_name in cand_tables:
+                fast_score = calculate_match_score(
+                    target_conn, base_table_name, base_col_count, base_sigs, DEFAULT_COLUMN_DIFF_TOLERANCE, is_small
+                )
+                if fast_score >= FAST_TRACK_SCORE_THRESHOLD:
+                    best_table = base_table_name
+                    best_score = fast_score
+
+            if not best_table:
+                for cand in cand_tables:
+                    score = calculate_match_score(
+                        target_conn, cand, base_col_count, base_sigs, DEFAULT_COLUMN_DIFF_TOLERANCE, is_small
+                    )
+                    if score >= TABLE_MATCH_RATIO and score > best_score:
+                        best_score = score
+                        best_table = cand
+
+            if not best_table:
+                raise RuntimeError(f"Could not find a matching obfuscated table for '{base_table_name}' in the latest DB.")
+
+            _, cand_to_human_map = resolve_column_mapping(
+                ref_conn=base_conn,
+                ref_tbl=base_table_name,
+                cand_conn=target_conn,
+                cand_tbl=best_table,
+                original_base_types=orig_base_types
+            )
+
+            human_to_hash_map = {human: cand_hash for cand_hash, human in cand_to_human_map.items()}
+            self._table_cache[base_table_name] = (best_table, human_to_hash_map)
+            return best_table, human_to_hash_map
+
+
+def resolve_server_config(baseline_path: str, latest_path: str, server_info: dict) -> None:
+    """
+    서버별 DB 설정 딕셔너리(server_info)의 원본 테이블/컬럼명을 실시간 역난독화 해시값으로 변환합니다.
+    이 함수는 server_info를 직접 제자리(in-place)에서 수정합니다.
+    """
+    # 이미 해시(예: 'v1_...')로 시작한다면 무시
+    event_list_table = server_info.get("event_list_table", "")
+    if event_list_table.startswith("v1_"):
+        return
+
+    if not os.path.exists(baseline_path):
+        logging.error(f"Baseline DB file does not exist, skipping schema mapping: {baseline_path}")
+        return
+
+    if not os.path.exists(latest_path):
+        logging.error(f"Latest DB file does not exist, skipping schema mapping: {latest_path}")
+        return
+
+    try:
+        extractor = StoryDataExtractor(baseline_path, latest_path)
+
+        # 1. 이벤트 목록 테이블 매핑
+        obf_list_table, list_col_map = extractor._find_and_deobfuscate_table(event_list_table)
+        server_info["event_list_table"] = obf_list_table
+        
+        event_name_col_list = server_info.get("event_name_col_list")
+        if event_name_col_list and event_name_col_list in list_col_map:
+            server_info["event_name_col_list"] = list_col_map[event_name_col_list]
+
+        # 2. 이벤트 상세 정보 테이블 매핑
+        event_details_table = server_info.get("event_details_table", "")
+        if event_details_table and not event_details_table.startswith("v1_"):
+            obf_details_table, details_col_map = extractor._find_and_deobfuscate_table(event_details_table)
+            server_info["event_details_table"] = obf_details_table
+            
+            event_info_col_details = server_info.get("event_info_col_details")
+            if event_info_col_details and event_info_col_details in details_col_map:
+                server_info["event_info_col_details"] = details_col_map[event_info_col_details]
+
+            event_id_col_details = server_info.get("event_id_col_details")
+            if event_id_col_details and event_id_col_details in details_col_map:
+                server_info["event_id_col_details"] = details_col_map[event_id_col_details]
+
+        logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
+    except Exception as e:
+        logging.error(f"Schema automatic analysis failed: {e}")

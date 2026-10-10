@@ -49,6 +49,7 @@ class _TabIndex:
 class MainLauncher(TkinterDnD.Tk):
     def __init__(self) -> None:
         super().__init__()
+        self.withdraw()
         
         # 1. 의존성 주입(DI) 컨테이너 초기화 및 핵심 서비스 가동
         self.container = AppContainer(self)
@@ -69,6 +70,7 @@ class MainLauncher(TkinterDnD.Tk):
         
         # 5. 초기 텍스트 적용
         self._update_launcher_ui_text()
+        self.deiconify()
 
     def _configure_window(self) -> None:
         """메인 윈도우의 크기와 위치를 설정합니다."""

@@ -78,3 +78,6 @@ $RECYCLE.BIN/
 /.editorconfig
 /AGENTS.md
 /Essential Software Pack (x64).zip
+/master_jp.db
+/master_kr.db
+/version.json

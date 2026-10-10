@@ -59,7 +59,6 @@ goto :handle_success
 
 
 :handle_success
-cls
 echo.
 echo  %MSG_RUNNING_MAIN%
 .venv\Scripts\python.exe main.py

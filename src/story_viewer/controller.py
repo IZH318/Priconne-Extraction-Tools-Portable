@@ -182,7 +182,7 @@ class StoryViewerController(QueuePollingMixin):
             filetypes=[(lang_dict.get('filetype_json', "JSON Files"), "*.json"), (lang_dict.get('filetype_all', "All Files"), "*.*")]
         )
         if file_paths:
-            add_breadcrumb("io", "스토리 파일 열기", {"count": len(file_paths)})
+            add_breadcrumb("io", "Opened story files", {"count": len(file_paths)})
             self._start_loading_task(paths=file_paths)
 
     def open_folder(self) -> None:
@@ -190,7 +190,7 @@ class StoryViewerController(QueuePollingMixin):
         lang_dict = self.get_lang_dict()
         folder_path = filedialog.askdirectory(title=lang_dict.get('dialog_title_open_folder', "Select the folder with storydata files"))
         if folder_path:
-            add_breadcrumb("io", "스토리 폴더 열기", {"path": folder_path})
+            add_breadcrumb("io", "Opened story folder", {"path": folder_path})
             self._start_loading_task(folder_path=folder_path)
 
     def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None) -> None:
@@ -321,22 +321,22 @@ class StoryViewerController(QueuePollingMixin):
         if not self.all_files:
             messagebox.showinfo(lang_dict['msgbox_search_before_load_title'], lang_dict['msgbox_search_before_load_msg'], parent=self.view)
             return
-        is_downloading = self._db_manager.check_and_cache_db_status()
-        if is_downloading:
-            return
-        
-        SearchWindow(
-            master=self.master,
-            get_lang_dict=self.get_lang_dict,
-            get_lang_code=lambda: self.lang_var.get(),
-            search_callback=self.update_file_list,
-            task_queue=self.task_queue,
-            update_status_bar=self.view.update_status_bar,
-            all_files_dict=self.all_files,
-            search_data=self.search_data,
-            db_status=self._db_manager.db_status,
-            server_db_info=self.server_db_info,
-        )
+        def _launch():
+            SearchWindow(
+                master=self.master,
+                get_lang_dict=self.get_lang_dict,
+                get_lang_code=lambda: self.lang_var.get(),
+                search_callback=self.update_file_list,
+                task_queue=self.task_queue,
+                update_status_bar=self.view.update_status_bar,
+                all_files_dict=self.all_files,
+                search_data=self.search_data,
+                db_status=self._db_manager.db_status,
+                server_db_info=self.server_db_info,
+                db_manager=self._db_manager,
+            )
+            
+        self._db_manager.check_and_cache_db_status(on_ready=_launch)
 
     def open_export_window(self) -> None:
         """내보내기 창을 엽니다. DB 상태를 사전 확인하고 누락 시 다운로드를 안내합니다."""
@@ -347,19 +347,19 @@ class StoryViewerController(QueuePollingMixin):
         if not self.all_files:
             messagebox.showinfo(lang_dict['msgbox_no_export_files_title'], lang_dict['msgbox_no_export_files_msg'], parent=self.view)
             return
-        is_downloading = self._db_manager.check_and_cache_db_status()
-        if is_downloading:
-            return
-        ExportWindow(
-            master=self.master,
-            get_lang_dict=self.get_lang_dict,
-            export_func=self.export_master_thread,
-            update_status_bar=self.view.update_status_bar,
-            all_files_dict=self.all_files,
-            search_data=self.search_data,
-            db_status=self._db_manager.db_status,
-            server_db_info=self.server_db_info,
-        )
+        def _launch():
+            ExportWindow(
+                master=self.master,
+                get_lang_dict=self.get_lang_dict,
+                export_func=self.export_master_thread,
+                update_status_bar=self.view.update_status_bar,
+                all_files_dict=self.all_files,
+                search_data=self.search_data,
+                db_status=self._db_manager.db_status,
+                server_db_info=self.server_db_info,
+            )
+            
+        self._db_manager.check_and_cache_db_status(on_ready=_launch)
 
     def update_file_list(self, filenames: list[str]) -> None:
         """파일 목록 뷰를 업데이트합니다."""

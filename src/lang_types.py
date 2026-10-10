@@ -215,6 +215,8 @@ class StoryViewerLangDict(TypedDict, total=False):
     char_type_mentioned_in_dialogue: str
     char_type_speaker: str
     content_label: str
+    db_checking_msg: str
+    db_checking_title: str
     db_download_cancel_msg: str
     db_download_error_title: str
     db_download_offline_msg: str

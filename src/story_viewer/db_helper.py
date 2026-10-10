@@ -17,7 +17,7 @@ from src.exceptions import UnsafeIdentifierError
 # SQL 식별자(테이블/컬럼명) 화이트리스트 패턴: 영숫자, 언더스코어만 허용
 # 참고: priconne-database의 해시 기반 테이블/컬럼명은 'v1_' prefix가 있어
 # 이 패턴을 통과합니다. 숫자로 시작하는 순수 hex 식별자가 사용될 경우 별도 처리가 필요합니다.
-_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_SAFE_IDENTIFIER_RE = re.compile(r'^[a-zA-Z0-9_]+$')
 
 
 def _validate_identifier(name: str) -> str:
@@ -107,8 +107,8 @@ def fetch_event_names(db_info: dict[str, Any]) -> list[str]:
     Raises:
         sqlite3.Error: DB 접근 중 오류 발생 시.
     """
-    db_path = _get_db_path(db_info)
-    with sqlite3.connect(db_path) as conn:
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
         cursor = conn.cursor()
         query = _build_query(
             table=db_info['event_list_table'],
@@ -133,8 +133,8 @@ def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
     Raises:
         sqlite3.Error: DB 접근 중 오류 발생 시.
     """
-    db_path = _get_db_path(db_info)
-    with sqlite3.connect(db_path) as conn:
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
         cursor = conn.cursor()
         query = _build_query(
             table=db_info['event_details_table'],
@@ -163,8 +163,8 @@ def fetch_event_list_for_export(db_info: dict[str, Any]) -> tuple[list[str], lis
     Raises:
         sqlite3.Error: DB 접근 중 오류 발생 시.
     """
-    db_path = _get_db_path(db_info)
-    with sqlite3.connect(db_path) as conn:
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
         cursor = conn.cursor()
         pragma_query, select_suffix = _build_select_all_query(db_info['event_list_table'])
         
