@@ -453,6 +453,10 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
         if event_name_col_list and event_name_col_list in list_col_map:
             server_info["event_name_col_list"] = list_col_map[event_name_col_list]
 
+        event_group_id_col_list = server_info.get("event_group_id_col_list")
+        if event_group_id_col_list and event_group_id_col_list in list_col_map:
+            server_info["event_group_id_col_list"] = list_col_map[event_group_id_col_list]
+
         # 2. 이벤트 상세 정보 테이블 매핑
         if progress_callback:
             progress_callback(server_key, "event_details_table")
@@ -468,6 +472,10 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             event_id_col_details = server_info.get("event_id_col_details")
             if event_id_col_details and event_id_col_details in details_col_map:
                 server_info["event_id_col_details"] = details_col_map[event_id_col_details]
+
+            event_group_id_col_details = server_info.get("event_group_id_col_details")
+            if event_group_id_col_details and event_group_id_col_details in details_col_map:
+                server_info["event_group_id_col_details"] = details_col_map[event_group_id_col_details]
 
         # 3. 생일 로그인 보너스 테이블 매핑
         if progress_callback:

@@ -116,7 +116,7 @@ def fetch_event_names(db_info: dict[str, Any]) -> list[str]:
             distinct=True,
         )
         cursor.execute(query)
-        return [row[0].replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
+        return [row[0].replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip() for row in cursor.fetchall() if row[0]]
 
 
 def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
@@ -134,15 +134,24 @@ def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
         sqlite3.Error: DB 접근 중 오류 발생 시.
     """
     db_path = _get_db_path(db_info).replace('\\', '/')
+    details_tbl = _validate_identifier(db_info['event_details_table'])
+    details_id_col = _validate_identifier(db_info['event_id_col_details'])
+    group_col_details = _validate_identifier(db_info.get('event_group_id_col_details', 'story_group_id'))
+    list_tbl = _validate_identifier(db_info['event_list_table'])
+    group_col_list = _validate_identifier(db_info.get('event_group_id_col_list', 'story_group_id'))
+    name_col = _validate_identifier(db_info['event_name_col_list'])
+
+    cleaned_name = event_name.replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
+    query = (
+        f'SELECT "{details_id_col}" FROM "{details_tbl}" '
+        f'WHERE "{group_col_details}" IN ('
+        f'SELECT "{group_col_list}" FROM "{list_tbl}" '
+        f'WHERE trim(replace(replace(replace("{name_col}", char(13), \'\'), char(10), \' \'), \'\\n\', \' \')) = ? '
+        f'OR "{name_col}" = ?)'
+    )
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
         cursor = conn.cursor()
-        query = _build_query(
-            table=db_info['event_details_table'],
-            columns=[db_info['event_id_col_details']],
-            where_col=db_info['event_info_col_details'],
-            where_op="LIKE",
-        )
-        cursor.execute(query, (f"{event_name}%",))
+        cursor.execute(query, (cleaned_name, event_name))
         return {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
 
 

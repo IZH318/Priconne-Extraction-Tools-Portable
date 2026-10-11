@@ -80,7 +80,7 @@ class SearchWindow(tk.Toplevel):
         self._setup_ui()
         self._load_event_list()
         self.focus_set()
-        self._center_window(480, 390)
+        self._center_window(500, 370)
         self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:
@@ -101,55 +101,51 @@ class SearchWindow(tk.Toplevel):
         main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.criteria_frame = ttk.LabelFrame(main_frame, text="", padding=5)
-        self.criteria_frame.pack(fill=tk.X, expand=False, anchor="n", pady=(0, 10))
-        self.criteria_frame.columnconfigure(1, weight=1)
-        self.criteria_frame.columnconfigure(3, weight=1)
+        form_frame = ttk.Frame(main_frame)
+        form_frame.pack(fill=tk.BOTH, expand=True)
+        form_frame.columnconfigure(1, weight=1)
+        form_frame.columnconfigure(3, weight=1)
 
         pady_value = 4
         
-        self.filename_label = ttk.Label(self.criteria_frame, text="")
+        self.filename_label = ttk.Label(form_frame, text="")
         self.filename_label.grid(row=0, column=0, sticky="w", pady=pady_value)
-        ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['filename'], values=self.search_data.get('filenames', [])).grid(row=0, column=1, columnspan=3, sticky="ew")
+        ttk.Combobox(form_frame, textvariable=self.search_vars['filename'], values=self.search_data.get('filenames', [])).grid(row=0, column=1, columnspan=3, sticky="ew")
 
-        self.title_label = ttk.Label(self.criteria_frame, text="")
+        self.title_label = ttk.Label(form_frame, text="")
         self.title_label.grid(row=1, column=0, sticky="w", pady=pady_value)
-        ttk.Entry(self.criteria_frame, textvariable=self.search_vars['title']).grid(row=1, column=1, columnspan=3, sticky="ew")
+        ttk.Entry(form_frame, textvariable=self.search_vars['title']).grid(row=1, column=1, columnspan=3, sticky="ew")
 
-        self.outline_label = ttk.Label(self.criteria_frame, text="")
+        self.outline_label = ttk.Label(form_frame, text="")
         self.outline_label.grid(row=2, column=0, sticky="w", pady=pady_value)
-        ttk.Entry(self.criteria_frame, textvariable=self.search_vars['outline']).grid(row=2, column=1, columnspan=3, sticky="ew")
+        ttk.Entry(form_frame, textvariable=self.search_vars['outline']).grid(row=2, column=1, columnspan=3, sticky="ew")
 
-        self.char_name_label = ttk.Label(self.criteria_frame, text="")
+        self.char_name_label = ttk.Label(form_frame, text="")
         self.char_name_label.grid(row=3, column=0, sticky="w", pady=pady_value)
-        ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['char_name'], values=self.search_data.get('character_names', [])).grid(row=3, column=1, sticky="ew")
+        ttk.Combobox(form_frame, textvariable=self.search_vars['char_name'], values=self.search_data.get('character_names', [])).grid(row=3, column=1, sticky="ew")
         
-        self.char_type_label = ttk.Label(self.criteria_frame, text="")
-        self.char_type_label.grid(row=3, column=2, sticky="e", padx=(5,0))
+        self.char_type_label = ttk.Label(form_frame, text="")
+        self.char_type_label.grid(row=3, column=2, sticky="e", padx=(10, 0))
         
-        self.char_type_combobox = ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['char_type'], width=15, state='readonly')
-        self.char_type_combobox.grid(row=3, column=3, sticky="e", padx=(5,0))
+        self.char_type_combobox = ttk.Combobox(form_frame, textvariable=self.search_vars['char_type'], width=15, state='readonly')
+        self.char_type_combobox.grid(row=3, column=3, sticky="ew", padx=(5, 0))
 
-        self.content_label = ttk.Label(self.criteria_frame, text="")
+        self.content_label = ttk.Label(form_frame, text="")
         self.content_label.grid(row=4, column=0, sticky="w", pady=pady_value)
-        ttk.Entry(self.criteria_frame, textvariable=self.search_vars['content']).grid(row=4, column=1, columnspan=3, sticky="ew")
+        ttk.Entry(form_frame, textvariable=self.search_vars['content']).grid(row=4, column=1, columnspan=3, sticky="ew")
 
-        self.bgm_label = ttk.Label(self.criteria_frame, text="")
+        self.bgm_label = ttk.Label(form_frame, text="")
         self.bgm_label.grid(row=5, column=0, sticky="w", pady=pady_value)
-        ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['bgm'], values=self.search_data.get('bgms', [])).grid(row=5, column=1, columnspan=3, sticky="ew")
+        ttk.Combobox(form_frame, textvariable=self.search_vars['bgm'], values=self.search_data.get('bgms', [])).grid(row=5, column=1, columnspan=3, sticky="ew")
 
-        self.background_label = ttk.Label(self.criteria_frame, text="")
+        self.background_label = ttk.Label(form_frame, text="")
         self.background_label.grid(row=6, column=0, sticky="w", pady=pady_value)
-        ttk.Combobox(self.criteria_frame, textvariable=self.search_vars['background'], values=self.search_data.get('backgrounds', [])).grid(row=6, column=1, columnspan=3, sticky="ew")
+        ttk.Combobox(form_frame, textvariable=self.search_vars['background'], values=self.search_data.get('backgrounds', [])).grid(row=6, column=1, columnspan=3, sticky="ew")
 
-        self.event_search_frame = ttk.LabelFrame(main_frame, text="", padding="5")
-        self.event_search_frame.pack(fill=tk.X, expand=True, anchor="n")
-        self.event_search_frame.columnconfigure(1, weight=1)
-
-        self.event_list_label = ttk.Label(self.event_search_frame, text="")
-        self.event_list_label.grid(row=0, column=0, sticky="w", pady=(0, 3))
-        self.event_combobox = ttk.Combobox(self.event_search_frame, textvariable=self.search_vars['event_name'], state='readonly')
-        self.event_combobox.grid(row=0, column=1, sticky="ew")
+        self.event_list_label = ttk.Label(form_frame, text="")
+        self.event_list_label.grid(row=7, column=0, sticky="w", pady=pady_value)
+        self.event_combobox = ttk.Combobox(form_frame, textvariable=self.search_vars['event_name'], state='readonly', height=16)
+        self.event_combobox.grid(row=7, column=1, columnspan=3, sticky="ew")
 
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
@@ -159,6 +155,9 @@ class SearchWindow(tk.Toplevel):
         self.reset_button = ttk.Button(button_frame, text="", command=self._reset)
         self.reset_button.pack(side=tk.RIGHT, padx=(0, 5))
         
+        # Enter 키 입력 시 검색 실행
+        self.bind('<Return>', lambda event: self.start_search())
+
         self._update_ui_text()
 
     def _update_ui_text(self) -> None:
@@ -166,7 +165,6 @@ class SearchWindow(tk.Toplevel):
         lang_dict = self._get_lang_dict()
         
         self.title(lang_dict['search_window_title'])
-        self.criteria_frame.config(text=lang_dict['basic_search_criteria_frame'])
         self.filename_label.config(text=lang_dict['filename_label'])
         self.title_label.config(text=lang_dict['title_label'])
         self.outline_label.config(text=lang_dict['outline_label'])
@@ -181,7 +179,6 @@ class SearchWindow(tk.Toplevel):
         if not self.search_vars['char_type'].get():
             self.search_vars['char_type'].set(char_types[0])
 
-        self.event_search_frame.config(text=lang_dict['event_search_frame'])
         self.event_list_label.config(text=lang_dict['event_list_label'])
 
         self.search_button.config(text=lang_dict['search_button'])
@@ -207,7 +204,7 @@ class SearchWindow(tk.Toplevel):
             try:
                 from . import db_helper
                 event_names = db_helper.fetch_event_names(db_info)
-                self.event_combobox['values'] = event_names
+                self.event_combobox['values'] = [''] + event_names
             except sqlite3.Error as e:
                 messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
                 self.event_combobox.config(state=tk.DISABLED)
@@ -217,7 +214,7 @@ class SearchWindow(tk.Toplevel):
     def start_search(self) -> None:
         """사용자가 입력한 조건을 바탕으로 백그라운드 검색 작업을 시작합니다."""
         self._update_status_bar('status_searching')
-        criteria = {key: var.get() for key, var in self.search_vars.items() if var.get()}
+        criteria = {key: var.get().strip() for key, var in self.search_vars.items() if var.get().strip()}
         server = self.selected_server
         # destroy() 전에 모든 공유 참조 및 Tk 변수 값을 메인 스레드에서 미리 캡처
         char_type_value = self.search_vars['char_type'].get()

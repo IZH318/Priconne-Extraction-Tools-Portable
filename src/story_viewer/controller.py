@@ -52,7 +52,9 @@ def _load_db_config() -> dict[str, dict[str, str]]:
             ev = tables["event_story"]
             flat_tables["event_list_table"] = ev.get("list_table", "")
             flat_tables["event_name_col_list"] = ev.get("name_col", "")
+            flat_tables["event_group_id_col_list"] = ev.get("group_id_col_list", "story_group_id")
             flat_tables["event_details_table"] = ev.get("details_table", "")
+            flat_tables["event_group_id_col_details"] = ev.get("group_id_col_details", "story_group_id")
             flat_tables["event_info_col_details"] = ev.get("info_col", "")
             flat_tables["event_id_col_details"] = ev.get("id_col", "")
         if "birthday" in tables:
@@ -143,8 +145,13 @@ class StoryViewerController(QueuePollingMixin):
             self.lang_var = tk.StringVar(value='ko')
 
         self.display_mode_var = tk.StringVar(value="original")
-        self.view_mode_var = tk.StringVar(value="simple")
+        self.view_mode_var = tk.StringVar(value="script")
         self.server_var = tk.StringVar(value='JP')
+        
+        self.filter_var = tk.StringVar(value="")
+        self.filter_timer: str | None = None
+        self.base_search_files: list[str] = []
+        self._populate_generation: int = 0
         
         self.db_analyzed = False
         self.empty_title_files = set()
@@ -177,6 +184,7 @@ class StoryViewerController(QueuePollingMixin):
         )
         
         self.lang_var.trace_add('write', self._on_language_change)
+        self.filter_var.trace_add('write', self._on_filter_changed)
 
         self._init_queue_polling(self.view)
         self.view.update_ui_text()
@@ -276,8 +284,7 @@ class StoryViewerController(QueuePollingMixin):
             else:
                 self.file_titles[filename] = self.raw_file_titles.get(filename, filename)
                 
-        target_files = self.current_filenames_in_list or list(self.all_files.keys())
-        self.update_file_list(target_files)
+        self._apply_filter()
 
     def show_about_info(self) -> None:
         """프로그램 정보 대화상자를 표시합니다."""
@@ -292,6 +299,7 @@ class StoryViewerController(QueuePollingMixin):
 
     def _clear_workspace(self) -> None:
         """작업 공간을 초기화하여 모든 로드된 데이터와 UI 상태를 초기 상태로 되돌립니다."""
+        self._populate_generation += 1
         self.view.update_story_text([])
         self.all_files.clear()
         self.search_data.clear()
@@ -301,6 +309,8 @@ class StoryViewerController(QueuePollingMixin):
         self.display_name_to_filename.clear()
         self.current_filenames_in_list = []
         self.loaded_filenames = []
+        self.base_search_files.clear()
+        self.filter_var.set("")
         self.current_file_path = None
         self.view.btn_db_analyze.config(state=tk.DISABLED)
         self.view.search_button.config(state=tk.DISABLED)
@@ -462,6 +472,7 @@ class StoryViewerController(QueuePollingMixin):
             self.empty_title_files = results['empty_titles']
             self.search_data = results['search_data']
             self.loaded_filenames = sorted(list(self.all_files.keys()))
+            self.base_search_files = list(self.loaded_filenames)
             self.view.update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
             
             # DB 분석 시작 버튼 활성화
@@ -475,7 +486,7 @@ class StoryViewerController(QueuePollingMixin):
                 self.view.kr_radio.config(state=tk.NORMAL)
                 self.on_server_change()
             else:
-                self.update_file_list(list(self.all_files.keys()))
+                self._apply_filter()
         
         if invalid_files:
             msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files))
@@ -541,7 +552,7 @@ class StoryViewerController(QueuePollingMixin):
             master=self.master,
             get_lang_dict=self.get_lang_dict,
             get_lang_code=lambda: self.lang_var.get(),
-            search_callback=self.update_file_list,
+            search_callback=self.set_search_results,
             task_queue=self.task_queue,
             update_status_bar=self.view.update_status_bar,
             all_files_dict=self.all_files,
@@ -574,14 +585,19 @@ class StoryViewerController(QueuePollingMixin):
 
     def update_file_list(self, filenames: list[str]) -> None:
         """파일 목록 뷰를 업데이트합니다."""
+        self._populate_generation += 1
+        current_gen = self._populate_generation
         self.view.update_story_text([])
         self.current_file_path = None
         self.current_filenames_in_list = sorted(filenames)
+        target_files = list(self.current_filenames_in_list)
         self.display_name_to_filename.clear()
         self.view.file_listbox.delete(0, tk.END)
-        total, chunk_size = len(self.current_filenames_in_list), 200
+        total, chunk_size = len(target_files), 200
         
         def _populate_list(index=0):
+            if current_gen != self._populate_generation:
+                return
             if index >= total:
                 self.view.update_status_bar('status_bar_list_updated', count=total)
                 if total > 0:
@@ -595,16 +611,67 @@ class StoryViewerController(QueuePollingMixin):
             display_mode = self.display_mode_var.get()
             display_chunk = []
             for i in range(index, end_index):
-                filename = self.current_filenames_in_list[i]
+                filename = target_files[i]
                 display_name = filename
                 if display_mode == 'title':
                     if title := self.file_titles.get(filename, filename):
                         display_name = f"{title}"
+                elif display_mode == 'id_title':
+                    match = re.match(r'^storydata_(\d+)\.json$', filename)
+                    adv_id = match.group(1) if match else filename
+                    title = self.file_titles.get(filename, filename)
+                    display_name = f"[{adv_id}] {title}"
                 display_chunk.append(display_name)
                 self.display_name_to_filename[display_name] = filename
             self.view.file_listbox.insert(tk.END, *display_chunk)
             self.view.after(1, lambda: _populate_list(end_index))
         _populate_list()
+
+    def set_search_results(self, filenames: list[str]) -> None:
+        """고급 검색 결과로 기본 파일 목록을 설정하고 현재 필터를 적용합니다."""
+        self.base_search_files = list(filenames)
+        self._apply_filter()
+
+    def _on_filter_changed(self, *args: Any) -> None:
+        """빠른 필터 입력값 변경 시 150ms 디바운스로 필터링을 실행합니다."""
+        if self.filter_timer:
+            try:
+                self.view.after_cancel(self.filter_timer)
+            except tk.TclError:
+                pass
+        try:
+            self.filter_timer = self.view.after(150, self._apply_filter)
+        except tk.TclError:
+            self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        """현재 filter_var 값에 따라 base_search_files를 필터링하여 목록을 업데이트합니다."""
+        query = self.filter_var.get().strip().lower()
+        source_files = self.base_search_files if self.base_search_files else list(self.loaded_filenames)
+        
+        if not query:
+            self.update_file_list(source_files)
+            return
+        
+        matched = []
+        for fname in source_files:
+            if query in fname.lower():
+                matched.append(fname)
+                continue
+            match = re.match(r'^storydata_(\d+)\.json$', fname)
+            if match and query in match.group(1):
+                matched.append(fname)
+                continue
+            title = self.file_titles.get(fname, "")
+            if query in title.lower():
+                matched.append(fname)
+                continue
+        
+        self.update_file_list(matched)
+
+    def clear_filter(self) -> None:
+        """빠른 필터 입력값을 초기화합니다."""
+        self.filter_var.set("")
 
     def on_file_select(self, event: Any = None) -> None:
         """파일 목록에서 항목을 선택했을 때 스토리 내용을 표시합니다."""
@@ -620,13 +687,13 @@ class StoryViewerController(QueuePollingMixin):
             if self.current_file_path:
                 is_valid, data, _ = StoryDataLoader.is_valid_storydata(self.current_file_path)
                 if is_valid:
-                    self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get()))
+                    self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get(), self.get_lang_dict()))
                     self.view.update_status_bar('status_bar_displaying', filename=filename)
                 else:
                     self.view.update_status_bar('status_bar_cache_error', filename=filename)
 
     def on_display_mode_change(self, event: Any = None, force_update: bool = False) -> None:
-        """리스트박스의 파일명 표시 모드(원본 이름/스토리 제목)를 변경합니다.
+        """리스트박스의 파일명 표시 모드(원본 이름/스토리 제목/[ID] + 제목)를 변경합니다.
 
         Args:
             event: Tkinter 이벤트 객체 (기본값: None).
@@ -640,23 +707,35 @@ class StoryViewerController(QueuePollingMixin):
                 self.display_mode_var.set("original")
             elif idx == 1:
                 self.display_mode_var.set("title")
+            elif idx == 2:
+                self.display_mode_var.set("id_title")
         except tk.TclError:
             pass
         self.update_file_list(self.current_filenames_in_list)
 
-    def on_view_mode_change(self, force_update: bool = False) -> None:
-        """스토리 내용 표시 모드(심플/상세)를 변경합니다.
+    def on_view_mode_change(self, event: Any = None, force_update: bool = False) -> None:
+        """스토리 내용 표시 모드(대본/심플/상세)를 변경합니다.
 
         Args:
+            event: 이벤트 객체 (ComboboxSelected 등).
             force_update: 로딩 중에도 강제로 업데이트할지 여부.
         """
         if not force_update and self.is_loading:
             return
+        try:
+            idx = self.view.view_mode_combo.current()
+            if idx == 0:
+                self.view_mode_var.set("script")
+            elif idx == 1:
+                self.view_mode_var.set("simple")
+            elif idx == 2:
+                self.view_mode_var.set("detailed")
+        except (tk.TclError, AttributeError):
+            pass
         if self.current_file_path:
-            filename = os.path.basename(self.current_file_path)
             is_valid, data, _ = StoryDataLoader.is_valid_storydata(self.current_file_path)
             if is_valid:
-                self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get()))
+                self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get(), self.get_lang_dict()))
 
     # Export functionality helper methods
     def export_master_thread(self, selected_options: dict[str, Any], output_folder: str) -> None:

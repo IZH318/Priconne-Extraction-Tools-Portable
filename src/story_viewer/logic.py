@@ -105,12 +105,24 @@ class SearchEngine:
         if 'outline' in lower_criteria and lower_criteria['outline'] not in scene_0.get('outline', '').lower():
             return False
 
-        has_scene_level_criteria = any(k in criteria for k in ['char_name', 'content', 'bgm', 'background'])
-        if not has_scene_level_criteria:
+        # BGM 및 배경은 파일 전체 범위에서 만족하는 씬이 존재하는지 개별 평가
+        if 'bgm' in lower_criteria:
+            bgm_crit = lower_criteria['bgm']
+            if not any('bgm' in s and bgm_crit in str(s.get('bgm', '')).lower() for s in data.values()):
+                return False
+
+        if 'background' in lower_criteria:
+            bg_crit = lower_criteria['background']
+            if not any('background' in s and bg_crit in str(s.get('background', '')).lower() for s in data.values()):
+                return False
+
+        # 대사/화자 조건 (char_name, content)
+        dialogue_criteria = {k: v for k, v in lower_criteria.items() if k in ('char_name', 'content')}
+        if not dialogue_criteria:
             return True
 
         for scene in data.values():
-            if SearchEngine.check_scene(scene, lower_criteria, char_type_search, char_type_speaker):
+            if SearchEngine.check_scene(scene, dialogue_criteria, char_type_search, char_type_speaker):
                 return True
         return False
 
@@ -182,16 +194,123 @@ class StoryFormatter:
         return cls._DISPATCH_TABLE
 
     @staticmethod
-    def format_story_data(data: dict[str, Any], view_mode: str) -> list[tuple[str, str | None]]:
+    def _format_script_mode(data: dict[str, Any], lang_dict: dict[str, str] | None = None) -> list[tuple[str, str | None]]:
+        """스토리 데이터를 대본/소설 형식으로 가독성 높게 변환합니다."""
+        content_list: list[tuple[str, str | None]] = []
+        scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
+
+        # 다국어 라벨 획득
+        place_prefix = lang_dict.get('script_place_prefix', '장소') if lang_dict else '장소'
+        choice_title = lang_dict.get('script_choice_title', '선택지') if lang_dict else '선택지'
+        branch_prefix = lang_dict.get('script_branch', '분기') if lang_dict else '분기'
+        outline_title = lang_dict.get('script_outline_title', '줄거리') if lang_dict else '줄거리'
+        no_dialogue_msg = lang_dict.get('script_no_dialogue', '대사 데이터가 없는 스토리입니다') if lang_dict else '대사 데이터가 없는 스토리입니다'
+
+        # 선택지 태그 매핑 (선택지 tag -> (인덱스, 텍스트))
+        tag_to_choice: dict[str, tuple[int, str]] = {}
+        for s in data.values():
+            if 'choice' in s and isinstance(s['choice'], list):
+                for idx, item in enumerate(s['choice'], 1):
+                    if isinstance(item, dict) and 'tag' in item:
+                        tag_to_choice[str(item['tag'])] = (idx, str(item.get('text', '')).strip())
+
+        # 1. 상단 타이틀 및 줄거리 (Scene 0)
+        scene_0 = data.get('0', {})
+        title = str(scene_0.get('title', '') or '').strip()
+        outline = str(scene_0.get('outline', '') or '').strip()
+
+        if title:
+            content_list.append((f"■ {title}\n", 'script_title'))
+
+        if outline:
+            content_list.append(("─" * 37 + "\n", 'script_divider'))
+            content_list.append((f"【 {outline_title} 】\n", 'script_outline_header'))
+            content_list.append((f"{outline}\n", 'script_narration'))
+
+        if title or outline:
+            content_list.append(("─" * 37 + "\n\n", 'script_divider'))
+
+        has_dialogue = False
+        last_place = None
+
+        for key in scene_keys:
+            scene = data[key]
+
+            # 장소 / 상황 변경 안내 (에피소드 제목과 동일한 중복 장소 표기는 건너뜀)
+            place = scene.get('place')
+            situation = scene.get('situation')
+            loc = place if place else situation
+            if loc:
+                loc_str = str(loc).strip()
+                if loc_str and loc_str != title and loc_str != last_place:
+                    content_list.append((f"[{place_prefix}: {loc_str}]\n\n", 'script_place'))
+                    last_place = loc_str
+                    has_dialogue = True
+
+            # 분기 씬 안내 표기 (씬에 tag 속성이 있고 대사/선택지 등 유의미한 내용이 존재하는 경우)
+            branch_tag = str(scene.get('tag', '') or '').strip()
+            has_scene_content = ('print' in scene or 'choice' in scene or 'place' in scene or 'situation' in scene)
+            if branch_tag and key != '0' and has_scene_content:
+                c_info = tag_to_choice.get(branch_tag)
+                if c_info and c_info[1]:
+                    header = f"─ [ S# {branch_tag} ] {c_info[1]} ─"
+                else:
+                    header = f"─ [ S# {branch_tag} ] ─"
+                content_list.append((f"{header}\n", 'script_branch'))
+                has_dialogue = True
+
+            # 대사 (print)
+            if 'print' in scene and isinstance(scene['print'], dict):
+                p_data = scene['print']
+                speaker = str(p_data.get('name', '')).strip()
+                dialogue = str(p_data.get('text', '')).strip()
+
+                if dialogue:
+                    has_dialogue = True
+                    if speaker:
+                        content_list.append((f"[{speaker}]\n", 'script_speaker'))
+                        content_list.append((f"{dialogue}\n\n", 'script_dialogue'))
+                    else:
+                        content_list.append((f"{dialogue}\n\n", 'script_narration'))
+
+            # 선택지 (choice)
+            if 'choice' in scene and isinstance(scene['choice'], list):
+                has_dialogue = True
+                content_list.append((f"▶ [{choice_title}]\n", 'script_choice'))
+                for idx, item in enumerate(scene['choice'], 1):
+                    if isinstance(item, dict):
+                        choice_text = item.get('text', '')
+                        tag = item.get('tag')
+                    else:
+                        choice_text = str(item)
+                        tag = None
+
+                    content_list.append((f"   {idx}. {choice_text}", 'script_choice'))
+                    if tag is not None and str(tag).strip():
+                        content_list.append((f" (→ S# {tag})", 'script_choice_tag'))
+                    content_list.append(("\n", None))
+                content_list.append(("─" * 37 + "\n\n", 'script_divider'))
+
+        if not has_dialogue and not (title or outline):
+            content_list.append((f"({no_dialogue_msg})\n", 'script_narration'))
+
+        return content_list
+
+    @staticmethod
+    def format_story_data(data: dict[str, Any], view_mode: str, lang_dict: dict[str, str] | None = None) -> list[tuple[str, str | None]]:
         """스토리 데이터를 UI에 표시할 수 있는 포맷된 텍스트 및 태그 리스트로 변환합니다.
 
         Args:
             data: 포맷팅할 스토리 데이터 딕셔너리.
-            view_mode: 뷰 모드 ('simple' 또는 기타).
+            view_mode: 뷰 모드 ('script', 'simple', 'detailed').
+            lang_dict: 다국어 딕셔너리 (None일 경우 기본 언어 적용).
 
         Returns:
             (포맷팅된 문자열, 태그) 튜플의 리스트.
         """
+        if view_mode == 'script':
+            return StoryFormatter._format_script_mode(data, lang_dict)
+
         dispatch = StoryFormatter._get_dispatch_table()
         content_list: list[tuple[str, str | None]] = []
         scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')) 
@@ -200,7 +319,7 @@ class StoryFormatter:
             scene = data[key]
             content_list.append((f" S# {key} \n", 'scene_header'))
             if view_mode == 'simple':
-                keys_to_display = [k for k in ['title', 'outline', 'vo', 'print'] if k in scene]
+                keys_to_display = [k for k in ['title', 'outline', 'tag', 'vo', 'print', 'choice'] if k in scene]
             else:
                 existing_keys = [k for k in StoryFormatter._FIELD_ORDER if k in scene]
                 other_keys = sorted([k for k in scene.keys() if k not in StoryFormatter._FIELD_ORDER])
@@ -226,7 +345,13 @@ class StoryFormatter:
     def _format_choice(value: list[dict[str, Any]], content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         for i, item in enumerate(value, 1):
-            content_list.extend([(indent + f"{i}. {item['text']}", 'choice'), (f" (→ S# {item['tag']})\n", 'choice_tag')])
+            choice_text = item.get('text', '') if isinstance(item, dict) else str(item)
+            tag_str = f" (→ S# {item['tag']})" if isinstance(item, dict) and 'tag' in item else ""
+            content_list.append((indent + f"{i}. {choice_text}", 'choice'))
+            if tag_str:
+                content_list.append((f"{tag_str}\n", 'choice_tag'))
+            else:
+                content_list.append(("\n", None))
 
     @staticmethod
     def _format_default(value: Any, content_list: list[tuple[str, str | None]]) -> None:

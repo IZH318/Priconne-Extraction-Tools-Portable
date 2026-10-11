@@ -234,6 +234,7 @@ class StoryViewerLangDict(TypedDict, total=False):
     display_mode_label: str
     display_original_filename: str
     display_title: str
+    display_id_and_title: str
     event_list_label: str
     event_search_frame: str
     exit: str
@@ -257,6 +258,8 @@ class StoryViewerLangDict(TypedDict, total=False):
     file_open: str
     file_options_group: str
     filename_label: str
+    filter_clear_btn: str
+    filter_placeholder: str
     filetype_all: str
     filetype_json: str
     folder_open: str
@@ -322,7 +325,13 @@ class StoryViewerLangDict(TypedDict, total=False):
     status_bar_ready: str
     status_searching: str
     title_label: str
+    script_branch: str
+    script_choice_title: str
+    script_outline_title: str
+    script_no_dialogue: str
+    script_place_prefix: str
     view_detailed: str
+    view_script: str
     view_simple: str
     window_title: str
 

@@ -17,7 +17,7 @@
                 },
                 "10059300": {
                     "db_path": "master_jp_10059300.db",
-                    "db_url": ""
+                    "db_url": "https://github.com/Expugn/priconne-database/raw/8988ee44795a9cebcfa57844198576e095b4e3f6/master_jp.db"
                 }
             }
         },
@@ -39,7 +39,9 @@
         "event_story": {
             "list_table": "event_story_data",
             "name_col": "title",
+            "group_id_col_list": "story_group_id",
             "details_table": "event_story_detail",
+            "group_id_col_details": "story_group_id",
             "info_col": "sub_title",
             "id_col": "story_id"
         },

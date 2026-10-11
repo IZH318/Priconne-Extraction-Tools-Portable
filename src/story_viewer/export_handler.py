@@ -144,7 +144,7 @@ class StoryExportHandler:
                         
                     output_path = os.path.join(output_folder, os.path.splitext(filename)[0] + ".txt")
                     try:
-                        text_to_write = "".join([text for text, _ in StoryFormatter.format_story_data(data, self._view_mode_var.get())])
+                        text_to_write = "".join([text for text, _ in StoryFormatter.format_story_data(data, self._view_mode_var.get(), self._get_lang_dict())])
                         with open(output_path, 'w', encoding='utf-8') as f:
                             f.write(text_to_write)
                         success_count += 1

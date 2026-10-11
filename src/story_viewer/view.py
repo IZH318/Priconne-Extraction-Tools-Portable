@@ -68,7 +68,14 @@ class StoryViewerView(ttk.Frame):
         self.display_mode_combo.bind("<<ComboboxSelected>>", self.controller.on_display_mode_change)
         
         self.search_button = ttk.Button(self.left_group, text="", command=self.controller.open_search_window, state=tk.DISABLED)
-        self.search_button.pack(fill=tk.X, padx=5, pady=(5, 5))
+        self.search_button.pack(fill=tk.X, padx=5, pady=(5, 3))
+
+        # 인라인 빠른 필터 프레임
+        self.filter_frame = ttk.Frame(self.left_group)
+        self.filter_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
+        self.filter_entry = ttk.Entry(self.filter_frame, textvariable=self.controller.filter_var)
+        self.filter_entry.pack(fill=tk.X, expand=True)
+        self.filter_entry.bind("<Escape>", lambda e: self.controller.clear_filter())
         
         list_scrollbar = ttk.Scrollbar(self.left_group, orient=tk.VERTICAL)
         list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=(0, 5))
@@ -82,10 +89,9 @@ class StoryViewerView(ttk.Frame):
         
         self.detail_options_group = ttk.LabelFrame(right_pane, text="", padding=5)
         self.detail_options_group.pack(fill=tk.X, pady=(0, 5))
-        self.view_simple_radio = ttk.Radiobutton(self.detail_options_group, text="", variable=self.controller.view_mode_var, value="simple", command=self.controller.on_view_mode_change)
-        self.view_simple_radio.pack(side=tk.LEFT, padx=(5, 10))
-        self.view_detailed_radio = ttk.Radiobutton(self.detail_options_group, text="", variable=self.controller.view_mode_var, value="detailed", command=self.controller.on_view_mode_change)
-        self.view_detailed_radio.pack(side=tk.LEFT, padx=5)
+        self.view_mode_combo = ttk.Combobox(self.detail_options_group, state="readonly")
+        self.view_mode_combo.pack(fill=tk.X, padx=5, pady=3)
+        self.view_mode_combo.bind("<<ComboboxSelected>>", self.controller.on_view_mode_change)
         
         self.right_group = ttk.LabelFrame(right_pane, text="")
         self.right_group.pack(fill=tk.BOTH, expand=True)
@@ -121,6 +127,18 @@ class StoryViewerView(ttk.Frame):
         self.story_text.tag_configure('print_sub_key', font=(default_font_family, 10), foreground='#333333')
         self.story_text.tag_configure('choice', font=(default_font_family, 10, 'bold'), foreground='#8B0000')
         self.story_text.tag_configure('choice_tag', font=(default_font_family, 10, 'italic'), foreground='#808080')
+
+        # 대본 모드(script) 전용 폰트 및 컬러 태그
+        self.story_text.tag_configure('script_title', font=(default_font_family, 13, 'bold'), foreground='#1A365D')
+        self.story_text.tag_configure('script_speaker', font=(default_font_family, 11, 'bold'), foreground='#0D5C75')
+        self.story_text.tag_configure('script_dialogue', font=(default_font_family, 11), foreground='#1A202C')
+        self.story_text.tag_configure('script_narration', font=(default_font_family, 10, 'italic'), foreground='#4A5568')
+        self.story_text.tag_configure('script_place', font=(default_font_family, 10, 'bold'), foreground='#744210')
+        self.story_text.tag_configure('script_choice', font=(default_font_family, 11, 'bold'), foreground='#C53030')
+        self.story_text.tag_configure('script_choice_tag', font=(default_font_family, 10, 'italic'), foreground='#718096')
+        self.story_text.tag_configure('script_branch', font=(default_font_family, 10, 'bold'), foreground='#9C4221')
+        self.story_text.tag_configure('script_outline_header', font=(default_font_family, 10, 'bold'), foreground='#2C5282')
+        self.story_text.tag_configure('script_divider', font=(default_font_family, 9), foreground='#A0AEC0')
     
     def update_ui_text(self) -> None:
         """현재 선택된 언어에 맞춰 UI 텍스트를 업데이트합니다."""
@@ -136,14 +154,29 @@ class StoryViewerView(ttk.Frame):
         self.display_mode_label.config(text=lang_dict.get('display_mode_label', 'Display Filename As:'))
         val1 = lang_dict['display_original_filename']
         val2 = lang_dict['display_title']
-        self.display_mode_combo.config(values=[val1, val2])
-        if self.controller.display_mode_var.get() == "original":
+        val3 = lang_dict.get('display_id_and_title', '[ID] + title 정보')
+        self.display_mode_combo.config(values=[val1, val2, val3])
+        cur_mode = self.controller.display_mode_var.get()
+        if cur_mode == "original":
             self.display_mode_combo.current(0)
-        else:
+        elif cur_mode == "title":
             self.display_mode_combo.current(1)
+        elif cur_mode == "id_title":
+            self.display_mode_combo.current(2)
         
-        self.view_simple_radio.config(text=lang_dict['view_simple'])
-        self.view_detailed_radio.config(text=lang_dict['view_detailed'])
+        view_modes = [
+            lang_dict.get('view_script', '대본 모드 (대사·지문·선택지 위주의 읽기 쉬운 형식)'),
+            lang_dict.get('view_simple', '간단히 표시 (주요 연출, 대사 및 선택지 분기 요약)'),
+            lang_dict.get('view_detailed', '자세히 표시 (모든 씬 번호, 오프코드 및 원본 파라미터 전체)'),
+        ]
+        self.view_mode_combo.config(values=view_modes)
+        cur_view_mode = self.controller.view_mode_var.get()
+        if cur_view_mode == "script":
+            self.view_mode_combo.current(0)
+        elif cur_view_mode == "simple":
+            self.view_mode_combo.current(1)
+        elif cur_view_mode == "detailed":
+            self.view_mode_combo.current(2)
         self.left_group.config(text=lang_dict['list_group_title'])
         self.right_group.config(text=lang_dict['detail_group_title'])
         self.search_button.config(text=lang_dict['search_button_text'])
