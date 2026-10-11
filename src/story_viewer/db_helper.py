@@ -218,3 +218,54 @@ def fetch_birthday_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> 
         pass
         
     return result_map
+
+
+def fetch_quest_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+    """
+    adv_id 목록을 기반으로 quest_data 테이블에서 quest_name들을 일괄 조회합니다.
+    story_id_wavestart_3에서 일치 시 '{quest_name}_start',
+    story_id_waveend_3에서 일치 시 '{quest_name}_end'로 매핑합니다.
+    
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+        
+    Returns:
+        dict[str, str]: adv_id를 키로, '{quest_name}_start' 또는 '{quest_name}_end'를 값으로 갖는 딕셔너리.
+    """
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not adv_ids:
+        return {}
+        
+    result_map = {}
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+            
+            chunk_size = 500
+            for i in range(0, len(adv_ids), chunk_size):
+                chunk = adv_ids[i:i + chunk_size]
+                placeholders = ', '.join(['?'] * len(chunk))
+                tbl = _validate_identifier(db_info['quest_table'])
+                col_start = _validate_identifier(db_info['quest_wavestart_col'])
+                col_end = _validate_identifier(db_info['quest_waveend_col'])
+                col_name = _validate_identifier(db_info['quest_name_col'])
+                
+                query = f'SELECT "{col_start}", "{col_end}", "{col_name}" FROM "{tbl}" WHERE "{col_start}" IN ({placeholders}) OR "{col_end}" IN ({placeholders})'
+                cursor.execute(query, chunk + chunk)
+                chunk_set = set(chunk)
+                for row in cursor.fetchall():
+                    start_id = str(row[0]) if row[0] is not None else ''
+                    end_id = str(row[1]) if row[1] is not None else ''
+                    name = str(row[2]).replace('\\n', ' ').strip() if row[2] is not None else ''
+                    if not name:
+                        continue
+                    if start_id in chunk_set and start_id != '0':
+                        result_map[start_id] = f"{name}_start"
+                    if end_id in chunk_set and end_id != '0':
+                        result_map[end_id] = f"{name}_end"
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+        
+    return result_map
+

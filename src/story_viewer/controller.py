@@ -178,9 +178,14 @@ class StoryViewerController(QueuePollingMixin):
         
         # 2. 일괄 조회
         fetched_titles = {}
-        if 'birthday_table' in db_info and filename_to_adv_id:
+        if filename_to_adv_id:
             adv_ids = list(filename_to_adv_id.values())
-            fetched_titles = db_helper.fetch_birthday_titles_batch(db_info, adv_ids)
+            if 'birthday_table' in db_info:
+                fetched_titles.update(db_helper.fetch_birthday_titles_batch(db_info, adv_ids))
+            if 'quest_table' in db_info:
+                remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+                if remaining_ids:
+                    fetched_titles.update(db_helper.fetch_quest_titles_batch(db_info, remaining_ids))
             
         # 3. 타이틀 갱신
         for filename in self.empty_title_files:

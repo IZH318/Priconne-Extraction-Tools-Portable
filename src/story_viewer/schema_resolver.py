@@ -414,6 +414,7 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             progress_callback(server_key, "event_list_table")
             progress_callback(server_key, "event_details_table")
             progress_callback(server_key, "birthday_table")
+            progress_callback(server_key, "quest_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -468,6 +469,26 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             birthday_adv_id_col = server_info.get("birthday_adv_id_col")
             if birthday_adv_id_col and birthday_adv_id_col in birthday_col_map:
                 server_info["birthday_adv_id_col"] = birthday_col_map[birthday_adv_id_col]
+
+        # 4. 퀘스트 데이터 테이블 매핑
+        if progress_callback:
+            progress_callback(server_key, "quest_table")
+        quest_table = server_info.get("quest_table", "")
+        if quest_table and not quest_table.startswith("v1_"):
+            obf_quest_table, quest_col_map = extractor._find_and_deobfuscate_table(quest_table)
+            server_info["quest_table"] = obf_quest_table
+            
+            quest_name_col = server_info.get("quest_name_col")
+            if quest_name_col and quest_name_col in quest_col_map:
+                server_info["quest_name_col"] = quest_col_map[quest_name_col]
+
+            quest_wavestart_col = server_info.get("quest_wavestart_col")
+            if quest_wavestart_col and quest_wavestart_col in quest_col_map:
+                server_info["quest_wavestart_col"] = quest_col_map[quest_wavestart_col]
+
+            quest_waveend_col = server_info.get("quest_waveend_col")
+            if quest_waveend_col and quest_waveend_col in quest_col_map:
+                server_info["quest_waveend_col"] = quest_col_map[quest_waveend_col]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:
