@@ -36,6 +36,7 @@ class SearchWindow(tk.Toplevel):
         db_status: dict[str, bool],
         server_db_info: dict[str, Any],
         db_manager: Any = None,
+        selected_server: str = 'JP',
     ) -> None:
         """SearchWindow 객체를 초기화합니다.
 
@@ -51,6 +52,7 @@ class SearchWindow(tk.Toplevel):
             db_status: 각 지역 DB(JP, KR)의 로드 상태.
             server_db_info: 서버 DB 메타데이터.
             db_manager: DB 매니저 인스턴스.
+            selected_server: 메인 창에서 선택된 서버 (예: 'JP', 'KR').
         """
         super().__init__(master)
         self.withdraw()
@@ -71,12 +73,12 @@ class SearchWindow(tk.Toplevel):
             'char_name': tk.StringVar(), 'char_type': tk.StringVar(), 'content': tk.StringVar(),
             'bgm': tk.StringVar(), 'background': tk.StringVar(), 'event_name': tk.StringVar()
         }
-        self.server_var = tk.StringVar(value='JP')
+        self.selected_server = selected_server
 
         self.transient(master)
         self.grab_set()
         self._setup_ui()
-        self._on_server_selection_change()
+        self._load_event_list()
         self.focus_set()
         self._center_window(480, 390)
         self.deiconify()
@@ -144,19 +146,10 @@ class SearchWindow(tk.Toplevel):
         self.event_search_frame.pack(fill=tk.X, expand=True, anchor="n")
         self.event_search_frame.columnconfigure(1, weight=1)
 
-        server_frame = ttk.Frame(self.event_search_frame, padding="5")
-        server_frame.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0,5))
-        server_frame.columnconfigure(0, weight=1)
-        server_frame.columnconfigure(1, weight=1)
-        self.jp_radio = ttk.Radiobutton(server_frame, text="", variable=self.server_var, value="JP", command=self._on_server_selection_change)
-        self.jp_radio.grid(row=0, column=0, padx=5, sticky="w")
-        self.kr_radio = ttk.Radiobutton(server_frame, text="", variable=self.server_var, value="KR", command=self._on_server_selection_change)
-        self.kr_radio.grid(row=0, column=1, padx=5, sticky="w")
-
         self.event_list_label = ttk.Label(self.event_search_frame, text="")
-        self.event_list_label.grid(row=1, column=0, sticky="w", pady=3)
+        self.event_list_label.grid(row=0, column=0, sticky="w", pady=(0, 3))
         self.event_combobox = ttk.Combobox(self.event_search_frame, textvariable=self.search_vars['event_name'], state='readonly')
-        self.event_combobox.grid(row=1, column=1, columnspan=2, sticky="ew")
+        self.event_combobox.grid(row=0, column=1, sticky="ew")
 
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(10, 0))
@@ -189,17 +182,14 @@ class SearchWindow(tk.Toplevel):
             self.search_vars['char_type'].set(char_types[0])
 
         self.event_search_frame.config(text=lang_dict['event_search_frame'])
-        self.jp_radio.config(text=lang_dict['jp_server_radio'])
-        self.kr_radio.config(text=lang_dict['kr_server_radio'])
         self.event_list_label.config(text=lang_dict['event_list_label'])
 
         self.search_button.config(text=lang_dict['search_button'])
         self.reset_button.config(text=lang_dict['reset_button'])
 
-    def _on_server_selection_change(self) -> None:
-        """서버(JP/KR) 선택이 변경되었을 때 이벤트 리스트 콤보박스를 업데이트합니다."""
-        selected_server = self.server_var.get()
-        db_info = self.server_db_info.get(selected_server)
+    def _load_event_list(self) -> None:
+        """선택된 서버를 기반으로 이벤트 리스트 콤보박스를 업데이트합니다."""
+        db_info = self.server_db_info.get(self.selected_server)
         lang_dict = self._get_lang_dict()
         
         self.event_combobox['values'] = []
@@ -210,7 +200,7 @@ class SearchWindow(tk.Toplevel):
             return
 
         def _on_ready():
-            if not self.db_manager.db_status.get(selected_server):
+            if not self.db_manager.db_status.get(self.selected_server):
                 self.event_combobox.config(state=tk.DISABLED)
                 return
             self.event_combobox.config(state='readonly')
@@ -228,7 +218,7 @@ class SearchWindow(tk.Toplevel):
         """사용자가 입력한 조건을 바탕으로 백그라운드 검색 작업을 시작합니다."""
         self._update_status_bar('status_searching')
         criteria = {key: var.get() for key, var in self.search_vars.items() if var.get()}
-        server = self.server_var.get()
+        server = self.selected_server
         # destroy() 전에 모든 공유 참조 및 Tk 변수 값을 메인 스레드에서 미리 캡처
         char_type_value = self.search_vars['char_type'].get()
         captured_refs = {

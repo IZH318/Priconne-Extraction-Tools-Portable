@@ -112,13 +112,11 @@ class ConversionLogic:
                             log_entries.append(('conv_log_details_header', {}))
                             log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_log_lines])
                     
-                    # 성공 분기라도 stderr에 경고/알림이 있는 경우 기존 텍스트 로그 스타일로 추가
                     raw_stderr = (result.stderr or "").strip()
                     if raw_stderr:
                         filtered_stderr = [line for line in raw_stderr.splitlines() if line.strip()]
                         if filtered_stderr:
                             log_entries.append(('raw', {'text': ''}))
-                            log_entries.append(('conv_log_details_error_header', {}))
                             log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_stderr])
 
                     # 변환 과정에서 생성된 임시 파일 삭제
@@ -141,7 +139,7 @@ class ConversionLogic:
                         log_entries.append(('conv_log_details_error_header', {}))
                         log_entries.extend([('raw', {'text': f"    > {line}"}) for line in error_output.splitlines()])
 
-            except OSError as e:
+            except Exception as e:
                 status = "error"
                 log_entries.append(('conv_log_result_header', {}))
                 log_entries.append(('conv_log_error_exception', {'error': str(e)}))
@@ -162,6 +160,7 @@ class ConversionLogic:
 
         total_files = len(input_paths)
         success_count, skipped_count, error_count, completed_tasks = 0, 0, 0, 0
+        failed_files: list[tuple[str, str]] = []  # List of (file_path, error_reason)
         self.log_queue.put(ProgressEvent(target=target_tab, is_start=True, total=total_files))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
@@ -183,16 +182,20 @@ class ConversionLogic:
                         skipped_count += 1
                     else:
                         error_count += 1
-                except (OSError, ValueError) as e:
+                        # We don't have the exact error message from the worker here easily if it didn't throw,
+                        # but we can just say "Conversion failed" since detailed logs are in the GUI.
+                        failed_files.append((future_to_path[future], "Conversion process failed"))
+                except Exception as e:
                     path = future_to_path[future]
                     self._log_entry(target_tab, 'conv_log_worker_exception', filename=Path(path).name, error=e)
                     error_count += 1
+                    failed_files.append((path, str(e)))
                 finally:
                     completed_tasks += 1
                     self.log_queue.put(ProgressEvent(target=target_tab, current=completed_tasks, total=total_files))
         
         self._log_entry(target_tab, 'conv_summary_video', total=total_files, success=success_count, skipped=skipped_count, error=error_count)
-        self.log_queue.put(CompletionEvent(target=SENTINEL_VIDEO_DONE))
+        self.log_queue.put(CompletionEvent(target=SENTINEL_VIDEO_DONE, result=failed_files))
 
     def run_audio_conversion(self, input_paths: list[str], output_dir: str, vgmstream_path: Path | None, overwrite: bool, cancel_token: CancellationToken | None) -> None:
         """오디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
@@ -208,6 +211,7 @@ class ConversionLogic:
         total_files = len(input_paths)
         total_converted_tracks = 0
         completed_tasks = 0
+        failed_files: list[tuple[str, str]] = []
         self.log_queue.put(ProgressEvent(target=target_tab, is_start=True, total=total_files))
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=self.MAX_WORKERS) as executor:
@@ -223,15 +227,18 @@ class ConversionLogic:
                     converted_count, log_entries = future.result()
                     self.log_queue.put(LogBlockEvent(target=target_tab, entries=log_entries))
                     total_converted_tracks += converted_count
-                except (OSError, ValueError) as e:
+                    if any(k in ('conv_audio_stream_fail', 'conv_audio_stream_error', 'conv_log_details_error_header') for k, _ in log_entries):
+                        failed_files.append((future_to_path[future], "Audio conversion failed"))
+                except Exception as e:
                     path = future_to_path[future]
                     self._log_entry(target_tab, 'conv_log_worker_exception', filename=Path(path).name, error=e)
+                    failed_files.append((path, str(e)))
                 finally:
                     completed_tasks += 1
                     self.log_queue.put(ProgressEvent(target=target_tab, current=completed_tasks, total=total_files))
                     
         self._log_entry(target_tab, 'conv_audio_summary_combined', tracks=total_converted_tracks)
-        self.log_queue.put(CompletionEvent(target=SENTINEL_AUDIO_DONE))
+        self.log_queue.put(CompletionEvent(target=SENTINEL_AUDIO_DONE, result=failed_files))
 
     def get_stream_count(self, file_path: Path | str, vgmstream_path: Path | str) -> int:
         """vgmstream을 이용해 AWB 파일 내의 오디오 스트림 개수를 확인합니다."""

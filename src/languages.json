@@ -95,7 +95,9 @@
             "preview_track_col_name": "트랙 이름",
             "preview_play_btn": "재생",
             "preview_no_tool_video": "UsmToolkit.exe를 찾을 수 없어 비디오 미리보기를 실행할 수 없습니다.",
-            "preview_no_tool_audio": "vgmstream(vgmstream-cli.exe)을 찾을 수 없어 오디오 미리보기를 실행할 수 없습니다."
+            "preview_no_tool_audio": "vgmstream(vgmstream-cli.exe)을 찾을 수 없어 오디오 미리보기를 실행할 수 없습니다.",
+            "msgbox_error_log_saved_title": "오류 로그 생성 안내",
+            "msgbox_error_log_saved_msg": "작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다."
         },
         "en": {
             "program_started": "Program started.",
@@ -192,7 +194,9 @@
             "preview_track_col_name": "Track Name",
             "preview_play_btn": "Play",
             "preview_no_tool_video": "Cannot preview video: UsmToolkit.exe not found.",
-            "preview_no_tool_audio": "Cannot preview audio: vgmstream (vgmstream-cli.exe) not found."
+            "preview_no_tool_audio": "Cannot preview audio: vgmstream (vgmstream-cli.exe) not found.",
+            "msgbox_error_log_saved_title": "Error Log Created",
+            "msgbox_error_log_saved_msg": "An error occurred during the operation. An error log has been saved in the logs folder."
         },
         "ja": {
             "program_started": "プログラムが起動しました。",
@@ -291,7 +295,9 @@
             "preview_no_tool_audio": "vgmstream(vgmstream-cli.exe)が見つからないため、オーディオプレビューを実行できません。",
             "cancel_conversion": "変換取消",
             "progress_done": "完了",
-            "status_cancelled": "操作がキャンセルされました"
+            "status_cancelled": "操作がキャンセルされました",
+            "msgbox_error_log_saved_title": "エラーログ生成の案内",
+            "msgbox_error_log_saved_msg": "処理中にエラーが発生したため、logsフォルダにエラーログが保存されました。"
         }
     },
     "renamer": {
@@ -336,7 +342,9 @@
             "about_label_website": "웹 사이트",
             "folder_open": "폴더 열기",
             "game_client_folder": "게임 클라이언트 폴더 선택:",
-            "dialog_select_folder": "게임 클라이언트 폴더를 선택하세요"
+            "dialog_select_folder": "게임 클라이언트 폴더를 선택하세요",
+            "msgbox_error_log_saved_title": "오류 로그 생성 안내",
+            "msgbox_error_log_saved_msg": "작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다."
         },
         "en": {
             "window_title": "Manifest File Renamer",
@@ -379,7 +387,9 @@
             "about_label_website": "Website",
             "folder_open": "Open Folder",
             "game_client_folder": "Select Game Client Folder:",
-            "dialog_select_folder": "Select Game Client Folder"
+            "dialog_select_folder": "Select Game Client Folder",
+            "msgbox_error_log_saved_title": "Error Log Created",
+            "msgbox_error_log_saved_msg": "An error occurred during the operation. An error log has been saved in the logs folder."
         },
         "ja": {
             "window_title": "Manifest File Renamer",
@@ -422,7 +432,9 @@
             "about_label_website": "ウェブサイト",
             "folder_open": "フォルダーを開く",
             "game_client_folder": "ゲームクライアントフォルダー選択:",
-            "dialog_select_folder": "ゲームクライアントフォルダーを選択してください"
+            "dialog_select_folder": "ゲームクライアントフォルダーを選択してください",
+            "msgbox_error_log_saved_title": "エラーログ生成の案内",
+            "msgbox_error_log_saved_msg": "処理中にエラーが発生したため、logsフォルダにエラーログが保存されました。"
         }
     },
     "resource_remover": {
@@ -624,8 +636,8 @@
             "char_type_speaker": "화자",
             "char_type_mentioned_in_dialogue": "피호명자(대사)",
             "event_search_frame": "이벤트 스토리 검색",
-            "jp_server_radio": "일본 서버 (JP)",
-            "kr_server_radio": "한국 서버 (KR)",
+            "jp_server_radio": "일본 (JP)",
+            "kr_server_radio": "한국 (KR)",
             "event_list_label": "이벤트 목록:",
             "search_button": "검색",
             "reset_button": "초기화",
@@ -669,7 +681,7 @@
             "db_download_prompt_msg": "업데이트 또는 누락된 데이터베이스 파일이 있습니다:\n\n{paths}\n\n지금 자동으로 다운로드 하시겠습니까?\n{restriction_msg}",
             "db_prompt_restriction_unavailable": "(다운로드하지 않으면 '이벤트 스토리 검색' 기능을 사용할 수 없습니다.)",
             "db_prompt_restriction_outdated": "(다운로드하지 않아도 기능은 사용할 수 있으나, 최신 이벤트가 정상적으로 검색되지 않을 수 있습니다.)",
-            "db_checking_title": "데이터베이스 확인",
+            "db_checking_title": "DB 분석",
             "db_checking_msg": "업데이트 확인 및 스키마 분석 중...",
             "db_download_success_msg": "데이터베이스 파일 다운로드가 완료되었습니다.",
             "db_download_offline_msg_unavailable": "인터넷 연결을 확인할 수 없거나 다운로드에 실패했습니다.\n\n'이벤트 스토리 검색' 기능을 사용하시려면 다음 링크에서 파일을 수동으로 받아 알맞은 폴더에 넣어주세요:\n\n[프로그램 폴더]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
@@ -677,7 +689,15 @@
             "db_download_cancel_msg_unavailable": "'이벤트 스토리 검색' 기능을 사용하시려면 프로그램을 재시작하여 자동 다운로드를 진행하시거나(권장), 아래 링크에서 수동으로 받아 알맞은 폴더에 넣어주세요:\n\n[프로그램 폴더]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
             "db_download_cancel_msg_outdated": "최신 이벤트 스토리 검색을 위해 나중에라도 프로그램을 재시작하여 자동 다운로드를 진행하시거나(권장), 아래 링크에서 수동으로 받아 알맞은 폴더에 넣어주세요:\n\n[프로그램 폴더]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
             "db_download_error_title": "다운로드 오류",
-            "db_downloading_msg": "다운로드 중..."
+            "db_downloading_msg": "다운로드 중...",
+            "db_analyze_group": "DB 분석",
+            "btn_db_analyze": "DB 분석 시작",
+            "game_server_label": "게임 서버:",
+            "db_parsing_table": "{server} 스키마 분석 중: {table}...",
+            "log_reason_empty": "파일 내용이 비어있거나 딕셔너리 형식이 아닙니다.",
+            "log_reason_not_storydata": "스토리 데이터 파일이 아닌 것 같습니다 ('0' 키 또는 title/outline 누락).",
+            "log_reason_json_error": "JSON 형식 오류: {e}",
+            "log_reason_os_error": "파일 읽기/기타 오류: {e}"
         },
         "en": {
             "window_title": "storydata Viewer",
@@ -767,8 +787,8 @@
             "char_type_speaker": "Speaker",
             "char_type_mentioned_in_dialogue": "Mentioned (in dialogue)",
             "event_search_frame": "Event Story Search",
-            "jp_server_radio": "Japan Server (JP)",
-            "kr_server_radio": "Korea Server (KR)",
+            "jp_server_radio": "JP",
+            "kr_server_radio": "KR",
             "event_list_label": "Event List:",
             "search_button": "Search",
             "reset_button": "Reset",
@@ -812,7 +832,7 @@
             "db_download_prompt_msg": "Updates or missing database files found:\n\n{paths}\n\nDo you want to automatically download them now?\n{restriction_msg}",
             "db_prompt_restriction_unavailable": "(If you don't download, the 'Event Story Search' feature will be unavailable.)",
             "db_prompt_restriction_outdated": "(If you don't download, the feature is still usable, but recent events may not be searched correctly.)",
-            "db_checking_title": "Checking Database",
+            "db_checking_title": "DB Analysis",
             "db_checking_msg": "Checking for updates and parsing schemas...",
             "db_download_success_msg": "Database files have been downloaded successfully.",
             "db_download_offline_msg_unavailable": "No internet connection or download failed.\n\nTo use the 'Event Story Search' feature, please download the files manually from the link below and place them in the correct folders:\n\n[Program Folder]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
@@ -820,7 +840,15 @@
             "db_download_cancel_msg_unavailable": "To use the 'Event Story Search' feature, restart the program to automatically download the files (recommended), or manually download them from the link below and place them in the correct folders:\n\n[Program Folder]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
             "db_download_cancel_msg_outdated": "For the latest event story search, it is recommended to restart the program later to automatically download the files, or manually download them from the link below and place them in the correct folders:\n\n[Program Folder]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
             "db_download_error_title": "Download Error",
-            "db_downloading_msg": "Downloading..."
+            "db_downloading_msg": "Downloading...",
+            "db_analyze_group": "DB Analysis",
+            "btn_db_analyze": "Start DB Analysis",
+            "game_server_label": "Game Server:",
+            "db_parsing_table": "Parsing {server} schemas: {table}...",
+            "log_reason_empty": "File content is empty or not in dictionary format.",
+            "log_reason_not_storydata": "Does not seem to be a storydata file (missing '0' key or title/outline).",
+            "log_reason_json_error": "JSON format error: {e}",
+            "log_reason_os_error": "File read/other error: {e}"
         },
         "ja": {
             "window_title": "storydata Viewer",
@@ -910,8 +938,8 @@
             "char_type_speaker": "話者",
             "char_type_mentioned_in_dialogue": "被呼名者(セリフ)",
             "event_search_frame": "イベントストーリー検索",
-            "jp_server_radio": "日本サーバー (JP)",
-            "kr_server_radio": "韓国サーバー (KR)",
+            "jp_server_radio": "日本 (JP)",
+            "kr_server_radio": "韓国 (KR)",
             "event_list_label": "イベントリスト:",
             "search_button": "検索",
             "reset_button": "リセット",
@@ -955,7 +983,7 @@
             "db_download_prompt_msg": "アップデートまたは見つからないデータベースファイルがあります:\n\n{paths}\n\n今すぐ自動的にダウンロードしますか？\n{restriction_msg}",
             "db_prompt_restriction_unavailable": "（ダウンロードしない場合、「イベントストーリー検索」機能は利用できません。）",
             "db_prompt_restriction_outdated": "（ダウンロードしなくても機能は利用できますが、最新のイベントが正常に検索されない場合があります。）",
-            "db_checking_title": "データベース確認",
+            "db_checking_title": "DB分析",
             "db_checking_msg": "アップデート確認およびスキーマ解析中...",
             "db_download_success_msg": "データベースファイルのダウンロードが完了しました。",
             "db_download_offline_msg_unavailable": "インターネットに接続されていないか、ダウンロードに失敗しました。\n\n「イベントストーリー検索」機能を利用するには、以下のリンクから手動でダウンロードし、適切なフォルダに入れてください:\n\n[プログラムフォルダ]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
@@ -963,7 +991,15 @@
             "db_download_cancel_msg_unavailable": "「イベントストーリー検索」機能を利用するには、プログラムを再起動して自動ダウンロードを行うか（推奨）、以下のリンクから手動でダウンロードして適切なフォルダに入れてください:\n\n[プログラムフォルダ]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
             "db_download_cancel_msg_outdated": "最新のイベントを検索できるようにするため、後でプログラムを再起動して自動ダウンロードを行うか（推奨）、以下のリンクから手動でダウンロードして適切なフォルダに入れてください:\n\n[プログラムフォルダ]\n ├─ master_jp.db\n ├─ master_kr.db\n └─ [src]\n     ├─ master_jp_10052900.db\n     └─ master_kr_10049000.db\n\nhttps://github.com/Expugn/priconne-database",
             "db_download_error_title": "ダウンロードエラー",
-            "db_downloading_msg": "ダウンロード中..."
+            "db_downloading_msg": "ダウンロード中...",
+            "db_analyze_group": "DB分析",
+            "btn_db_analyze": "DB分析開始",
+            "game_server_label": "ゲームサーバー:",
+            "db_parsing_table": "{server} スキーマ解析中: {table}...",
+            "log_reason_empty": "ファイルの内容が空であるか、辞書形式ではありません。",
+            "log_reason_not_storydata": "ストーリーデータファイルではないようです（'0'キーまたはtitle/outlineがありません）。",
+            "log_reason_json_error": "JSON形式エラー: {e}",
+            "log_reason_os_error": "ファイル読み込み/その他のエラー: {e}"
         }
     },
     "unity_converter": {
@@ -1048,7 +1084,9 @@
             "preview_converting": "처리 중...",
             "asset_error_title": "오류",
             "asset_preview_title": "미리보기",
-            "total_extracted_assets": "총 추출된 에셋: {count}개"
+            "total_extracted_assets": "총 추출된 에셋: {count}개",
+            "msgbox_error_log_saved_title": "오류 로그 생성 안내",
+            "msgbox_error_log_saved_msg": "작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다."
         },
         "en": {
             "window_title": "unity3d File Converter",
@@ -1131,7 +1169,9 @@
             "preview_converting": "Processing...",
             "asset_error_title": "Error",
             "asset_preview_title": "Preview",
-            "total_extracted_assets": "Total Extracted Assets: {count}"
+            "total_extracted_assets": "Total Extracted Assets: {count}",
+            "msgbox_error_log_saved_title": "Error Log Created",
+            "msgbox_error_log_saved_msg": "An error occurred during the operation. An error log has been saved in the logs folder."
         },
         "ja": {
             "window_title": "unity3d File Converter",
@@ -1214,7 +1254,9 @@
             "extraction_cancelled": "抽出作業がキャンセルされました",
             "asset_error_title": "エラー",
             "asset_preview_title": "プレビュー",
-            "total_extracted_assets": "抽出されたアセットの合計: {count}件"
+            "total_extracted_assets": "抽出されたアセットの合計: {count}件",
+            "msgbox_error_log_saved_title": "エラーログ生成の案内",
+            "msgbox_error_log_saved_msg": "処理中にエラーが発生したため、logsフォルダにエラーログが保存されました。"
         }
     },
     "main_menu": {

@@ -276,6 +276,16 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
             # 처리 결과에 따른 정확한 상태 표시 (오류 및 미완료 거짓 반환 방지)
             total_processed = getattr(self.file_processor, 'processed_count_rename', 0) + getattr(self.file_processor, 'processed_count_check', 0)
             has_error = getattr(self.file_processor, 'has_error', False)
+            unprocessed_files = getattr(self.file_processor, 'unprocessed_files', [])
+
+            # 에러가 발생했거나 미처리(실패)된 파일이 1개라도 있는 경우에만 파일 로그 생성
+            if has_error or len(unprocessed_files) > 0:
+                self._generate_error_log(unprocessed_files, getattr(self.file_processor, 'error_message', None))
+                from tkinter import messagebox
+                d = self.get_lang_dict()
+                title = d.get('msgbox_error_log_saved_title', 'Error Log Created / 오류 로그 생성 안내')
+                text = d.get('msgbox_error_log_saved_msg', 'An error log has been created in the logs folder. / 작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다.')
+                messagebox.showwarning(title, text, parent=self.view)
 
             if has_error:
                 # 오류 발생 시: 100% 완료로 표시하지 않고 오류 상태 표시
@@ -307,3 +317,44 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
     def cleanup(self) -> None:
         """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다."""
         self._stop_polling()
+
+    def _generate_error_log(self, unprocessed_files: list[str], error_message: str | None) -> None:
+        import platform, multiprocessing, sys, os
+        from datetime import datetime
+        from pathlib import Path
+        from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+        
+        try:
+            exec_path = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
+            log_dir = Path(exec_path) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            now = datetime.now()
+            log_filename = log_dir / f"RenamerLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+            
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[SESSION] Renamer Task Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
+                f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
+                f.write(f"[ENGINE]  Python Version:  {platform.python_version()}\n")
+                f.write(f"[SYSTEM]  OS Version:      {platform.platform()}\n")
+                f.write(f"[SYSTEM]  Processor Count: {multiprocessing.cpu_count()} Cores\n")
+                f.write(f"[PATH]    Exec Path:       {exec_path}\n")
+                f.write(f"[REPORT]  Target Folder:   {self._base_path if self._base_path else 'Unknown'}\n")
+                f.write(f"[REPORT]  Total Failed:    {len(unprocessed_files)}\n")
+                if error_message:
+                    f.write(f"[REPORT]  Fatal Error:     {error_message}\n")
+                f.write(f"{SEPARATOR_LONG}\n\n")
+
+                for idx, path in enumerate(unprocessed_files, 1):
+                    f.write(f"[ERROR ITEM #{idx}]\n")
+                    f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                    f.write(f"Context   : File Rename\n")
+                    f.write(f"File      : {path}\n")
+                    f.write(f"Reason    : {self.get_string('backend_unprocessed_error', error='Hash mismatch or unknown format')}\n")
+                    f.write(f"{SEPARATOR_LONG}\n\n")
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to write RenamerLog: {e}")

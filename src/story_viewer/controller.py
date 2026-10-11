@@ -4,6 +4,7 @@ import logging
 import threading
 import queue
 import json
+import re
 from datetime import datetime
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -78,6 +79,10 @@ class StoryViewerController(QueuePollingMixin):
 
         self.display_mode_var = tk.StringVar(value="original")
         self.view_mode_var = tk.StringVar(value="simple")
+        self.server_var = tk.StringVar(value='JP')
+        
+        self.db_analyzed = False
+        self.empty_title_files = set()
 
         # 서버별 DB 테이블/컬럼 해시 매핑 정보. (외부 db_config.json에서 로드)
         self.server_db_info = _load_db_config()
@@ -129,6 +134,66 @@ class StoryViewerController(QueuePollingMixin):
         except tk.TclError:
             pass
 
+    def start_db_analysis(self) -> None:
+        """사용자가 DB 분석 시작 버튼을 눌렀을 때 호출되어 DB 체크 및 UI 활성화를 수행합니다."""
+        self.view.btn_db_analyze.config(state=tk.DISABLED)
+        self.view.update_status_bar('db_checking_msg')
+        
+        def _on_ready():
+            self.task_queue.put(ActionEvent(action=self._on_db_analyzed))
+            
+        self._db_manager.check_and_cache_db_status(on_ready=_on_ready)
+
+    def _on_db_analyzed(self) -> None:
+        """DB 분석이 완료된 후 관련 UI 요소들을 활성화합니다."""
+        self.db_analyzed = True
+        self.view.btn_db_analyze.config(state=tk.NORMAL)
+        # DB 분석 후 요소 활성화
+        self.view.display_mode_combo.config(state="readonly")
+        self.view.search_button.config(state=tk.NORMAL if self.all_files else tk.DISABLED)
+        self.view.btn_export.config(state=tk.NORMAL if self.all_files else tk.DISABLED)
+        for child in self.view.server_frame.winfo_children():
+            child.config(state=tk.NORMAL)
+            
+        # 기존에 로드된 파일들 중 빈 제목이 있었다면 현재 서버 기준으로 다시 조회
+        if self.empty_title_files:
+            self.on_server_change()
+        
+        self.view.update_status_bar('status_bar_initial')
+
+    def on_server_change(self) -> None:
+        """게임 서버 라디오 버튼 변경 시 호출되어 빈 제목을 다시 조회합니다."""
+        if not self.db_analyzed or not self.empty_title_files:
+            return
+            
+        server = self.server_var.get()
+        db_info = self.server_db_info.get(server, {})
+        
+        # 1. adv_id 목록 수집
+        filename_to_adv_id = {}
+        for filename in self.empty_title_files:
+            match = re.match(r'^storydata_(\d+)\.json$', filename)
+            if match:
+                filename_to_adv_id[filename] = match.group(1)
+        
+        # 2. 일괄 조회
+        fetched_titles = {}
+        if 'birthday_table' in db_info and filename_to_adv_id:
+            adv_ids = list(filename_to_adv_id.values())
+            fetched_titles = db_helper.fetch_birthday_titles_batch(db_info, adv_ids)
+            
+        # 3. 타이틀 갱신
+        for filename in self.empty_title_files:
+            adv_id = filename_to_adv_id.get(filename)
+            title = fetched_titles.get(adv_id) if adv_id else None
+            
+            if title:
+                self.file_titles[filename] = title
+            else:
+                self.file_titles[filename] = filename
+                
+        self.update_file_list(self.current_filenames_in_list)
+
     def show_about_info(self) -> None:
         """프로그램 정보 대화상자를 표시합니다."""
         lang_dict = self.get_lang_dict()
@@ -151,8 +216,15 @@ class StoryViewerController(QueuePollingMixin):
         self.current_filenames_in_list = []
         self.loaded_filenames = []
         self.current_file_path = None
+        self.view.btn_db_analyze.config(state=tk.DISABLED)
         self.view.search_button.config(state=tk.DISABLED)
         self.view.btn_export.config(state=tk.DISABLED)
+        self.view.display_mode_combo.config(state=tk.DISABLED)
+        self.view.jp_radio.config(state=tk.DISABLED)
+        self.view.kr_radio.config(state=tk.DISABLED)
+        
+        self.db_analyzed = False
+        
         self._db_manager.db_status.clear()
         self._db_manager.db_check_done = False
         self._db_manager.db_warning_shown = False
@@ -170,7 +242,8 @@ class StoryViewerController(QueuePollingMixin):
         self.view.btn_open_file.config(state=tk.DISABLED)
         self.view.btn_open_folder.config(state=tk.DISABLED)
         
-        thread = threading.Thread(target=self._load_and_analyze_thread, args=(paths, folder_path))
+        lang_dict = self.get_lang_dict()
+        thread = threading.Thread(target=self._load_and_analyze_thread, args=(paths, folder_path, lang_dict))
         thread.daemon = True
         thread.start()
 
@@ -193,12 +266,13 @@ class StoryViewerController(QueuePollingMixin):
             add_breadcrumb("io", "Opened story folder", {"path": folder_path})
             self._start_loading_task(folder_path=folder_path)
 
-    def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None) -> None:
+    def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None, lang_dict: dict) -> None:
         """선택된 파일/폴더 내의 스토리 데이터를 백그라운드에서 로드하고 분석합니다.
 
         Args:
             paths: 로드할 파일 경로들의 튜플 또는 리스트.
             folder_path: 로드할 폴더 경로.
+            lang_dict: 오류 메시지 다국어 처리 딕셔너리.
         """
         import re
         temp_all_files, invalid_files = {}, []
@@ -236,17 +310,20 @@ class StoryViewerController(QueuePollingMixin):
         file_list_to_process.sort()
         total_files = len(file_list_to_process)
         unique_char_names, unique_bgms, unique_bgs, temp_file_titles = set(), set(), set(), {}
+        temp_empty_titles = set()
 
         for i, path in enumerate(file_list_to_process):
             def _update_status(idx=i, total=total_files):
                 self.view.update_status_bar('status_bar_analyzing', i=idx+1, t=total)
             self.task_queue.put(ActionEvent(action=_update_status))
-            is_valid, data, error_reason = StoryDataLoader.is_valid_storydata(path)
+            is_valid, data, error_reason = StoryDataLoader.is_valid_storydata(path, lang_dict)
             
             if is_valid:
                 filename = os.path.basename(path)
                 temp_all_files[filename] = path
                 title = data.get('0', {}).get('title', '').strip()
+                if not title:
+                    temp_empty_titles.add(filename)
                 temp_file_titles[filename] = title if title else filename
                 for scene in data.values():
                     if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
@@ -265,7 +342,7 @@ class StoryViewerController(QueuePollingMixin):
             'bgms': sorted(list(unique_bgms)), 
             'backgrounds': sorted(list(unique_bgs))
         }
-        results = {"all_files": temp_all_files, "titles": temp_file_titles, "search_data": temp_search_data}
+        results = {"all_files": temp_all_files, "titles": temp_file_titles, "empty_titles": temp_empty_titles, "search_data": temp_search_data}
         self.task_queue.put(ActionEvent(action=lambda: self._finish_loading(results, invalid_files)))
 
     def _finish_loading(self, results: dict[str, Any] | None, invalid_files: list[tuple[str, str]]) -> None:
@@ -285,27 +362,71 @@ class StoryViewerController(QueuePollingMixin):
             messagebox.showwarning(lang_dict['msgbox_no_valid_files_title'], lang_dict['msgbox_no_valid_files_msg'], parent=self.view)
         else:
             self.all_files, self.file_titles, self.search_data = results['all_files'], results['titles'], results['search_data']
+            self.empty_title_files = results['empty_titles']
             self.loaded_filenames = sorted(list(self.all_files.keys()))
             self.view.update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
-            self.view.search_button.config(state=tk.NORMAL)
-            self.view.btn_export.config(state=tk.NORMAL)
-            self.update_file_list(list(self.all_files.keys()))
+            
+            # DB 분석 시작 버튼 활성화
+            self.view.btn_db_analyze.config(state=tk.NORMAL)
+            
+            if self.db_analyzed:
+                self.view.search_button.config(state=tk.NORMAL)
+                self.view.btn_export.config(state=tk.NORMAL)
+                self.view.display_mode_combo.config(state="readonly")
+                self.view.jp_radio.config(state=tk.NORMAL)
+                self.view.kr_radio.config(state=tk.NORMAL)
+                if self.empty_title_files:
+                    self.on_server_change()
+                else:
+                    self.update_file_list(list(self.all_files.keys()))
+            else:
+                self.update_file_list(list(self.all_files.keys()))
         
         if invalid_files:
             msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files))
             if messagebox.askyesno(lang_dict['msgbox_load_fail_title'], msg, parent=self.view):
-                # 첫 번째 로드된 파일의 디렉터리에 로그 파일 생성 (CWD 의존 방지)
-                first_file_dir = os.path.dirname(invalid_files[0][0]) if invalid_files else os.getcwd()
-                log_filename = os.path.join(first_file_dir, "invalid_storydata_log.txt")
                 try:
+                    import platform
+                    import multiprocessing
+                    import sys
+                    from pathlib import Path
+                    from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+                    
+                    python_ver = platform.python_version()
+                    os_ver = platform.platform()
+                    cpu_cores = multiprocessing.cpu_count()
+                    
+                    if sys.argv and sys.argv[0]:
+                        exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+                    else:
+                        exec_path = os.path.abspath(os.getcwd())
+                        
+                    now = datetime.now()
+                    
+                    log_dir = Path(exec_path) / "logs"
+                    log_dir.mkdir(parents=True, exist_ok=True)
+                    log_filename = log_dir / f"StoryViewerLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+
                     with open(log_filename, 'w', encoding='utf-8') as f:
-                        f.write(lang_dict['log_header'].format(timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
-                        f.write(lang_dict['log_total_failed'].format(count=len(invalid_files)))
-                        f.write("-" * 50 + "\n\n")
-                        for path, reason in invalid_files:
-                            f.write(f"{lang_dict['log_file_label']}: {path}\n")
-                            f.write(f"{lang_dict['log_reason_label']}: {reason}\n")
-                            f.write("-" * 30 + "\n")
+                        f.write(f"{SEPARATOR_LONG}\n")
+                        f.write(f"[SESSION] Invalid Storydata Load Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                        f.write(f"{SEPARATOR_LONG}\n")
+                        f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
+                        f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
+                        f.write(f"[ENGINE]  Python Version:  {python_ver}\n")
+                        f.write(f"[SYSTEM]  OS Version:      {os_ver}\n")
+                        f.write(f"[SYSTEM]  Processor Count: {cpu_cores} Cores\n")
+                        f.write(f"[PATH]    Exec Path:       {exec_path}\n")
+                        f.write(f"[REPORT]  Total Failed:    {len(invalid_files)}\n")
+                        f.write(f"{SEPARATOR_LONG}\n\n")
+
+                        for idx, (path, reason) in enumerate(invalid_files, 1):
+                            f.write(f"[ERROR ITEM #{idx}]\n")
+                            f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                            f.write(f"Context   : Storydata Validation\n")
+                            f.write(f"File      : {path}\n")
+                            f.write(f"Reason    : {reason}\n")
+                            f.write(f"{SEPARATOR_LONG}\n\n")
                     messagebox.showinfo(lang_dict['msgbox_log_saved_title'], lang_dict['msgbox_log_saved_msg'].format(filename=log_filename), parent=self.view)
                 except OSError as e:
                     messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e), parent=self.view)
@@ -321,22 +442,20 @@ class StoryViewerController(QueuePollingMixin):
         if not self.all_files:
             messagebox.showinfo(lang_dict['msgbox_search_before_load_title'], lang_dict['msgbox_search_before_load_msg'], parent=self.view)
             return
-        def _launch():
-            SearchWindow(
-                master=self.master,
-                get_lang_dict=self.get_lang_dict,
-                get_lang_code=lambda: self.lang_var.get(),
-                search_callback=self.update_file_list,
-                task_queue=self.task_queue,
-                update_status_bar=self.view.update_status_bar,
-                all_files_dict=self.all_files,
-                search_data=self.search_data,
-                db_status=self._db_manager.db_status,
-                server_db_info=self.server_db_info,
-                db_manager=self._db_manager,
-            )
-            
-        self._db_manager.check_and_cache_db_status(on_ready=_launch)
+        SearchWindow(
+            master=self.master,
+            get_lang_dict=self.get_lang_dict,
+            get_lang_code=lambda: self.lang_var.get(),
+            search_callback=self.update_file_list,
+            task_queue=self.task_queue,
+            update_status_bar=self.view.update_status_bar,
+            all_files_dict=self.all_files,
+            search_data=self.search_data,
+            db_status=self._db_manager.db_status,
+            server_db_info=self.server_db_info,
+            db_manager=self._db_manager,
+            selected_server=self.server_var.get(),
+        )
 
     def open_export_window(self) -> None:
         """내보내기 창을 엽니다. DB 상태를 사전 확인하고 누락 시 다운로드를 안내합니다."""
@@ -347,19 +466,16 @@ class StoryViewerController(QueuePollingMixin):
         if not self.all_files:
             messagebox.showinfo(lang_dict['msgbox_no_export_files_title'], lang_dict['msgbox_no_export_files_msg'], parent=self.view)
             return
-        def _launch():
-            ExportWindow(
-                master=self.master,
-                get_lang_dict=self.get_lang_dict,
-                export_func=self.export_master_thread,
-                update_status_bar=self.view.update_status_bar,
-                all_files_dict=self.all_files,
-                search_data=self.search_data,
-                db_status=self._db_manager.db_status,
-                server_db_info=self.server_db_info,
-            )
-            
-        self._db_manager.check_and_cache_db_status(on_ready=_launch)
+        ExportWindow(
+            master=self.master,
+            get_lang_dict=self.get_lang_dict,
+            export_func=self.export_master_thread,
+            update_status_bar=self.view.update_status_bar,
+            all_files_dict=self.all_files,
+            search_data=self.search_data,
+            db_status=self._db_manager.db_status,
+            server_db_info=self.server_db_info,
+        )
 
     def update_file_list(self, filenames: list[str]) -> None:
         """파일 목록 뷰를 업데이트합니다."""

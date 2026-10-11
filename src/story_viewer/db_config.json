@@ -13,7 +13,10 @@
         "event_name_col_list": "title",
         "event_details_table": "event_story_detail",
         "event_info_col_details": "sub_title",
-        "event_id_col_details": "story_id"
+        "event_id_col_details": "story_id",
+        "birthday_table": "birthday_login_bonus_data",
+        "birthday_name_col": "name",
+        "birthday_adv_id_col": "adv_id"
     },
     "KR": {
         "db_path": "master_kr.db",
@@ -25,6 +28,9 @@
         "event_name_col_list": "title",
         "event_details_table": "event_story_detail",
         "event_info_col_details": "sub_title",
-        "event_id_col_details": "story_id"
+        "event_id_col_details": "story_id",
+        "birthday_table": "birthday_login_bonus_data",
+        "birthday_name_col": "name",
+        "birthday_adv_id_col": "adv_id"
     }
 }

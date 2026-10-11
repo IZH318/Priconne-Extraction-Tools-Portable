@@ -362,7 +362,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
                     else: 
                         self._add_log_entry('video', 'ffmpeg_prepare_fail')
                         self.view.reset_ui_state('video')
-                except (RuntimeError, OSError, ValueError) as e:
+                except Exception as e:
                     self._add_log_entry('video', 'ffmpeg_prepare_fail')
                     self._add_log_entry('video', 'conv_log_error_exception', error=e)
                     self.view.reset_ui_state('video')
@@ -539,7 +539,54 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         total = getattr(self, f'{tab_type}_total_files')
         current = widgets['progress']['value']
         widgets['status_label'].config(text=d['status_complete'].format(current=current, total=total))
+        
+        failed_files = msg.result if msg.result is not None else []
+        if len(failed_files) > 0:
+            self._generate_error_log(tab_type, failed_files)
+            title = d.get('msgbox_error_log_saved_title', 'Error Log Created / 오류 로그 생성 안내')
+            text = d.get('msgbox_error_log_saved_msg', 'An error log has been created in the logs folder. / 작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다.')
+            messagebox.showwarning(title, text, parent=self.view)
+            
         self.view.reset_ui_state(tab_type)
+
+    def _generate_error_log(self, tab_type: str, failed_files: list[tuple[str, str]]) -> None:
+        import platform, multiprocessing, sys, os
+        from datetime import datetime
+        from pathlib import Path
+        from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+        
+        try:
+            exec_path = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
+            log_dir = Path(exec_path) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            now = datetime.now()
+            log_filename = log_dir / f"AVConverterLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+            
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[SESSION] AV Converter Task Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
+                f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
+                f.write(f"[ENGINE]  Python Version:  {platform.python_version()}\n")
+                f.write(f"[SYSTEM]  OS Version:      {platform.platform()}\n")
+                f.write(f"[SYSTEM]  Processor Count: {multiprocessing.cpu_count()} Cores\n")
+                f.write(f"[PATH]    Exec Path:       {exec_path}\n")
+                f.write(f"[REPORT]  Target Type:     {tab_type.upper()}\n")
+                f.write(f"[REPORT]  Total Failed:    {len(failed_files)}\n")
+                f.write(f"{SEPARATOR_LONG}\n\n")
+
+                for idx, (path, reason) in enumerate(failed_files, 1):
+                    f.write(f"[ERROR ITEM #{idx}]\n")
+                    f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                    f.write(f"Context   : {tab_type.capitalize()} Conversion\n")
+                    f.write(f"File      : {path}\n")
+                    f.write(f"Reason    : {reason}\n")
+                    f.write(f"{SEPARATOR_LONG}\n\n")
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to write AVConverterLog: {e}")
 
     def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
         """리스트박스에서 선택된 파일의 미리보기를 실행합니다.

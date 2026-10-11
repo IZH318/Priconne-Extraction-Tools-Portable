@@ -120,6 +120,10 @@ class AssetProcessor:
     def process_all_assets(self) -> int:
         """파일 내의 모든 에셋을 순회하며 처리를 시작하는 메인 함수입니다."""
         import UnityPy
+        from UnityPy import config
+        from src.constants import DEFAULT_UNITY_VERSION
+        if not getattr(config, 'FALLBACK_UNITY_VERSION', None):
+            config.FALLBACK_UNITY_VERSION = DEFAULT_UNITY_VERSION
         self.env = UnityPy.load(self.file_path) # 파일 로드
         num_assets = len(self.env.objects)
         if num_assets == 0:
@@ -183,9 +187,9 @@ class AssetProcessor:
 
             # 전용 핸들러가 없는 기타 타입: 제네릭 JSON으로 추출
             return self._export_generic_json(obj)
-        except (ValueError, OSError, TypeError, AttributeError, KeyError, AssetProcessingError) as e:
-            # 처리 실패 시 예외 로깅 및 대체 저장 시도
-            self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj_type, 'error': e})
+        except Exception as e:
+            # 처리 실패 시 예외 로깅 및 대체 저장 시도 (대체 저장을 시도하므로 우선 WARNING 처리)
+            self.log('asset_processing_error', 'WARNING', {'path_id': obj.path_id, 'obj_type': obj_type, 'error': e})
             if obj_type == "Mesh":
                 self.log('mesh_fallback_info', "WARNING")
                 if self._export_raw_data(obj):
@@ -195,7 +199,7 @@ class AssetProcessor:
             else:
                 try:
                     return self._export_generic_json(obj, error_info=str(e))
-                except (ValueError, TypeError, OSError) as e2:
+                except Exception as e2:
                     self.log('json_fallback_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj.type.name, 'error': e2})
         return False
 
@@ -207,7 +211,7 @@ class AssetProcessor:
             with open(path, "wb") as f:
                 f.write(raw_data)
             return True
-        except OSError as e:
+        except Exception as e:
             self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': 'raw data', 'error': e})
             return False
 
@@ -272,13 +276,13 @@ class AssetProcessor:
             deserialized_data = StoryDataDeserializer.deserialize(script_bytes)
             
             path = self._get_export_path(obj, ".json", data=data)
-            with open(path, "w", encoding="utf-8") as f:
+            with open(path, "w", encoding="utf-8", errors="replace") as f:
                 json.dump(deserialized_data, f, indent=4, ensure_ascii=False)
             self.log('storydata_deserialization_success', 'SUCCESS', {'asset_name': asset_name})
         
-        except (struct_error, ValueError, IndexError, TypeError, StoryDataCorruptedError) as e:
-            # 실패 시 로그 기록
-            self.log('storydata_deserialization_fail', 'ERROR', {'asset_name': asset_name, 'error': e})
+        except Exception as e:
+            # 실패 시 로그 기록 (대체 저장되므로 에러가 아닌 경고로 처리)
+            self.log('storydata_deserialization_fail', 'WARNING', {'asset_name': asset_name, 'error': e})
         
         return bin_saved
 
@@ -522,7 +526,7 @@ class AssetProcessor:
         typetree = obj.parse_as_dict()
         if error_info:
             typetree["EXPORT_ERROR"] = error_info
-        with open(path, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8", errors="replace") as f:
             json.dump(typetree, f, indent=4, ensure_ascii=False, default=lambda o: f"<Unserializable: {type(o).__name__}>")
         return True
 

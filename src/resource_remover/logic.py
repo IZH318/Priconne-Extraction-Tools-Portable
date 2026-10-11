@@ -65,7 +65,7 @@ class ResourceRemoverLogic:
                 else:
                     os.remove(file_path)
                 deleted_files.append(str(file_path))  # 로그 기록용 문자열 변환
-            except OSError as e:
+            except Exception as e:
                 errors.append(f"{file_path}: {e}")
                 
         # 로그 파일 생성

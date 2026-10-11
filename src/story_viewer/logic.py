@@ -9,28 +9,33 @@ from src.constants import SEPARATOR_MEDIUM
 class StoryDataLoader:
     """스토리 데이터 JSON 파일의 유효성 검증 및 에셋 이름 추출을 담당합니다."""
     @staticmethod
-    def is_valid_storydata(file_path: str) -> tuple[bool, dict[str, Any] | None, str | None]:
+    def is_valid_storydata(file_path: str, lang_dict: dict[str, str] | None = None) -> tuple[bool, dict[str, Any] | None, str | None]:
         """스토리 데이터 JSON 파일이 유효한지 검사합니다.
 
         Args:
             file_path: 검사할 JSON 파일 경로.
+            lang_dict: 오류 메시지 다국어 처리를 위한 딕셔너리.
 
         Returns:
             (유효성 여부, 파싱된 데이터 딕셔너리, 에러 메시지) 튜플.
         """
+        if lang_dict is None:
+            lang_dict = {}
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             if not isinstance(data, dict) or not data:
-                return False, None, "File content is empty or not in dictionary format"
+                return False, None, lang_dict.get('log_reason_empty', "File content is empty or not in dictionary format")
             if '0' in data and isinstance(data['0'], dict) and ('title' in data['0'] or 'outline' in data['0']):
                 return True, data, None
             else:
-                return False, None, "Does not seem to be a storydata file (missing '0' key or title/outline)"
+                return False, None, lang_dict.get('log_reason_not_storydata', "Does not seem to be a storydata file (missing '0' key or title/outline)")
         except json.JSONDecodeError as e:
-            return False, None, f"JSON format error: {e}"
+            return False, None, lang_dict.get('log_reason_json_error', "JSON format error: {e}").format(e=e)
         except OSError as e:
-            return False, None, f"File read/other error: {e}"
+            return False, None, lang_dict.get('log_reason_os_error', "File read/other error: {e}").format(e=e)
+        except Exception as e:
+            return False, None, f"Unexpected fatal error: {e}"
 
     @staticmethod
     def extract_asset_name(value: Any) -> str | None:

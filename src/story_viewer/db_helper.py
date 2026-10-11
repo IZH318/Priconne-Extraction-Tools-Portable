@@ -179,3 +179,42 @@ def fetch_event_list_for_export(db_info: dict[str, Any]) -> tuple[list[str], lis
         
         return columns, rows
 
+
+def fetch_birthday_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+    """
+    adv_id 목록을 기반으로 birthday_login_bonus_data 테이블에서 이름들을 일괄 조회합니다.
+    
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+        
+    Returns:
+        dict[str, str]: adv_id를 키로, 조회된 이름을 값으로 갖는 딕셔너리.
+    """
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not adv_ids:
+        return {}
+        
+    result_map = {}
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+            
+            chunk_size = 500
+            for i in range(0, len(adv_ids), chunk_size):
+                chunk = adv_ids[i:i + chunk_size]
+                placeholders = ', '.join(['?'] * len(chunk))
+                # _validate_identifier must be called on each column/table to prevent injection since we are manually constructing the SQL here
+                tbl = _validate_identifier(db_info['birthday_table'])
+                col_id = _validate_identifier(db_info['birthday_adv_id_col'])
+                col_name = _validate_identifier(db_info['birthday_name_col'])
+                
+                query = f'SELECT "{col_id}", "{col_name}" FROM "{tbl}" WHERE "{col_id}" IN ({placeholders})'
+                cursor.execute(query, chunk)
+                for row in cursor.fetchall():
+                    if row[0] and row[1]:
+                        result_map[str(row[0])] = str(row[1]).replace('\\n', ' ').strip()
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+        
+    return result_map

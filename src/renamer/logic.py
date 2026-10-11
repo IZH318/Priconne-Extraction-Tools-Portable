@@ -204,7 +204,7 @@ class RenameHashedFile:
                             self.processed_count_rename += 1
                         else:
                             self.unprocessed_files.append(data)
-                    except (OSError, sqlite3.Error, ValueError) as exc:
+                    except Exception as exc:
                         file_path = futures[future]
                         self.log('backend_file_process_fail', path=file_path, exc=str(exc))
                         self.unprocessed_files.append(file_path)

@@ -401,14 +401,19 @@ class StoryDataExtractor:
             return best_table, human_to_hash_map
 
 
-def resolve_server_config(baseline_path: str, latest_path: str, server_info: dict) -> None:
+def resolve_server_config(baseline_path: str, latest_path: str, server_info: dict, progress_callback: Optional[callable] = None) -> None:
     """
     서버별 DB 설정 딕셔너리(server_info)의 원본 테이블/컬럼명을 실시간 역난독화 해시값으로 변환합니다.
     이 함수는 server_info를 직접 제자리(in-place)에서 수정합니다.
     """
+    server_key = server_info.get("version_key", "Unknown")
     # 이미 해시(예: 'v1_...')로 시작한다면 무시
     event_list_table = server_info.get("event_list_table", "")
     if event_list_table.startswith("v1_"):
+        if progress_callback:
+            progress_callback(server_key, "event_list_table")
+            progress_callback(server_key, "event_details_table")
+            progress_callback(server_key, "birthday_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -423,6 +428,8 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
         extractor = StoryDataExtractor(baseline_path, latest_path)
 
         # 1. 이벤트 목록 테이블 매핑
+        if progress_callback:
+            progress_callback(server_key, "event_list_table")
         obf_list_table, list_col_map = extractor._find_and_deobfuscate_table(event_list_table)
         server_info["event_list_table"] = obf_list_table
         
@@ -431,6 +438,8 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             server_info["event_name_col_list"] = list_col_map[event_name_col_list]
 
         # 2. 이벤트 상세 정보 테이블 매핑
+        if progress_callback:
+            progress_callback(server_key, "event_details_table")
         event_details_table = server_info.get("event_details_table", "")
         if event_details_table and not event_details_table.startswith("v1_"):
             obf_details_table, details_col_map = extractor._find_and_deobfuscate_table(event_details_table)
@@ -443,6 +452,22 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             event_id_col_details = server_info.get("event_id_col_details")
             if event_id_col_details and event_id_col_details in details_col_map:
                 server_info["event_id_col_details"] = details_col_map[event_id_col_details]
+
+        # 3. 생일 로그인 보너스 테이블 매핑
+        if progress_callback:
+            progress_callback(server_key, "birthday_table")
+        birthday_table = server_info.get("birthday_table", "")
+        if birthday_table and not birthday_table.startswith("v1_"):
+            obf_birthday_table, birthday_col_map = extractor._find_and_deobfuscate_table(birthday_table)
+            server_info["birthday_table"] = obf_birthday_table
+            
+            birthday_name_col = server_info.get("birthday_name_col")
+            if birthday_name_col and birthday_name_col in birthday_col_map:
+                server_info["birthday_name_col"] = birthday_col_map[birthday_name_col]
+
+            birthday_adv_id_col = server_info.get("birthday_adv_id_col")
+            if birthday_adv_id_col and birthday_adv_id_col in birthday_col_map:
+                server_info["birthday_adv_id_col"] = birthday_col_map[birthday_adv_id_col]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:

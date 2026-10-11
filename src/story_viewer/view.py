@@ -35,15 +35,36 @@ class StoryViewerView(ttk.Frame):
         self.btn_open_folder = ttk.Button(self.open_frame, text="", command=self.controller.open_folder)
         self.btn_open_folder.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 5), pady=5)
 
+        self.db_group = ttk.LabelFrame(left_pane, text="")
+        self.db_group.pack(fill=tk.X, pady=(0, 5))
+        self.btn_db_analyze = ttk.Button(self.db_group, text="", command=self.controller.start_db_analysis, state=tk.DISABLED)
+        self.btn_db_analyze.pack(fill=tk.X, padx=5, pady=5)
+
         self.left_group = ttk.LabelFrame(left_pane, text="")
         self.left_group.pack(fill=tk.BOTH, expand=True)
+
+        self.options_frame = ttk.Frame(self.left_group)
+        self.options_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
         
-        self.display_mode_frame = ttk.Frame(self.left_group)
-        self.display_mode_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
-        self.display_mode_label = ttk.Label(self.display_mode_frame, text="")
-        self.display_mode_label.pack(side=tk.LEFT, padx=(0, 5))
-        self.display_mode_combo = ttk.Combobox(self.display_mode_frame, state="readonly")
-        self.display_mode_combo.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.options_frame.columnconfigure(1, weight=1)
+        
+        # Row 0: Server selection
+        self.server_label = ttk.Label(self.options_frame, text="")
+        self.server_label.grid(row=0, column=0, sticky="w", padx=(0, 5), pady=(0, 5))
+        
+        self.server_frame = ttk.Frame(self.options_frame)
+        self.server_frame.grid(row=0, column=1, sticky="w", pady=(0, 5))
+        self.jp_radio = ttk.Radiobutton(self.server_frame, text="", variable=self.controller.server_var, value="JP", command=self.controller.on_server_change, state=tk.DISABLED)
+        self.jp_radio.pack(side=tk.LEFT, padx=(0, 5))
+        self.kr_radio = ttk.Radiobutton(self.server_frame, text="", variable=self.controller.server_var, value="KR", command=self.controller.on_server_change, state=tk.DISABLED)
+        self.kr_radio.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Row 1: Display mode selection
+        self.display_mode_label = ttk.Label(self.options_frame, text="")
+        self.display_mode_label.grid(row=1, column=0, sticky="w", padx=(0, 5), pady=(0, 5))
+        
+        self.display_mode_combo = ttk.Combobox(self.options_frame, state=tk.DISABLED)
+        self.display_mode_combo.grid(row=1, column=1, sticky="ew", pady=(0, 5))
         self.display_mode_combo.bind("<<ComboboxSelected>>", self.controller.on_display_mode_change)
         
         self.search_button = ttk.Button(self.left_group, text="", command=self.controller.open_search_window, state=tk.DISABLED)
@@ -126,6 +147,12 @@ class StoryViewerView(ttk.Frame):
         self.left_group.config(text=lang_dict['list_group_title'])
         self.right_group.config(text=lang_dict['detail_group_title'])
         self.search_button.config(text=lang_dict['search_button_text'])
+        
+        self.db_group.config(text=lang_dict.get('db_analyze_group', 'DB Analysis'))
+        self.btn_db_analyze.config(text=lang_dict.get('btn_db_analyze', 'Start DB Analysis'))
+        self.server_label.config(text=lang_dict.get('game_server_label', 'Game Server:'))
+        self.jp_radio.config(text=lang_dict.get('jp_server_radio', 'JP'))
+        self.kr_radio.config(text=lang_dict.get('kr_server_radio', 'KR'))
         
         self.controller.update_file_list(self.controller.current_filenames_in_list)
 

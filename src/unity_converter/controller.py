@@ -272,6 +272,10 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
                     if log_item.key == 'raw_text':
                         event = self._add_log_event('raw_text', log_item.level, {'text': log_item.kwargs.get('text', '')})
                     else:
+                        if log_item.key == 'worker_process_error':
+                            error_msg = str(log_item.kwargs.get('error', 'Unknown Error'))
+                            if hasattr(self, 'failed_files'):
+                                self.failed_files.append((log_item.target, error_msg))
                         event = self._add_log_event(log_item.key, log_item.level, log_item.kwargs, log_item.target)
                     self.log_events.append(event)
                     self._render_log_event(event)
@@ -417,6 +421,7 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self.view.toggle_controls(False)
         self.processed_files_count = 0
         self.total_extracted_assets = 0
+        self.failed_files: list[tuple[str, str]] = []
         self.view.progress_bar.config(maximum=len(self.file_paths))
         self.view.update_progress_bar()
         self._current_enabled_types = self._get_enabled_types()
@@ -451,6 +456,14 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
 
     def _finalize_completion(self) -> None:
         """완료 상태를 정리하고 UI 컨트롤을 다시 활성화합니다."""
+        if hasattr(self, 'failed_files') and len(self.failed_files) > 0:
+            self._generate_error_log(self.failed_files)
+            from tkinter import messagebox
+            d = self.get_lang_dict()
+            title = d.get('msgbox_error_log_saved_title', 'Error Log Created / 오류 로그 생성 안내')
+            text = d.get('msgbox_error_log_saved_msg', 'An error log has been created in the logs folder. / 작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다.')
+            messagebox.showwarning(title, text, parent=self.view)
+
         self._log("raw_text", format_args={'text': "========================================"})
         if hasattr(self, 'total_extracted_assets') and self.total_extracted_assets > 0:
             self._log("total_extracted_assets", format_args={'count': self.total_extracted_assets})
@@ -458,3 +471,42 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self.is_running = False
         self.frame.after(0, lambda: self.view.toggle_controls(True))
 
+    def _generate_error_log(self, failed_files: list[tuple[str, str]]) -> None:
+        import platform, multiprocessing, sys, os
+        from datetime import datetime
+        from pathlib import Path
+        from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+        
+        try:
+            exec_path = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
+            log_dir = Path(exec_path) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            
+            now = datetime.now()
+            log_filename = log_dir / f"UnityConverterLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+            
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[SESSION] Unity Converter Task Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
+                f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
+                f.write(f"[ENGINE]  Python Version:  {platform.python_version()}\n")
+                f.write(f"[SYSTEM]  OS Version:      {platform.platform()}\n")
+                f.write(f"[SYSTEM]  Processor Count: {multiprocessing.cpu_count()} Cores\n")
+                f.write(f"[PATH]    Exec Path:       {exec_path}\n")
+                f.write(f"[REPORT]  Base Input:      {self.base_input_path if self.base_input_path else 'Files'}\n")
+                f.write(f"[REPORT]  Output Path:     {self.output_path}\n")
+                f.write(f"[REPORT]  Total Failed:    {len(failed_files)}\n")
+                f.write(f"{SEPARATOR_LONG}\n\n")
+
+                for idx, (path, reason) in enumerate(failed_files, 1):
+                    f.write(f"[ERROR ITEM #{idx}]\n")
+                    f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                    f.write(f"Context   : Asset Extraction\n")
+                    f.write(f"File      : {path}\n")
+                    f.write(f"Reason    : {reason}\n")
+                    f.write(f"{SEPARATOR_LONG}\n\n")
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to write UnityConverterLog: {e}")

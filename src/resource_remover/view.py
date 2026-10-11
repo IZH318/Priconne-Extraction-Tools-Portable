@@ -59,7 +59,7 @@ class ResourceRemoverView(ttk.Frame):
         self.lbl_warn.pack(pady=(10, 15))
 
         control_frame = ttk.Frame(container)
-        control_frame.pack(fill=tk.X, pady=5)
+        control_frame.pack(fill=tk.X, pady=5, padx=40)
         
         self.chk_trash = ttk.Checkbutton(control_frame, variable=self.controller.use_trash_var, command=self.update_ui_text)
         self.chk_trash.pack(side=tk.LEFT, padx=5)

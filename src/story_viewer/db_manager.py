@@ -91,7 +91,7 @@ class StoryDBManager:
         
         top = tk.Toplevel(self._master)
         top.withdraw()
-        top.title(lang_dict.get('db_checking_title', 'Checking Database'))
+        top.title(lang_dict.get('db_checking_title', 'DB Analysis'))
         
         top.update_idletasks()
         w, h = 300, 100
@@ -157,8 +157,17 @@ class StoryDBManager:
             is_feature_completely_unavailable = False
             
             servers = [s for s, i in self._server_db_info.items() if isinstance(i, dict) and 'db_path' in i]
-            step_size = 90 / max(1, len(servers))
+            # Each server has 3 tables to process.
+            total_steps = max(1, len(servers) * 3)
+            step_size = 90 / total_steps
             current_progress = 10
+            
+            def on_table_progress(server_key: str, table_key: str) -> None:
+                nonlocal current_progress
+                current_progress += step_size
+                fmt_str = lang_dict.get('db_parsing_table', 'Parsing {server} schemas: {table}...')
+                msg = fmt_str.format(server=server_key, table=table_key)
+                top.after(0, lambda p=current_progress, m=msg: (pb.configure(value=p), lbl.configure(text=m)))
             
             for server, info in self._server_db_info.items():
                 if not isinstance(info, dict) or 'db_path' not in info:
@@ -193,7 +202,7 @@ class StoryDBManager:
                 has_fallback = False
                 if os.path.exists(baseline_path):
                     fallback_db = db_path if os.path.exists(db_path) else baseline_path
-                    resolve_server_config(baseline_path, fallback_db, info)
+                    resolve_server_config(baseline_path, fallback_db, info, progress_callback=on_table_progress)
                     has_fallback = True
                     
                 self.db_status[server] = os.path.exists(db_path)
@@ -201,7 +210,6 @@ class StoryDBManager:
                 if not has_fallback:
                     is_feature_completely_unavailable = True
 
-                current_progress += step_size
                 top.after(0, lambda p=current_progress: pb.configure(value=p))
 
             self._task_queue.put(ActionEvent(action=lambda: self._on_check_complete(top, downloads_list, remote_version_data, local_version_path, missing_db_files, on_ready, lang_dict, is_feature_completely_unavailable)))
