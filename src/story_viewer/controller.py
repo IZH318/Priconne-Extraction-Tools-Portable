@@ -65,6 +65,7 @@ class StoryViewerController(QueuePollingMixin):
         self.all_files = {}
         self.search_data = {}
         self.file_titles = {}
+        self.raw_file_titles = {}
         self.display_name_to_filename = {}
         self.current_filenames_in_list = []
         self.loaded_filenames = []
@@ -155,15 +156,15 @@ class StoryViewerController(QueuePollingMixin):
         for child in self.view.server_frame.winfo_children():
             child.config(state=tk.NORMAL)
             
-        # 기존에 로드된 파일들 중 빈 제목이 있었다면 현재 서버 기준으로 다시 조회
-        if self.empty_title_files:
+        # 기존에 로드된 파일들이 있다면 현재 서버 기준으로 DB 타이틀 조회
+        if self.all_files:
             self.on_server_change()
         
         self.view.update_status_bar('status_bar_initial')
 
     def on_server_change(self) -> None:
-        """게임 서버 라디오 버튼 변경 시 호출되어 빈 제목을 다시 조회합니다."""
-        if not self.db_analyzed or not self.empty_title_files:
+        """게임 서버 라디오 버튼 변경 시 호출되어 DB에서 타이틀을 조회하여 갱신합니다."""
+        if not self.db_analyzed or not self.all_files:
             return
             
         server = self.server_var.get()
@@ -171,33 +172,36 @@ class StoryViewerController(QueuePollingMixin):
         
         # 1. adv_id 목록 수집
         filename_to_adv_id = {}
-        for filename in self.empty_title_files:
+        for filename in self.all_files:
             match = re.match(r'^storydata_(\d+)\.json$', filename)
             if match:
                 filename_to_adv_id[filename] = match.group(1)
         
-        # 2. 일괄 조회
+        # 2. 일괄 조회 (우선순위: story_detail -> birthday -> quest)
         fetched_titles = {}
         if filename_to_adv_id:
             adv_ids = list(filename_to_adv_id.values())
-            if 'birthday_table' in db_info:
-                fetched_titles.update(db_helper.fetch_birthday_titles_batch(db_info, adv_ids))
-            if 'quest_table' in db_info:
-                remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-                if remaining_ids:
-                    fetched_titles.update(db_helper.fetch_quest_titles_batch(db_info, remaining_ids))
+            if 'story_detail_table' in db_info:
+                fetched_titles.update(db_helper.fetch_story_detail_titles_batch(db_info, adv_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if 'birthday_table' in db_info and remaining_ids:
+                fetched_titles.update(db_helper.fetch_birthday_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if 'quest_table' in db_info and remaining_ids:
+                fetched_titles.update(db_helper.fetch_quest_titles_batch(db_info, remaining_ids))
             
-        # 3. 타이틀 갱신
-        for filename in self.empty_title_files:
+        # 3. 타이틀 갱신: DB 결과 우선, 미존재 시 JSON 원본 타이틀(또는 파일명) 유지
+        for filename in self.all_files:
             adv_id = filename_to_adv_id.get(filename)
             title = fetched_titles.get(adv_id) if adv_id else None
             
             if title:
                 self.file_titles[filename] = title
             else:
-                self.file_titles[filename] = filename
+                self.file_titles[filename] = self.raw_file_titles.get(filename, filename)
                 
-        self.update_file_list(self.current_filenames_in_list)
+        target_files = self.current_filenames_in_list or list(self.all_files.keys())
+        self.update_file_list(target_files)
 
     def show_about_info(self) -> None:
         """프로그램 정보 대화상자를 표시합니다."""
@@ -217,6 +221,7 @@ class StoryViewerController(QueuePollingMixin):
         self.search_data.clear()
         self.view.file_listbox.delete(0, tk.END)
         self.file_titles.clear()
+        self.raw_file_titles.clear()
         self.display_name_to_filename.clear()
         self.current_filenames_in_list = []
         self.loaded_filenames = []
@@ -314,7 +319,8 @@ class StoryViewerController(QueuePollingMixin):
         
         file_list_to_process.sort()
         total_files = len(file_list_to_process)
-        unique_char_names, unique_bgms, unique_bgs, temp_file_titles = set(), set(), set(), {}
+        unique_char_names, unique_bgms, unique_bgs = set(), set(), set()
+        temp_file_titles, temp_raw_titles = {}, {}
         temp_empty_titles = set()
 
         for i, path in enumerate(file_list_to_process):
@@ -326,10 +332,12 @@ class StoryViewerController(QueuePollingMixin):
             if is_valid:
                 filename = os.path.basename(path)
                 temp_all_files[filename] = path
-                title = data.get('0', {}).get('title', '').strip()
-                if not title:
+                json_title = str(data.get('0', {}).get('title', '') or '').strip()
+                base_title = json_title if json_title else filename
+                temp_raw_titles[filename] = base_title
+                temp_file_titles[filename] = base_title
+                if not json_title:
                     temp_empty_titles.add(filename)
-                temp_file_titles[filename] = title if title else filename
                 for scene in data.values():
                     if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
                     if 'bgm' in scene and (bgm_name := StoryDataLoader.extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
@@ -347,7 +355,13 @@ class StoryViewerController(QueuePollingMixin):
             'bgms': sorted(list(unique_bgms)), 
             'backgrounds': sorted(list(unique_bgs))
         }
-        results = {"all_files": temp_all_files, "titles": temp_file_titles, "empty_titles": temp_empty_titles, "search_data": temp_search_data}
+        results = {
+            "all_files": temp_all_files,
+            "titles": temp_file_titles,
+            "raw_titles": temp_raw_titles,
+            "empty_titles": temp_empty_titles,
+            "search_data": temp_search_data
+        }
         self.task_queue.put(ActionEvent(action=lambda: self._finish_loading(results, invalid_files)))
 
     def _finish_loading(self, results: dict[str, Any] | None, invalid_files: list[tuple[str, str]]) -> None:
@@ -366,8 +380,11 @@ class StoryViewerController(QueuePollingMixin):
             self.view.update_status_bar('status_bar_loading_done', loaded=0, failed=len(invalid_files))
             messagebox.showwarning(lang_dict['msgbox_no_valid_files_title'], lang_dict['msgbox_no_valid_files_msg'], parent=self.view)
         else:
-            self.all_files, self.file_titles, self.search_data = results['all_files'], results['titles'], results['search_data']
+            self.all_files = results['all_files']
+            self.file_titles = results['titles']
+            self.raw_file_titles = results.get('raw_titles', {})
             self.empty_title_files = results['empty_titles']
+            self.search_data = results['search_data']
             self.loaded_filenames = sorted(list(self.all_files.keys()))
             self.view.update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
             
@@ -380,10 +397,7 @@ class StoryViewerController(QueuePollingMixin):
                 self.view.display_mode_combo.config(state="readonly")
                 self.view.jp_radio.config(state=tk.NORMAL)
                 self.view.kr_radio.config(state=tk.NORMAL)
-                if self.empty_title_files:
-                    self.on_server_change()
-                else:
-                    self.update_file_list(list(self.all_files.keys()))
+                self.on_server_change()
             else:
                 self.update_file_list(list(self.all_files.keys()))
         

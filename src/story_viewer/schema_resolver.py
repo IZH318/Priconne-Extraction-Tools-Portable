@@ -415,6 +415,7 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             progress_callback(server_key, "event_details_table")
             progress_callback(server_key, "birthday_table")
             progress_callback(server_key, "quest_table")
+            progress_callback(server_key, "story_detail_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -489,6 +490,26 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             quest_waveend_col = server_info.get("quest_waveend_col")
             if quest_waveend_col and quest_waveend_col in quest_col_map:
                 server_info["quest_waveend_col"] = quest_col_map[quest_waveend_col]
+
+        # 5. 스토리 상세 테이블 매핑
+        if progress_callback:
+            progress_callback(server_key, "story_detail_table")
+        story_detail_table = server_info.get("story_detail_table", "")
+        if story_detail_table and not story_detail_table.startswith("v1_"):
+            obf_story_detail_table, story_detail_col_map = extractor._find_and_deobfuscate_table(story_detail_table)
+            server_info["story_detail_table"] = obf_story_detail_table
+            
+            story_detail_id_col = server_info.get("story_detail_id_col")
+            if story_detail_id_col and story_detail_id_col in story_detail_col_map:
+                server_info["story_detail_id_col"] = story_detail_col_map[story_detail_id_col]
+
+            story_detail_title_col = server_info.get("story_detail_title_col")
+            if story_detail_title_col and story_detail_title_col in story_detail_col_map:
+                server_info["story_detail_title_col"] = story_detail_col_map[story_detail_title_col]
+
+            story_detail_sub_title_col = server_info.get("story_detail_sub_title_col")
+            if story_detail_sub_title_col and story_detail_sub_title_col in story_detail_col_map:
+                server_info["story_detail_sub_title_col"] = story_detail_col_map[story_detail_sub_title_col]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:
