@@ -29,19 +29,60 @@ from .view import StoryViewerView
 def _load_db_config() -> dict[str, dict[str, str]]:
     """db_config.json에서 서버별 DB 테이블/컬럼 매핑 정보를 로드합니다.
 
-    외부 JSON 설정 파일로 분리하여 DB 스키마 변경 시
-    코드 수정 없이 설정 파일만 업데이트하면 됩니다.
+    계층형 구조(common, servers, tables)를 기존 호환 딕셔너리로 자동 정규화합니다.
 
     Returns:
-        dict: 서버 키('JP', 'KR')별 DB 정보 딕셔너리.
+        dict: 서버 키('JP', 'KR') 및 'Common'을 키로 갖는 정규화된 DB 정보 딕셔너리.
     """
     config_path = os.path.join(os.path.dirname(__file__), 'db_config.json')
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            raw_cfg = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError) as e:
         logging.warning("Failed to load db_config.json: %s. Using empty fallback.", e)
         return {}
+
+    # 신규 계층 구조(common, servers, tables)인 경우 정규화
+    if "servers" in raw_cfg and "tables" in raw_cfg:
+        common = raw_cfg.get("common", raw_cfg.get("Common", {}))
+        tables = raw_cfg.get("tables", {})
+        
+        flat_tables = {}
+        if "event_story" in tables:
+            ev = tables["event_story"]
+            flat_tables["event_list_table"] = ev.get("list_table", "")
+            flat_tables["event_name_col_list"] = ev.get("name_col", "")
+            flat_tables["event_details_table"] = ev.get("details_table", "")
+            flat_tables["event_info_col_details"] = ev.get("info_col", "")
+            flat_tables["event_id_col_details"] = ev.get("id_col", "")
+        if "birthday" in tables:
+            bd = tables["birthday"]
+            flat_tables["birthday_table"] = bd.get("table", "")
+            flat_tables["birthday_name_col"] = bd.get("name_col", "")
+            flat_tables["birthday_adv_id_col"] = bd.get("id_col", "")
+        if "quest" in tables:
+            q = tables["quest"]
+            flat_tables["quest_table"] = q.get("table", "")
+            flat_tables["quest_name_col"] = q.get("name_col", "")
+            flat_tables["quest_wavestart_col"] = q.get("wavestart_col", "")
+            flat_tables["quest_waveend_col"] = q.get("waveend_col", "")
+        for key, entry in tables.items():
+            if key in ("event_story", "birthday", "quest"):
+                continue
+            if isinstance(entry, dict) and "table" in entry:
+                flat_tables[f"{key}_table"] = entry["table"]
+                flat_tables[f"{key}_id_col"] = entry.get("id_col", "story_id")
+                flat_tables[f"{key}_title_col"] = entry.get("title_col", "title")
+                flat_tables[f"{key}_sub_title_col"] = entry.get("sub_title_col", "sub_title")
+                
+        merged = {"Common": common}
+        for s_key, s_info in raw_cfg["servers"].items():
+            s_dict = dict(s_info)
+            s_dict.update(flat_tables)
+            merged[s_key] = s_dict
+        return merged
+
+    return raw_cfg
 
 class StoryViewerController(QueuePollingMixin):
     def __init__(self, app_wrapper: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:

@@ -1,68 +1,60 @@
 {
-    "Common": {
+    "common": {
         "version_api_url": "https://api.github.com/repos/Expugn/priconne-database/contents/version.json",
         "version_raw_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/version.json"
     },
-    "JP": {
-        "db_path": "master_jp.db",
-        "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_jp.db",
-        "baseline_db_path": "master_jp_10052900.db",
-        "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db",
-        "version_key": "JP",
-        "event_list_table": "event_story_data",
-        "event_name_col_list": "title",
-        "event_details_table": "event_story_detail",
-        "event_info_col_details": "sub_title",
-        "event_id_col_details": "story_id",
-        "birthday_table": "birthday_login_bonus_data",
-        "birthday_name_col": "name",
-        "birthday_adv_id_col": "adv_id",
-        "quest_table": "quest_data",
-        "quest_name_col": "quest_name",
-        "quest_wavestart_col": "story_id_wavestart_3",
-        "quest_waveend_col": "story_id_waveend_3",
-        "story_detail_table": "story_detail",
-        "story_detail_id_col": "story_id",
-        "story_detail_title_col": "title",
-        "story_detail_sub_title_col": "sub_title",
-        "dear_story_detail_table": "dear_story_detail",
-        "dear_story_detail_id_col": "story_id",
-        "dear_story_detail_title_col": "title",
-        "dear_story_detail_sub_title_col": "sub_title",
-        "tower_story_detail_table": "tower_story_detail",
-        "tower_story_detail_id_col": "story_id",
-        "tower_story_detail_title_col": "title",
-        "tower_story_detail_sub_title_col": "sub_title"
+    "servers": {
+        "JP": {
+            "version_key": "JP",
+            "db_path": "master_jp.db",
+            "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_jp.db",
+            "baseline_db_path": "master_jp_10052900.db",
+            "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db"
+        },
+        "KR": {
+            "version_key": "KR",
+            "db_path": "master_kr.db",
+            "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_kr.db",
+            "baseline_db_path": "master_kr_10049000.db",
+            "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/3f64e986b647847fb3c833f03905b7e5adcfb0db/master_kr.db"
+        }
     },
-    "KR": {
-        "db_path": "master_kr.db",
-        "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_kr.db",
-        "baseline_db_path": "master_kr_10049000.db",
-        "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/3f64e986b647847fb3c833f03905b7e5adcfb0db/master_kr.db",
-        "version_key": "KR",
-        "event_list_table": "event_story_data",
-        "event_name_col_list": "title",
-        "event_details_table": "event_story_detail",
-        "event_info_col_details": "sub_title",
-        "event_id_col_details": "story_id",
-        "birthday_table": "birthday_login_bonus_data",
-        "birthday_name_col": "name",
-        "birthday_adv_id_col": "adv_id",
-        "quest_table": "quest_data",
-        "quest_name_col": "quest_name",
-        "quest_wavestart_col": "story_id_wavestart_3",
-        "quest_waveend_col": "story_id_waveend_3",
-        "story_detail_table": "story_detail",
-        "story_detail_id_col": "story_id",
-        "story_detail_title_col": "title",
-        "story_detail_sub_title_col": "sub_title",
-        "dear_story_detail_table": "dear_story_detail",
-        "dear_story_detail_id_col": "story_id",
-        "dear_story_detail_title_col": "title",
-        "dear_story_detail_sub_title_col": "sub_title",
-        "tower_story_detail_table": "tower_story_detail",
-        "tower_story_detail_id_col": "story_id",
-        "tower_story_detail_title_col": "title",
-        "tower_story_detail_sub_title_col": "sub_title"
+    "tables": {
+        "event_story": {
+            "list_table": "event_story_data",
+            "name_col": "title",
+            "details_table": "event_story_detail",
+            "info_col": "sub_title",
+            "id_col": "story_id"
+        },
+        "birthday": {
+            "table": "birthday_login_bonus_data",
+            "id_col": "adv_id",
+            "name_col": "name"
+        },
+        "quest": {
+            "table": "quest_data",
+            "name_col": "quest_name",
+            "wavestart_col": "story_id_wavestart_3",
+            "waveend_col": "story_id_waveend_3"
+        },
+        "story_detail": {
+            "table": "story_detail",
+            "id_col": "story_id",
+            "title_col": "title",
+            "sub_title_col": "sub_title"
+        },
+        "dear_story_detail": {
+            "table": "dear_story_detail",
+            "id_col": "story_id",
+            "title_col": "title",
+            "sub_title_col": "sub_title"
+        },
+        "tower_story_detail": {
+            "table": "tower_story_detail",
+            "id_col": "story_id",
+            "title_col": "title",
+            "sub_title_col": "sub_title"
+        }
     }
 }
