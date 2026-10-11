@@ -418,6 +418,8 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             progress_callback(server_key, "story_detail_table")
             progress_callback(server_key, "dear_story_detail_table")
             progress_callback(server_key, "tower_story_detail_table")
+            if server_info.get("alchemy_story_detail_table"):
+                progress_callback(server_key, "alchemy_story_detail_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -429,7 +431,13 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
         return
 
     try:
-        extractor = StoryDataExtractor(baseline_path, latest_path)
+        extractors = {}
+        def get_extractor(b_path: str) -> StoryDataExtractor:
+            if b_path not in extractors:
+                extractors[b_path] = StoryDataExtractor(b_path, latest_path)
+            return extractors[b_path]
+
+        extractor = get_extractor(baseline_path)
 
         # 1. 이벤트 목록 테이블 매핑
         if progress_callback:
@@ -552,6 +560,30 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             tower_sub_title_col = server_info.get("tower_story_detail_sub_title_col")
             if tower_sub_title_col and tower_sub_title_col in tower_col_map:
                 server_info["tower_story_detail_sub_title_col"] = tower_col_map[tower_sub_title_col]
+
+        # 8. 알케스 연금당 숏드라마 스토리 상세 테이블 매핑
+        alchemy_table = server_info.get("alchemy_story_detail_table", "")
+        if alchemy_table:
+            if progress_callback:
+                progress_callback(server_key, "alchemy_story_detail_table")
+            
+            alchemy_base_key = server_info.get("alchemy_story_detail_baseline", "10059300")
+            b_info = server_info.get("baseline_dbs", {}).get(alchemy_base_key, {})
+            alchemy_base_filename = b_info.get("db_path", f"master_{server_key.lower()}_{alchemy_base_key}.db")
+            alchemy_base_path = os.path.join(os.path.dirname(baseline_path), alchemy_base_filename)
+            
+            if os.path.exists(alchemy_base_path):
+                alchemy_extractor = get_extractor(alchemy_base_path)
+                obf_alchemy_table, alchemy_col_map = alchemy_extractor._find_and_deobfuscate_table(alchemy_table)
+                server_info["alchemy_story_detail_table"] = obf_alchemy_table
+                
+                alchemy_id_col = server_info.get("alchemy_story_detail_id_col")
+                if alchemy_id_col and alchemy_id_col in alchemy_col_map:
+                    server_info["alchemy_story_detail_id_col"] = alchemy_col_map[alchemy_id_col]
+                    
+                alchemy_title_col = server_info.get("alchemy_story_detail_title_col")
+                if alchemy_title_col and alchemy_title_col in alchemy_col_map:
+                    server_info["alchemy_story_detail_title_col"] = alchemy_col_map[alchemy_title_col]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:

@@ -66,19 +66,28 @@ def _load_db_config() -> dict[str, dict[str, str]]:
             flat_tables["quest_name_col"] = q.get("name_col", "")
             flat_tables["quest_wavestart_col"] = q.get("wavestart_col", "")
             flat_tables["quest_waveend_col"] = q.get("waveend_col", "")
-        for key, entry in tables.items():
-            if key in ("event_story", "birthday", "quest"):
-                continue
-            if isinstance(entry, dict) and "table" in entry:
-                flat_tables[f"{key}_table"] = entry["table"]
-                flat_tables[f"{key}_id_col"] = entry.get("id_col", "story_id")
-                flat_tables[f"{key}_title_col"] = entry.get("title_col", "title")
-                flat_tables[f"{key}_sub_title_col"] = entry.get("sub_title_col", "sub_title")
-                
         merged = {"Common": common}
         for s_key, s_info in raw_cfg["servers"].items():
             s_dict = dict(s_info)
             s_dict.update(flat_tables)
+            s_baseline_dbs = s_info.get("baseline_dbs", {})
+            for key, entry in tables.items():
+                if key in ("event_story", "birthday", "quest"):
+                    continue
+                if isinstance(entry, dict) and "table" in entry:
+                    req_base = entry.get("baseline")
+                    if req_base and req_base not in s_baseline_dbs:
+                        s_dict[f"{key}_table"] = ""
+                        s_dict[f"{key}_id_col"] = ""
+                        s_dict[f"{key}_title_col"] = ""
+                        s_dict[f"{key}_sub_title_col"] = ""
+                        s_dict[f"{key}_baseline"] = ""
+                    else:
+                        s_dict[f"{key}_table"] = entry["table"]
+                        s_dict[f"{key}_id_col"] = entry.get("id_col", "story_id")
+                        s_dict[f"{key}_title_col"] = entry.get("title_col", "title")
+                        s_dict[f"{key}_sub_title_col"] = entry.get("sub_title_col", "sub_title")
+                        s_dict[f"{key}_baseline"] = entry.get("baseline", "default")
             merged[s_key] = s_dict
         return merged
 
@@ -230,6 +239,9 @@ class StoryViewerController(QueuePollingMixin):
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'tower_story_detail_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_tower_story_detail_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if 'alchemy_story_detail_table' in db_info and remaining_ids:
+                fetched_titles.update(db_helper.fetch_alchemy_story_detail_titles_batch(db_info, remaining_ids))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'birthday_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_birthday_titles_batch(db_info, remaining_ids))

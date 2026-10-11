@@ -9,14 +9,30 @@
             "db_path": "master_jp.db",
             "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_jp.db",
             "baseline_db_path": "master_jp_10052900.db",
-            "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db"
+            "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db",
+            "baseline_dbs": {
+                "default": {
+                    "db_path": "master_jp_10052900.db",
+                    "db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db"
+                },
+                "10059300": {
+                    "db_path": "master_jp_10059300.db",
+                    "db_url": ""
+                }
+            }
         },
         "KR": {
             "version_key": "KR",
             "db_path": "master_kr.db",
             "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_kr.db",
             "baseline_db_path": "master_kr_10049000.db",
-            "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/3f64e986b647847fb3c833f03905b7e5adcfb0db/master_kr.db"
+            "baseline_db_url": "https://github.com/Expugn/priconne-database/raw/3f64e986b647847fb3c833f03905b7e5adcfb0db/master_kr.db",
+            "baseline_dbs": {
+                "default": {
+                    "db_path": "master_kr_10049000.db",
+                    "db_url": "https://github.com/Expugn/priconne-database/raw/3f64e986b647847fb3c833f03905b7e5adcfb0db/master_kr.db"
+                }
+            }
         }
     },
     "tables": {
@@ -55,6 +71,12 @@
             "id_col": "story_id",
             "title_col": "title",
             "sub_title_col": "sub_title"
+        },
+        "alchemy_story_detail": {
+            "baseline": "10059300",
+            "table": "v1_65ffb7d88e41fdf1ec6250d9508205ff1d4dd54c3bd2f2686c8fc4c827793245",
+            "id_col": "12b1086147efcc64bd3aedd19a91ad5799f098ed4317d01e02da2422a3925e43",
+            "title_col": "07fff6e2f2004bdd8af10461b7b4fabbeb38c2c2ec38261c81fcef15950c35a8"
         }
     }
 }

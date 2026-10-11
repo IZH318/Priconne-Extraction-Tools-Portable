@@ -426,3 +426,49 @@ def fetch_tower_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list
     return result_map
 
 
+def fetch_alchemy_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+    """
+    adv_id 목록을 기반으로 alchemy_story_detail 테이블에서 title을 일괄 조회합니다.
+    
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+        
+    Returns:
+        dict[str, str]: adv_id를 키로, title을 값으로 갖는 딕셔너리.
+    """
+    tbl_name = db_info.get('alchemy_story_detail_table')
+    if not tbl_name:
+        return {}
+
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not adv_ids:
+        return {}
+        
+    result_map = {}
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+            
+            chunk_size = 500
+            for i in range(0, len(adv_ids), chunk_size):
+                chunk = adv_ids[i:i + chunk_size]
+                placeholders = ', '.join(['?'] * len(chunk))
+                tbl = _validate_identifier(tbl_name)
+                col_id = _validate_identifier(db_info['alchemy_story_detail_id_col'])
+                col_title = _validate_identifier(db_info['alchemy_story_detail_title_col'])
+                
+                query = f'SELECT "{col_id}", "{col_title}" FROM "{tbl}" WHERE "{col_id}" IN ({placeholders})'
+                cursor.execute(query, chunk)
+                for row in cursor.fetchall():
+                    story_id = str(row[0]) if row[0] is not None else ''
+                    t = str(row[1]).replace('\\n', ' ').strip() if row[1] is not None else ''
+                    if t:
+                        result_map[story_id] = t
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+        
+    return result_map
+
+
+

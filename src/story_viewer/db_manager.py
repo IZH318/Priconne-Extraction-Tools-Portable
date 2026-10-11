@@ -157,8 +157,12 @@ class StoryDBManager:
             is_feature_completely_unavailable = False
             
             servers = [s for s, i in self._server_db_info.items() if isinstance(i, dict) and 'db_path' in i]
-            # Each server has 7 tables to process.
-            total_steps = max(1, len(servers) * 7)
+            # Calculate total tables across servers dynamically
+            total_steps = 0
+            for s, i in self._server_db_info.items():
+                if isinstance(i, dict) and 'db_path' in i:
+                    total_steps += 7 + (1 if i.get('alchemy_story_detail_table') else 0)
+            total_steps = max(1, total_steps)
             step_size = 90 / total_steps
             current_progress = 10
             
@@ -176,10 +180,21 @@ class StoryDBManager:
                 db_path = os.path.join(root_dir, info['db_path'])
                 baseline_path = os.path.join(src_dir, info.get('baseline_db_path', ''))
                 
-                # Baseline 확인
-                if not os.path.exists(baseline_path):
-                    missing_db_files.append(f"{tag_missing}src/{info.get('baseline_db_path', '')}")
-                    downloads_list.append((info.get('baseline_db_url', ''), baseline_path, info.get('baseline_db_path', '')))
+                # Baseline 확인 (단일 및 다중 기준점 전수 검사)
+                baseline_dbs = info.get('baseline_dbs')
+                if isinstance(baseline_dbs, dict) and baseline_dbs:
+                    for b_key, b_item in baseline_dbs.items():
+                        b_fname = b_item.get('db_path', '')
+                        b_url = b_item.get('db_url', '')
+                        b_full_path = os.path.join(src_dir, b_fname)
+                        if b_fname and not os.path.exists(b_full_path):
+                            missing_db_files.append(f"{tag_missing}src/{b_fname}")
+                            if b_url:
+                                downloads_list.append((b_url, b_full_path, b_fname))
+                else:
+                    if not os.path.exists(baseline_path):
+                        missing_db_files.append(f"{tag_missing}src/{info.get('baseline_db_path', '')}")
+                        downloads_list.append((info.get('baseline_db_url', ''), baseline_path, info.get('baseline_db_path', '')))
                     
                 # 최신 DB 확인 및 버전 비교
                 needs_latest = False
