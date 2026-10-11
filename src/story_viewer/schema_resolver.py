@@ -417,6 +417,7 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             progress_callback(server_key, "quest_table")
             progress_callback(server_key, "story_detail_table")
             progress_callback(server_key, "dear_story_detail_table")
+            progress_callback(server_key, "tower_story_detail_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -531,6 +532,26 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             dear_sub_title_col = server_info.get("dear_story_detail_sub_title_col")
             if dear_sub_title_col and dear_sub_title_col in dear_col_map:
                 server_info["dear_story_detail_sub_title_col"] = dear_col_map[dear_sub_title_col]
+
+        # 7. 루나의 탑 스토리 상세 테이블 매핑
+        if progress_callback:
+            progress_callback(server_key, "tower_story_detail_table")
+        tower_story_detail_table = server_info.get("tower_story_detail_table", "")
+        if tower_story_detail_table and not tower_story_detail_table.startswith("v1_"):
+            obf_tower_table, tower_col_map = extractor._find_and_deobfuscate_table(tower_story_detail_table)
+            server_info["tower_story_detail_table"] = obf_tower_table
+            
+            tower_id_col = server_info.get("tower_story_detail_id_col")
+            if tower_id_col and tower_id_col in tower_col_map:
+                server_info["tower_story_detail_id_col"] = tower_col_map[tower_id_col]
+
+            tower_title_col = server_info.get("tower_story_detail_title_col")
+            if tower_title_col and tower_title_col in tower_col_map:
+                server_info["tower_story_detail_title_col"] = tower_col_map[tower_title_col]
+
+            tower_sub_title_col = server_info.get("tower_story_detail_sub_title_col")
+            if tower_sub_title_col and tower_sub_title_col in tower_col_map:
+                server_info["tower_story_detail_sub_title_col"] = tower_col_map[tower_sub_title_col]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:

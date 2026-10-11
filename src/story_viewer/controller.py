@@ -177,7 +177,7 @@ class StoryViewerController(QueuePollingMixin):
             if match:
                 filename_to_adv_id[filename] = match.group(1)
         
-        # 2. 일괄 조회 (우선순위: story_detail -> dear_story_detail -> birthday -> quest)
+        # 2. 일괄 조회 (우선순위: story_detail -> dear_story_detail -> tower_story_detail -> birthday -> quest)
         fetched_titles = {}
         if filename_to_adv_id:
             adv_ids = list(filename_to_adv_id.values())
@@ -186,6 +186,9 @@ class StoryViewerController(QueuePollingMixin):
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'dear_story_detail_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_dear_story_detail_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if 'tower_story_detail_table' in db_info and remaining_ids:
+                fetched_titles.update(db_helper.fetch_tower_story_detail_titles_batch(db_info, remaining_ids))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'birthday_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_birthday_titles_batch(db_info, remaining_ids))

@@ -374,3 +374,55 @@ def fetch_dear_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[
     return result_map
 
 
+def fetch_tower_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+    """
+    adv_id 목록을 기반으로 tower_story_detail 테이블에서 title과 sub_title을 일괄 조회합니다.
+    조회된 값은 'title - sub_title' 형식으로 매핑됩니다.
+    
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+        
+    Returns:
+        dict[str, str]: adv_id를 키로, 'title - sub_title'을 값으로 갖는 딕셔너리.
+    """
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not adv_ids:
+        return {}
+        
+    result_map = {}
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+            
+            chunk_size = 500
+            for i in range(0, len(adv_ids), chunk_size):
+                chunk = adv_ids[i:i + chunk_size]
+                placeholders = ', '.join(['?'] * len(chunk))
+                tbl = _validate_identifier(db_info['tower_story_detail_table'])
+                col_id = _validate_identifier(db_info['tower_story_detail_id_col'])
+                col_title = _validate_identifier(db_info['tower_story_detail_title_col'])
+                col_sub = _validate_identifier(db_info['tower_story_detail_sub_title_col'])
+                
+                query = f'SELECT "{col_id}", "{col_title}", "{col_sub}" FROM "{tbl}" WHERE "{col_id}" IN ({placeholders})'
+                cursor.execute(query, chunk)
+                for row in cursor.fetchall():
+                    story_id = str(row[0]) if row[0] is not None else ''
+                    t = str(row[1]).replace('\\n', ' ').strip() if row[1] is not None else ''
+                    sub = str(row[2]).replace('\\n', ' ').strip() if row[2] is not None else ''
+                    
+                    if t and sub:
+                        formatted = f"{t} - {sub}"
+                    elif t:
+                        formatted = t
+                    elif sub:
+                        formatted = sub
+                    else:
+                        continue
+                    result_map[story_id] = formatted
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+        
+    return result_map
+
+

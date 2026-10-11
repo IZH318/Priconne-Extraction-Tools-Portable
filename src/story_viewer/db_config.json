@@ -28,7 +28,11 @@
         "dear_story_detail_table": "dear_story_detail",
         "dear_story_detail_id_col": "story_id",
         "dear_story_detail_title_col": "title",
-        "dear_story_detail_sub_title_col": "sub_title"
+        "dear_story_detail_sub_title_col": "sub_title",
+        "tower_story_detail_table": "tower_story_detail",
+        "tower_story_detail_id_col": "story_id",
+        "tower_story_detail_title_col": "title",
+        "tower_story_detail_sub_title_col": "sub_title"
     },
     "KR": {
         "db_path": "master_kr.db",
@@ -55,6 +59,10 @@
         "dear_story_detail_table": "dear_story_detail",
         "dear_story_detail_id_col": "story_id",
         "dear_story_detail_title_col": "title",
-        "dear_story_detail_sub_title_col": "sub_title"
+        "dear_story_detail_sub_title_col": "sub_title",
+        "tower_story_detail_table": "tower_story_detail",
+        "tower_story_detail_id_col": "story_id",
+        "tower_story_detail_title_col": "title",
+        "tower_story_detail_sub_title_col": "sub_title"
     }
 }

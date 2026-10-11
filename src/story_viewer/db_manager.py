@@ -157,8 +157,8 @@ class StoryDBManager:
             is_feature_completely_unavailable = False
             
             servers = [s for s, i in self._server_db_info.items() if isinstance(i, dict) and 'db_path' in i]
-            # Each server has 6 tables to process.
-            total_steps = max(1, len(servers) * 6)
+            # Each server has 7 tables to process.
+            total_steps = max(1, len(servers) * 7)
             step_size = 90 / total_steps
             current_progress = 10
             
