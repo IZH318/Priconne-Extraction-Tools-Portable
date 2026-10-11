@@ -416,6 +416,7 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             progress_callback(server_key, "birthday_table")
             progress_callback(server_key, "quest_table")
             progress_callback(server_key, "story_detail_table")
+            progress_callback(server_key, "dear_story_detail_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -510,6 +511,26 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             story_detail_sub_title_col = server_info.get("story_detail_sub_title_col")
             if story_detail_sub_title_col and story_detail_sub_title_col in story_detail_col_map:
                 server_info["story_detail_sub_title_col"] = story_detail_col_map[story_detail_sub_title_col]
+
+        # 6. 신뢰도 스토리 상세 테이블 매핑
+        if progress_callback:
+            progress_callback(server_key, "dear_story_detail_table")
+        dear_story_detail_table = server_info.get("dear_story_detail_table", "")
+        if dear_story_detail_table and not dear_story_detail_table.startswith("v1_"):
+            obf_dear_table, dear_col_map = extractor._find_and_deobfuscate_table(dear_story_detail_table)
+            server_info["dear_story_detail_table"] = obf_dear_table
+            
+            dear_id_col = server_info.get("dear_story_detail_id_col")
+            if dear_id_col and dear_id_col in dear_col_map:
+                server_info["dear_story_detail_id_col"] = dear_col_map[dear_id_col]
+
+            dear_title_col = server_info.get("dear_story_detail_title_col")
+            if dear_title_col and dear_title_col in dear_col_map:
+                server_info["dear_story_detail_title_col"] = dear_col_map[dear_title_col]
+
+            dear_sub_title_col = server_info.get("dear_story_detail_sub_title_col")
+            if dear_sub_title_col and dear_sub_title_col in dear_col_map:
+                server_info["dear_story_detail_sub_title_col"] = dear_col_map[dear_sub_title_col]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:
