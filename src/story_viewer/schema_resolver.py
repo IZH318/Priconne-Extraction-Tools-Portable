@@ -420,6 +420,10 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             progress_callback(server_key, "tower_story_detail_table")
             if server_info.get("alchemy_story_detail_table"):
                 progress_callback(server_key, "alchemy_story_detail_table")
+            if server_info.get("sekai_top_data_table"):
+                progress_callback(server_key, "sekai_top_data_table")
+            if server_info.get("sekai_top_story_data_table"):
+                progress_callback(server_key, "sekai_top_story_data_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -584,6 +588,42 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 alchemy_title_col = server_info.get("alchemy_story_detail_title_col")
                 if alchemy_title_col and alchemy_title_col in alchemy_col_map:
                     server_info["alchemy_story_detail_title_col"] = alchemy_col_map[alchemy_title_col]
+
+        # 9. 만우절 레이드 sekai_top_data 테이블 매핑
+        sekai_table = server_info.get("sekai_top_data_table", "")
+        if sekai_table and not sekai_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "sekai_top_data_table")
+            obf_sekai_table, sekai_col_map = extractor._find_and_deobfuscate_table(sekai_table)
+            server_info["sekai_top_data_table"] = obf_sekai_table
+
+            for col_key in [
+                "sekai_top_data_id_col",
+                "sekai_top_data_name_col",
+                "sekai_top_data_boss_mode_col",
+                "sekai_top_data_boss_time_from_col",
+                "sekai_top_data_boss_hp_from_col",
+            ]:
+                val = server_info.get(col_key)
+                if val and val in sekai_col_map:
+                    server_info[col_key] = sekai_col_map[val]
+
+        # 10. 만우절 레이드 sekai_top_story_data 테이블 매핑
+        sekai_story_table = server_info.get("sekai_top_story_data_table", "")
+        if sekai_story_table and not sekai_story_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "sekai_top_story_data_table")
+            obf_sekai_story_table, sekai_story_col_map = extractor._find_and_deobfuscate_table(sekai_story_table)
+            server_info["sekai_top_story_data_table"] = obf_sekai_story_table
+
+            for col_key in [
+                "sekai_top_story_data_id_col",
+                "sekai_top_story_data_boss_time_from_col",
+                "sekai_top_story_data_boss_time_to_col",
+            ]:
+                val = server_info.get(col_key)
+                if val and val in sekai_story_col_map:
+                    server_info[col_key] = sekai_story_col_map[val]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:

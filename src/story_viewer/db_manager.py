@@ -161,7 +161,7 @@ class StoryDBManager:
             total_steps = 0
             for s, i in self._server_db_info.items():
                 if isinstance(i, dict) and 'db_path' in i:
-                    total_steps += 7 + (1 if i.get('alchemy_story_detail_table') else 0)
+                    total_steps += 7 + (1 if i.get('alchemy_story_detail_table') else 0) + (1 if i.get('sekai_top_data_table') else 0) + (1 if i.get('sekai_top_story_data_table') else 0)
             total_steps = max(1, total_steps)
             step_size = 90 / total_steps
             current_progress = 10

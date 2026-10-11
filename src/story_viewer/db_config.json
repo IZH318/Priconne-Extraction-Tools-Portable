@@ -77,6 +77,20 @@
             "table": "v1_65ffb7d88e41fdf1ec6250d9508205ff1d4dd54c3bd2f2686c8fc4c827793245",
             "id_col": "12b1086147efcc64bd3aedd19a91ad5799f098ed4317d01e02da2422a3925e43",
             "title_col": "07fff6e2f2004bdd8af10461b7b4fabbeb38c2c2ec38261c81fcef15950c35a8"
+        },
+        "sekai_top_data": {
+            "table": "sekai_top_data",
+            "id_col": "story_id",
+            "name_col": "name",
+            "boss_mode_col": "boss_mode",
+            "boss_time_from_col": "boss_time_from",
+            "boss_hp_from_col": "boss_hp_from"
+        },
+        "sekai_top_story_data": {
+            "table": "sekai_top_story_data",
+            "id_col": "story_id",
+            "boss_time_from_col": "boss_time_from",
+            "boss_time_to_col": "boss_time_to"
         }
     }
 }

@@ -471,4 +471,139 @@ def fetch_alchemy_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: li
     return result_map
 
 
+def _format_sekai_time_range(time_from_str: str, time_to_str: str) -> str:
+    """DB의 타임스탬프 문자열('2024/04/01 9:00:00', '2024/04/01 11:59:59')을
+    '09:00~12:00' 형태로 변환합니다.
+
+    Args:
+        time_from_str: 시작 일시 문자열.
+        time_to_str: 종료 일시 문자열.
+
+    Returns:
+        str: 'HH:MM~HH:MM' 형태의 시간 구간 문자열.
+    """
+    try:
+        from datetime import datetime, timedelta
+        fmt = '%Y/%m/%d %H:%M:%S'
+        d1 = datetime.strptime(time_from_str.strip(), fmt)
+        d2 = datetime.strptime(time_to_str.strip(), fmt)
+        if d2.second == 59:
+            d2 += timedelta(seconds=1)
+        return f"{d1.strftime('%H:%M')}~{d2.strftime('%H:%M')}"
+    except Exception:
+        t1 = time_from_str.split()[-1][:5] if ' ' in time_from_str else time_from_str
+        t2 = time_to_str.split()[-1][:5] if ' ' in time_to_str else time_to_str
+        return f"{t1}~{t2}"
+
+
+def fetch_sekai_story_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+    """adv_id 목록을 기반으로 sekai_top_data 및 sekai_top_story_data 테이블에서
+    순수 DB 데이터(이벤트명, MODE, 시간대, HP 0)를 조회하여 타이틀을 일괄 생성합니다.
+
+    - sekai_top_data: 보스전 연출 (4004101~4004104, 4004109)
+      - MODE 1, MODE 2, MODE 3
+      - 4004104: MODE 1 (18:00)
+      - 4004109: HP 0
+    - sekai_top_story_data: 시간대별 토크 컷신 (4004105~4004108)
+      - 09:00~12:00, 12:00~15:00, 15:00~19:00, 19:00~22:00
+
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+
+    Returns:
+        dict[str, str]: adv_id를 키로, '이벤트명 - 부제'를 값으로 갖는 딕셔너리.
+    """
+    top_tbl_name = db_info.get('sekai_top_data_table')
+    if not top_tbl_name:
+        return {}
+
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not adv_ids:
+        return {}
+
+    result_map = {}
+    default_event_name = ""
+
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+
+            tbl_top = _validate_identifier(top_tbl_name)
+            col_id = _validate_identifier(db_info.get('sekai_top_data_id_col', 'story_id'))
+            col_name = _validate_identifier(db_info.get('sekai_top_data_name_col', 'name'))
+            col_mode = _validate_identifier(db_info.get('sekai_top_data_boss_mode_col', 'boss_mode'))
+            col_time_from = _validate_identifier(db_info.get('sekai_top_data_boss_time_from_col', 'boss_time_from'))
+            col_hp_from = _validate_identifier(db_info.get('sekai_top_data_boss_hp_from_col', 'boss_hp_from'))
+
+            # 1. sekai_top_data 일괄 조회
+            chunk_size = 500
+            for i in range(0, len(adv_ids), chunk_size):
+                chunk = adv_ids[i:i + chunk_size]
+                placeholders = ', '.join(['?'] * len(chunk))
+                query = (
+                    f'SELECT "{col_id}", "{col_name}", "{col_mode}", "{col_time_from}", "{col_hp_from}" '
+                    f'FROM "{tbl_top}" WHERE "{col_id}" IN ({placeholders})'
+                )
+                cursor.execute(query, chunk)
+                for row in cursor.fetchall():
+                    sid = str(row[0]) if row[0] is not None else ''
+                    if not sid or sid in result_map:
+                        continue
+                    name = str(row[1]).strip() if row[1] is not None else ''
+                    mode = str(row[2]).strip() if row[2] is not None else ''
+                    t_from = str(row[3]).strip() if row[3] is not None else ''
+                    hp_from = str(row[4]).strip() if row[4] is not None else ''
+
+                    if name and not default_event_name:
+                        default_event_name = name
+
+                    if hp_from == '0':
+                        sub = "HP 0"
+                    elif sid == '4004104' or (mode == '1' and '18:00' in t_from):
+                        sub = f"MODE {mode} (18:00)"
+                    elif mode:
+                        sub = f"MODE {mode}"
+                    else:
+                        sub = ""
+
+                    result_map[sid] = f"{name} - {sub}" if sub else name
+
+            # default_event_name이 아직 없다면 4004101에서 이벤트명 단독 조회
+            if not default_event_name:
+                cursor.execute(f'SELECT "{col_name}" FROM "{tbl_top}" WHERE "{col_id}" = 4004101 LIMIT 1')
+                row = cursor.fetchone()
+                if row and row[0]:
+                    default_event_name = str(row[0]).strip()
+
+            # 2. sekai_top_story_data 일괄 조회 (4004105~4004108 등 시간대 토크)
+            story_tbl_name = db_info.get('sekai_top_story_data_table')
+            remaining_ids = [aid for aid in adv_ids if aid not in result_map]
+            if story_tbl_name and remaining_ids and default_event_name:
+                tbl_story = _validate_identifier(story_tbl_name)
+                col_s_id = _validate_identifier(db_info.get('sekai_top_story_data_id_col', 'story_id'))
+                col_s_from = _validate_identifier(db_info.get('sekai_top_story_data_boss_time_from_col', 'boss_time_from'))
+                col_s_to = _validate_identifier(db_info.get('sekai_top_story_data_boss_time_to_col', 'boss_time_to'))
+
+                for i in range(0, len(remaining_ids), chunk_size):
+                    chunk = remaining_ids[i:i + chunk_size]
+                    placeholders = ', '.join(['?'] * len(chunk))
+                    query = f'SELECT "{col_s_id}", "{col_s_from}", "{col_s_to}" FROM "{tbl_story}" WHERE "{col_s_id}" IN ({placeholders})'
+                    cursor.execute(query, chunk)
+                    for row in cursor.fetchall():
+                        sid = str(row[0]) if row[0] is not None else ''
+                        if not sid or sid in result_map:
+                            continue
+                        t_from = str(row[1]).strip() if row[1] is not None else ''
+                        t_to = str(row[2]).strip() if row[2] is not None else ''
+                        time_range = _format_sekai_time_range(t_from, t_to)
+                        result_map[sid] = f"{default_event_name} - {time_range}" if time_range else default_event_name
+
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+
+    return result_map
+
+
+
 

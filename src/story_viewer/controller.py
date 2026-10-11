@@ -66,13 +66,27 @@ def _load_db_config() -> dict[str, dict[str, str]]:
             flat_tables["quest_name_col"] = q.get("name_col", "")
             flat_tables["quest_wavestart_col"] = q.get("wavestart_col", "")
             flat_tables["quest_waveend_col"] = q.get("waveend_col", "")
+        if "sekai_top_data" in tables:
+            sk = tables["sekai_top_data"]
+            flat_tables["sekai_top_data_table"] = sk.get("table", "")
+            flat_tables["sekai_top_data_id_col"] = sk.get("id_col", "story_id")
+            flat_tables["sekai_top_data_name_col"] = sk.get("name_col", "name")
+            flat_tables["sekai_top_data_boss_mode_col"] = sk.get("boss_mode_col", "boss_mode")
+            flat_tables["sekai_top_data_boss_time_from_col"] = sk.get("boss_time_from_col", "boss_time_from")
+            flat_tables["sekai_top_data_boss_hp_from_col"] = sk.get("boss_hp_from_col", "boss_hp_from")
+        if "sekai_top_story_data" in tables:
+            sks = tables["sekai_top_story_data"]
+            flat_tables["sekai_top_story_data_table"] = sks.get("table", "")
+            flat_tables["sekai_top_story_data_id_col"] = sks.get("id_col", "story_id")
+            flat_tables["sekai_top_story_data_boss_time_from_col"] = sks.get("boss_time_from_col", "boss_time_from")
+            flat_tables["sekai_top_story_data_boss_time_to_col"] = sks.get("boss_time_to_col", "boss_time_to")
         merged = {"Common": common}
         for s_key, s_info in raw_cfg["servers"].items():
             s_dict = dict(s_info)
             s_dict.update(flat_tables)
             s_baseline_dbs = s_info.get("baseline_dbs", {})
             for key, entry in tables.items():
-                if key in ("event_story", "birthday", "quest"):
+                if key in ("event_story", "birthday", "quest", "sekai_top_data", "sekai_top_story_data"):
                     continue
                 if isinstance(entry, dict) and "table" in entry:
                     req_base = entry.get("baseline")
@@ -242,6 +256,9 @@ class StoryViewerController(QueuePollingMixin):
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'alchemy_story_detail_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_alchemy_story_detail_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if 'sekai_top_data_table' in db_info and remaining_ids:
+                fetched_titles.update(db_helper.fetch_sekai_story_titles_batch(db_info, remaining_ids))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'birthday_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_birthday_titles_batch(db_info, remaining_ids))
