@@ -208,8 +208,7 @@ class StoryViewerController(QueuePollingMixin):
             pass
 
     def start_db_analysis(self) -> None:
-        """사용자가 DB 분석 시작 버튼을 눌렀을 때 호출되어 DB 체크 및 UI 활성화를 수행합니다."""
-        self.view.btn_db_analyze.config(state=tk.DISABLED)
+        """DB 체크 및 스키마 분석을 수행하고 UI를 활성화합니다."""
         self.view.update_status_bar('db_checking_msg')
         
         def _on_ready():
@@ -220,7 +219,6 @@ class StoryViewerController(QueuePollingMixin):
     def _on_db_analyzed(self) -> None:
         """DB 분석이 완료된 후 관련 UI 요소들을 활성화합니다."""
         self.db_analyzed = True
-        self.view.btn_db_analyze.config(state=tk.NORMAL)
         # DB 분석 후 요소 활성화
         self.view.display_mode_combo.config(state="readonly")
         self.view.search_button.config(state=tk.NORMAL if self.all_files else tk.DISABLED)
@@ -312,18 +310,16 @@ class StoryViewerController(QueuePollingMixin):
         self.base_search_files.clear()
         self.filter_var.set("")
         self.current_file_path = None
-        self.view.btn_db_analyze.config(state=tk.DISABLED)
         self.view.search_button.config(state=tk.DISABLED)
         self.view.btn_export.config(state=tk.DISABLED)
         self.view.display_mode_combo.config(state=tk.DISABLED)
         self.view.jp_radio.config(state=tk.DISABLED)
         self.view.kr_radio.config(state=tk.DISABLED)
         
-        self.db_analyzed = False
-        
-        self._db_manager.db_status.clear()
-        self._db_manager.db_check_done = False
-        self._db_manager.db_warning_shown = False
+        if not self.db_analyzed:
+            self._db_manager.db_status.clear()
+            self._db_manager.db_check_done = False
+            self._db_manager.db_warning_shown = False
 
     def _start_loading_task(self, paths: tuple[str, ...] | list[str] | None = None, folder_path: str | None = None) -> None:
         """스토리 데이터 파일 로딩 작업을 백그라운드 스레드로 시작합니다."""
@@ -475,8 +471,7 @@ class StoryViewerController(QueuePollingMixin):
             self.base_search_files = list(self.loaded_filenames)
             self.view.update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
             
-            # DB 분석 시작 버튼 활성화
-            self.view.btn_db_analyze.config(state=tk.NORMAL)
+            self._apply_filter()
             
             if self.db_analyzed:
                 self.view.search_button.config(state=tk.NORMAL)
@@ -486,7 +481,7 @@ class StoryViewerController(QueuePollingMixin):
                 self.view.kr_radio.config(state=tk.NORMAL)
                 self.on_server_change()
             else:
-                self._apply_filter()
+                self.start_db_analysis()
         
         if invalid_files:
             msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files))

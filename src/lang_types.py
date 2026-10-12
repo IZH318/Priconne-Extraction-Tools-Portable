@@ -326,6 +326,9 @@ class StoryViewerLangDict(TypedDict, total=False):
     status_searching: str
     title_label: str
     script_branch: str
+    script_branch_point: str
+    script_branch_dialogue: str
+    script_choice_item: str
     script_choice_title: str
     script_outline_title: str
     script_no_dialogue: str

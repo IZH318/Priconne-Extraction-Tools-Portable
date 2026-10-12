@@ -80,7 +80,8 @@ class SearchWindow(tk.Toplevel):
         self._setup_ui()
         self._load_event_list()
         self.focus_set()
-        self._center_window(500, 370)
+        self.resizable(False, False)
+        self._center_window(500, 285)
         self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:

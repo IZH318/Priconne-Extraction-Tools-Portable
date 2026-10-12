@@ -35,10 +35,6 @@ class StoryViewerView(ttk.Frame):
         self.btn_open_folder = ttk.Button(self.open_frame, text="", command=self.controller.open_folder)
         self.btn_open_folder.pack(side=tk.LEFT, expand=True, fill=tk.X, padx=(2, 5), pady=5)
 
-        self.db_group = ttk.LabelFrame(left_pane, text="")
-        self.db_group.pack(fill=tk.X, pady=(0, 5))
-        self.btn_db_analyze = ttk.Button(self.db_group, text="", command=self.controller.start_db_analysis, state=tk.DISABLED)
-        self.btn_db_analyze.pack(fill=tk.X, padx=5, pady=5)
 
         self.left_group = ttk.LabelFrame(left_pane, text="")
         self.left_group.pack(fill=tk.BOTH, expand=True)
@@ -87,10 +83,10 @@ class StoryViewerView(ttk.Frame):
         right_pane = ttk.Frame(self.paned_window)
         self.paned_window.add(right_pane, weight=right_weight)
         
-        self.detail_options_group = ttk.LabelFrame(right_pane, text="", padding=5)
+        self.detail_options_group = ttk.LabelFrame(right_pane, text="")
         self.detail_options_group.pack(fill=tk.X, pady=(0, 5))
         self.view_mode_combo = ttk.Combobox(self.detail_options_group, state="readonly")
-        self.view_mode_combo.pack(fill=tk.X, padx=5, pady=3)
+        self.view_mode_combo.pack(fill=tk.X, padx=5, pady=7)
         self.view_mode_combo.bind("<<ComboboxSelected>>", self.controller.on_view_mode_change)
         
         self.right_group = ttk.LabelFrame(right_pane, text="")
@@ -181,8 +177,6 @@ class StoryViewerView(ttk.Frame):
         self.right_group.config(text=lang_dict['detail_group_title'])
         self.search_button.config(text=lang_dict['search_button_text'])
         
-        self.db_group.config(text=lang_dict.get('db_analyze_group', 'DB Analysis'))
-        self.btn_db_analyze.config(text=lang_dict.get('btn_db_analyze', 'Start DB Analysis'))
         self.server_label.config(text=lang_dict.get('game_server_label', 'Game Server:'))
         self.jp_radio.config(text=lang_dict.get('jp_server_radio', 'JP'))
         self.kr_radio.config(text=lang_dict.get('kr_server_radio', 'KR'))
