@@ -2,6 +2,7 @@ import os
 import re
 import sqlite3
 import logging
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Any, Optional
 
 # ==============================================================================
@@ -399,6 +400,203 @@ class StoryDataExtractor:
             human_to_hash_map = {human: cand_hash for cand_hash, human in cand_to_human_map.items()}
             self._table_cache[base_table_name] = (best_table, human_to_hash_map)
             return best_table, human_to_hash_map
+
+
+def resolve_single_table_worker(args: tuple) -> tuple:
+    """단일 테이블에 대해 역난독화 매핑을 수행하는 최상위 독립 워커 함수입니다.
+    
+    Args:
+        args: (server_key, table_key, base_db_path, target_db_path, base_table_name, target_tables_with_col)
+    Returns:
+        (server_key, table_key, base_table_name, best_table, human_to_hash_map)
+    """
+    server_key, table_key, base_db_path, target_db_path, base_table_name, target_tables_with_col = args
+    if not base_table_name or base_table_name.startswith("v1_"):
+        return server_key, table_key, base_table_name, base_table_name, {}
+
+    if not os.path.exists(base_db_path) or not os.path.exists(target_db_path):
+        return server_key, table_key, base_table_name, None, {}
+
+    try:
+        with sqlite3.connect(f"file:{base_db_path}?mode=ro", uri=True) as base_conn, \
+             sqlite3.connect(f"file:{target_db_path}?mode=ro", uri=True) as target_conn:
+
+            base_col_count, base_sigs, is_small = extract_signature_samples(base_conn, base_table_name)
+            base_cur = base_conn.cursor()
+            base_cur.execute(f"PRAGMA table_info({escape_identifier(base_table_name)});")
+            orig_base_types = {r[1]: (r[2].upper().strip() if r[2] else "NONE") for r in base_cur.fetchall()}
+
+            # 허용 오차 범위 내의 후보 테이블 필터링
+            filtered_candidates = [
+                t for t, cnt in target_tables_with_col
+                if abs(cnt - base_col_count) <= DEFAULT_COLUMN_DIFF_TOLERANCE
+            ]
+
+            best_table = None
+            best_score = -1.0
+
+            if base_table_name in filtered_candidates:
+                fast_score = calculate_match_score(
+                    target_conn, base_table_name, base_col_count, base_sigs, DEFAULT_COLUMN_DIFF_TOLERANCE, is_small
+                )
+                if fast_score >= FAST_TRACK_SCORE_THRESHOLD:
+                    best_table = base_table_name
+                    best_score = fast_score
+
+            # 조기 탈출 없이 모든 후보를 전수 검사하여 최댓값 산출 (기존 로직 100% 유지)
+            if not best_table:
+                for cand in filtered_candidates:
+                    score = calculate_match_score(
+                        target_conn, cand, base_col_count, base_sigs, DEFAULT_COLUMN_DIFF_TOLERANCE, is_small
+                    )
+                    if score >= TABLE_MATCH_RATIO and score > best_score:
+                        best_score = score
+                        best_table = cand
+
+            if not best_table:
+                return server_key, table_key, base_table_name, None, {}
+
+            _, cand_to_human_map = resolve_column_mapping(
+                ref_conn=base_conn,
+                ref_tbl=base_table_name,
+                cand_conn=target_conn,
+                cand_tbl=best_table,
+                original_base_types=orig_base_types
+            )
+
+            human_to_hash_map = {human: cand_hash for cand_hash, human in cand_to_human_map.items()}
+            return server_key, table_key, base_table_name, best_table, human_to_hash_map
+
+    except Exception as e:
+        logging.error(f"Worker failed for {server_key}.{table_key} ({base_table_name}): {e}")
+        return server_key, table_key, base_table_name, None, {}
+
+
+def resolve_all_servers_parallel(
+    server_db_info: dict, 
+    root_dir: str, 
+    src_dir: str, 
+    progress_callback: Optional[callable] = None
+) -> None:
+    """모든 서버의 DB 설정(server_db_info)을 멀티프로세스 병렬 풀을 활용하여 고속으로 역난독화합니다.
+
+    Args:
+        server_db_info: 서버별 설정 딕셔너리 (JP, KR 등). 제자리(in-place)에서 수정됩니다.
+        root_dir: 프로젝트 루트 경로.
+        src_dir: src 폴더 경로.
+        progress_callback: 각 테이블 분석 완료 시 (server_key, table_key)를 인자로 호출할 콜백 함수.
+    """
+    all_tasks = []
+    
+    for server_key, info in server_db_info.items():
+        if not isinstance(info, dict) or 'db_path' not in info:
+            continue
+            
+        event_list_table = info.get("event_list_table", "")
+        # 이미 난독화 해시로 시작한다면 완료된 것으로 간주
+        if event_list_table.startswith("v1_"):
+            continue
+
+        db_path = os.path.join(root_dir, info['db_path'])
+        baseline_path = os.path.join(src_dir, info.get('baseline_db_path', ''))
+        
+        if not os.path.exists(baseline_path) or not os.path.exists(db_path):
+            continue
+
+        # 타겟 DB의 모든 테이블 및 컬럼 수 1회 일괄 인덱싱 (PRAGMA 중복 호출 방지)
+        target_tables_with_col = []
+        try:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+                all_tables = [r[0] for r in cur.fetchall()]
+                for t in all_tables:
+                    cur.execute(f"PRAGMA table_info({escape_identifier(t)});")
+                    target_tables_with_col.append((t, len(cur.fetchall())))
+        except Exception as e:
+            logging.error(f"Failed to inspect tables in {db_path}: {e}")
+            continue
+
+        # 각 테이블 정의 태스크 등록
+        table_keys = [
+            ("event_list_table", info.get("event_list_table", ""), baseline_path),
+            ("event_details_table", info.get("event_details_table", ""), baseline_path),
+            ("birthday_table", info.get("birthday_table", ""), baseline_path),
+            ("quest_table", info.get("quest_table", ""), baseline_path),
+            ("story_detail_table", info.get("story_detail_table", ""), baseline_path),
+            ("dear_story_detail_table", info.get("dear_story_detail_table", ""), baseline_path),
+            ("tower_story_detail_table", info.get("tower_story_detail_table", ""), baseline_path),
+        ]
+        
+        # 알케스 연금당 숏드라마 스토리 상세 테이블
+        alchemy_table = info.get("alchemy_story_detail_table", "")
+        if alchemy_table:
+            alchemy_base_key = info.get("alchemy_story_detail_baseline", "10059300")
+            b_info = info.get("baseline_dbs", {}).get(alchemy_base_key, {})
+            alchemy_base_filename = b_info.get("db_path", f"master_{server_key.lower()}_{alchemy_base_key}.db")
+            alchemy_base_path = os.path.join(src_dir, alchemy_base_filename)
+            table_keys.append(("alchemy_story_detail_table", alchemy_table, alchemy_base_path))
+
+        # 만우절 레이드 sekai 테이블들
+        if info.get("sekai_top_data_table"):
+            table_keys.append(("sekai_top_data_table", info.get("sekai_top_data_table", ""), baseline_path))
+        if info.get("sekai_top_story_data_table"):
+            table_keys.append(("sekai_top_story_data_table", info.get("sekai_top_story_data_table", ""), baseline_path))
+
+        for t_key, tbl_name, b_path in table_keys:
+            if tbl_name and not tbl_name.startswith("v1_"):
+                all_tasks.append((server_key, t_key, b_path, db_path, tbl_name, target_tables_with_col))
+
+    if not all_tasks:
+        return
+
+    # 컬럼 매핑 관계 정의
+    COLUMN_MAPPINGS = {
+        "event_list_table": ["event_name_col_list", "event_group_id_col_list"],
+        "event_details_table": ["event_info_col_details", "event_id_col_details", "event_group_id_col_details"],
+        "birthday_table": ["birthday_name_col", "birthday_adv_id_col"],
+        "quest_table": ["quest_name_col", "quest_wavestart_col", "quest_waveend_col"],
+        "story_detail_table": ["story_detail_id_col", "story_detail_title_col", "story_detail_sub_title_col"],
+        "dear_story_detail_table": ["dear_story_detail_id_col", "dear_story_detail_title_col", "dear_story_detail_sub_title_col"],
+        "tower_story_detail_table": ["tower_story_detail_id_col", "tower_story_detail_title_col", "tower_story_detail_sub_title_col"],
+        "alchemy_story_detail_table": ["alchemy_story_detail_id_col", "alchemy_story_detail_title_col"],
+        "sekai_top_data_table": [
+            "sekai_top_data_id_col", "sekai_top_data_name_col", "sekai_top_data_boss_mode_col",
+            "sekai_top_data_boss_time_from_col", "sekai_top_data_boss_hp_from_col"
+        ],
+        "sekai_top_story_data_table": [
+            "sekai_top_story_data_id_col", "sekai_top_story_data_boss_time_from_col", "sekai_top_story_data_boss_time_to_col"
+        ]
+    }
+
+    try:
+        max_workers = min(len(all_tasks), os.cpu_count() or 4)
+        with ProcessPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(resolve_single_table_worker, task) for task in all_tasks]
+            for future in as_completed(futures):
+                s_key, t_key, base_tbl, best_tbl, col_map = future.result()
+                if progress_callback:
+                    progress_callback(s_key, t_key)
+                
+                if best_tbl and s_key in server_db_info:
+                    s_info = server_db_info[s_key]
+                    s_info[t_key] = best_tbl
+                    
+                    target_col_keys = COLUMN_MAPPINGS.get(t_key, [])
+                    for col_k in target_col_keys:
+                        orig_col_val = s_info.get(col_k)
+                        if orig_col_val and orig_col_val in col_map:
+                            s_info[col_k] = col_map[orig_col_val]
+                            
+        logging.info("Successfully executed parallel schema resolution across all servers.")
+    except Exception as e:
+        logging.warning(f"ProcessPoolExecutor parallel resolution failed ({e}), falling back to sequential: {e}")
+        for server_key, info in server_db_info.items():
+            if isinstance(info, dict) and 'db_path' in info:
+                db_path = os.path.join(root_dir, info['db_path'])
+                baseline_path = os.path.join(src_dir, info.get('baseline_db_path', ''))
+                if os.path.exists(baseline_path) and os.path.exists(db_path):
+                    resolve_server_config(baseline_path, db_path, info, progress_callback=progress_callback)
 
 
 def resolve_server_config(baseline_path: str, latest_path: str, server_info: dict, progress_callback: Optional[callable] = None) -> None:

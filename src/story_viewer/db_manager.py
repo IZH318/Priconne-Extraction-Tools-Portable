@@ -94,7 +94,7 @@ class StoryDBManager:
         top.title(lang_dict.get('db_checking_title', 'DB Analysis'))
         
         top.update_idletasks()
-        w, h = 300, 100
+        w, h = 340, 100
         x = (top.winfo_screenwidth() // 2) - (w // 2)
         y = (top.winfo_screenheight() // 2) - (h // 2)
         top.geometry(f"{w}x{h}+{x}+{y}")
@@ -169,7 +169,7 @@ class StoryDBManager:
             def on_table_progress(server_key: str, table_key: str) -> None:
                 nonlocal current_progress
                 current_progress += step_size
-                fmt_str = lang_dict.get('db_parsing_table', 'Parsing {server} schemas: {table}...')
+                fmt_str = lang_dict.get('db_parsing_table', '{server} schema resolved: {table}')
                 msg = fmt_str.format(server=server_key, table=table_key)
                 top.after(0, lambda p=current_progress, m=msg: (pb.configure(value=p), lbl.configure(text=m)))
             
@@ -213,19 +213,17 @@ class StoryDBManager:
                 if needs_latest:
                     downloads_list.append((info.get('db_url', ''), db_path, info['db_path']))
                 
-                # 다운로드 중이 아니더라도, 취소 시 사용 가능한 DB(없으면 baseline)로 리졸버를 실행하여 기능을 쓸 수 있게 보장
-                has_fallback = False
-                if os.path.exists(baseline_path):
-                    fallback_db = db_path if os.path.exists(db_path) else baseline_path
-                    resolve_server_config(baseline_path, fallback_db, info, progress_callback=on_table_progress)
-                    has_fallback = True
-                    
+                # 다운로드 중이 아니더라도, 취소 시 사용 가능한 DB(없으면 baseline)로 기능 사용 가능 여부 확인
+                has_fallback = os.path.exists(baseline_path)
                 self.db_status[server] = os.path.exists(db_path)
                     
                 if not has_fallback:
                     is_feature_completely_unavailable = True
 
-                top.after(0, lambda p=current_progress: pb.configure(value=p))
+            # 모든 서버의 파일 상태 및 버전 확인 완료 후, 멀티프로세스 병렬로 스키마 일괄 역난독화 분석 실행
+            from .schema_resolver import resolve_all_servers_parallel
+            resolve_all_servers_parallel(self._server_db_info, root_dir, src_dir, progress_callback=on_table_progress)
+            top.after(0, lambda: pb.configure(value=100))
 
             self._task_queue.put(ActionEvent(action=lambda: self._on_check_complete(top, downloads_list, remote_version_data, local_version_path, missing_db_files, on_ready, lang_dict, is_feature_completely_unavailable)))
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import sys
+import multiprocessing
 import logging
 import tkinter as tk
 from tkinter import ttk
@@ -202,6 +203,7 @@ class MainLauncher(TkinterDnD.Tk):
         self.destroy()
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     app = MainLauncher()
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()
