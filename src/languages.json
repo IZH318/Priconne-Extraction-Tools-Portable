@@ -709,7 +709,9 @@
             "log_reason_empty": "파일 내용이 비어있거나 딕셔너리 형식이 아닙니다.",
             "log_reason_not_storydata": "스토리 데이터 파일이 아닌 것 같습니다 ('0' 키 또는 title/outline 누락).",
             "log_reason_json_error": "JSON 형식 오류: {e}",
-            "log_reason_os_error": "파일 읽기/기타 오류: {e}"
+            "log_reason_os_error": "파일 읽기/기타 오류: {e}",
+            "script_branch_leads_to": "[Scene {scene}] (으)로 이어짐",
+            "script_branch_end": "[스토리 종료]"
         },
         "en": {
             "window_title": "storydata Viewer",
@@ -872,7 +874,9 @@
             "log_reason_empty": "File content is empty or not in dictionary format.",
             "log_reason_not_storydata": "Does not seem to be a storydata file (missing '0' key or title/outline).",
             "log_reason_json_error": "JSON format error: {e}",
-            "log_reason_os_error": "File read/other error: {e}"
+            "log_reason_os_error": "File read/other error: {e}",
+            "script_branch_leads_to": "Leads to [Scene {scene}]",
+            "script_branch_end": "[End of Story]"
         },
         "ja": {
             "window_title": "storydata Viewer",
@@ -1035,7 +1039,9 @@
             "log_reason_empty": "ファイルの内容が空であるか、辞書形式ではありません。",
             "log_reason_not_storydata": "ストーリーデータファイルではないようです（'0'キーまたはtitle/outlineがありません）。",
             "log_reason_json_error": "JSON形式エラー: {e}",
-            "log_reason_os_error": "ファイル読み込み/その他のエラー: {e}"
+            "log_reason_os_error": "ファイル読み込み/その他のエラー: {e}",
+            "script_branch_leads_to": "[Scene {scene}] へ続く",
+            "script_branch_end": "[ストーリー終了]"
         }
     },
     "unity_converter": {

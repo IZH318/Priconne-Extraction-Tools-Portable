@@ -206,6 +206,8 @@ class StoryFormatter:
         choice_item_label = lang_dict.get('script_choice_item', '선택') if lang_dict else '선택'
         outline_title = lang_dict.get('script_outline_title', '줄거리') if lang_dict else '줄거리'
         no_dialogue_msg = lang_dict.get('script_no_dialogue', '대사 데이터가 없는 스토리입니다') if lang_dict else '대사 데이터가 없는 스토리입니다'
+        branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', '[Scene {scene}] (으)로 이어짐') if lang_dict else '[Scene {scene}] (으)로 이어짐'
+        branch_end_label = lang_dict.get('script_branch_end', '[스토리 종료]') if lang_dict else '[스토리 종료]'
 
         # 1. 씬 tag -> 씬 키 매핑
         tag_to_scene: dict[str, str] = {}
@@ -224,6 +226,11 @@ class StoryFormatter:
                         t = str(item['tag'] or '').strip()
                         if t:
                             tag_to_choice_info[t] = (k, idx, str(item.get('text', '')).strip())
+
+        branch_scenes_set = {
+            k for k, s in data.items()
+            if isinstance(s, dict) and str(s.get('tag', '') or '').strip() in tag_to_choice_info
+        }
 
         # 3. 다중 선택지 합류 씬 계산 (multi_choice_merge)
         multi_choice_merge: dict[str, str] = {}
@@ -253,12 +260,65 @@ class StoryFormatter:
                 if branch_scenes:
                     max_bs = max(branch_scenes)
                     cand_merge = str(max_bs + 1)
-                    if cand_merge in data:
+                    cand_scene = data.get(cand_merge)
+                    has_cand_content = isinstance(cand_scene, dict) and (
+                        'print' in cand_scene or 'choice' in cand_scene or 'place' in cand_scene or 'situation' in cand_scene
+                    )
+                    if cand_merge in data and has_cand_content:
                         multi_choice_merge[key] = cand_merge
 
         merge_target_scenes: set[str] = set(multi_choice_merge.values())
 
-        # 4. 상단 타이틀 및 줄거리 (Scene 0)
+        # 4. 분기 목적지 사전 계산 (단일/다중 분기 복귀 씬 수집)
+        branch_destinations: dict[str, str | None] = {}
+        for b_key in sorted(branch_scenes_set, key=lambda x: int(x) if x.isdigit() else float('inf')):
+            b_scene = data.get(b_key, {})
+            if not isinstance(b_scene, dict):
+                continue
+
+            has_own_choice = bool(b_scene.get('choice') and isinstance(b_scene.get('choice'), list) and len(b_scene.get('choice')) > 0)
+            if has_own_choice:
+                branch_destinations[b_key] = None
+                continue
+
+            b_dest = None
+            g_tag = str(b_scene.get('goto', '') or '').strip()
+            if g_tag and g_tag in tag_to_scene:
+                t_sc = tag_to_scene[g_tag]
+                t_data = data.get(t_sc, {})
+                if isinstance(t_data, dict) and (
+                    'print' in t_data or 'choice' in t_data or 'place' in t_data or 'situation' in t_data
+                ):
+                    b_dest = t_sc
+
+            b_tag = str(b_scene.get('tag', '') or '').strip()
+            if not b_dest and b_tag in tag_to_choice_info:
+                from_sc, _, _ = tag_to_choice_info[b_tag]
+                m_sc = multi_choice_merge.get(from_sc)
+                if m_sc and m_sc in data:
+                    m_data = data.get(m_sc, {})
+                    if isinstance(m_data, dict) and (
+                        'print' in m_data or 'choice' in m_data or 'place' in m_data or 'situation' in m_data
+                    ):
+                        b_dest = m_sc
+
+            if not b_dest:
+                b_idx = scene_keys.index(b_key) if b_key in scene_keys else -1
+                if b_idx >= 0:
+                    for next_k in scene_keys[b_idx + 1:]:
+                        next_s = data.get(next_k, {})
+                        if isinstance(next_s, dict) and (
+                            'print' in next_s or 'choice' in next_s or 'place' in next_s or 'situation' in next_s
+                        ):
+                            if next_k not in branch_scenes_set:
+                                b_dest = next_k
+                                break
+
+            branch_destinations[b_key] = b_dest
+            if b_dest and b_dest not in branch_scenes_set:
+                merge_target_scenes.add(b_dest)
+
+        # 5. 상단 타이틀 및 줄거리 (Scene 0)
         scene_0 = data.get('0', {})
         title = ""
         outline = ""
@@ -280,9 +340,13 @@ class StoryFormatter:
         has_dialogue = False
         last_place = None
 
-        for key in scene_keys:
+        for i, key in enumerate(scene_keys):
             scene = data[key]
             if not isinstance(scene, dict):
+                continue
+
+            has_scene_content = ('print' in scene or 'choice' in scene or 'place' in scene or 'situation' in scene)
+            if key != '0' and not has_scene_content:
                 continue
 
             # 합류 씬 헤더
@@ -382,11 +446,23 @@ class StoryFormatter:
                     if not is_branch_scene:
                         content_list.append(("\n", None))
 
-            # 분기 씬 박스 마감 및 진행 방향 화살표
+            # 분기 씬 박스 마감 (시안 B: 목적지 씬 명시 1줄 마감)
             if is_branch_scene:
-                content_list.append(("└─┬" + "─" * 34 + "\n", 'script_divider'))
-                content_list.append(("　　│\n", 'script_divider'))
-                content_list.append(("　　▼\n", 'script_divider'))
+                has_own_choice = bool(scene.get('choice') and isinstance(scene.get('choice'), list) and len(scene.get('choice')) > 0)
+                if has_own_choice:
+                    content_list.append(("└─" + "─" * 35 + "\n\n", 'script_divider'))
+                else:
+                    dest_scene = branch_destinations.get(key)
+                    if dest_scene:
+                        label = branch_leads_to_fmt.format(scene=dest_scene)
+                    else:
+                        label = branch_end_label
+
+                    line_prefix = "└───▶ "
+                    pad = max(4, 38 - len(line_prefix + label))
+                    content_list.append((line_prefix, 'script_divider'))
+                    content_list.append((label, 'script_choice_tag'))
+                    content_list.append((" " + "─" * pad + "\n\n", 'script_divider'))
 
         if not has_dialogue and not (title or outline):
             content_list.append((f"({no_dialogue_msg})\n", 'script_narration'))
