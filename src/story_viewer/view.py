@@ -75,10 +75,28 @@ class StoryViewerView(ttk.Frame):
         
         list_scrollbar = ttk.Scrollbar(self.left_group, orient=tk.VERTICAL)
         list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=(0, 5))
-        self.file_listbox = tk.Listbox(self.left_group, selectmode=tk.SINGLE, yscrollcommand=list_scrollbar.set)
+        self.file_listbox = tk.Listbox(self.left_group, selectmode=tk.EXTENDED, yscrollcommand=list_scrollbar.set)
         self.file_listbox.pack(fill=tk.BOTH, expand=True, padx=(5, 0), pady=(0, 5))
         list_scrollbar.config(command=self.file_listbox.yview)
         self.file_listbox.bind("<<ListboxSelect>>", self.controller.on_file_select)
+
+        # 키보드 방향키 이동 시 실시간 선택/갱신 지원
+        def _on_nav_key_release(event=None):
+            self.file_listbox.after_idle(self.controller.on_file_select)
+
+        for _nav_key in ("<KeyRelease-Up>", "<KeyRelease-Down>", "<KeyRelease-Prior>", "<KeyRelease-Next>", "<KeyRelease-Home>", "<KeyRelease-End>"):
+            self.file_listbox.bind(_nav_key, _on_nav_key_release)
+
+        # 파일 목록 우클릭 컨텍스트 메뉴 설정
+        self.listbox_menu = tk.Menu(self, tearoff=0)
+        self.listbox_menu.add_command(label="", command=self.controller.remove_selected_files)
+        self.listbox_menu.add_command(label="", command=self.controller.remove_all_files)
+        self.listbox_menu.add_separator()
+        self.listbox_menu.add_command(label="", command=self.controller.open_single_export_window)
+
+        self.file_listbox.bind("<Button-3>", self._show_listbox_menu)
+        self.file_listbox.bind("<Button-2>", self._show_listbox_menu)
+        self.file_listbox.bind("<Delete>", self.controller.remove_selected_files)
         
         right_pane = ttk.Frame(self.paned_window)
         self.paned_window.add(right_pane, weight=right_weight)
@@ -184,8 +202,11 @@ class StoryViewerView(ttk.Frame):
         self.server_label.config(text=lang_dict.get('game_server_label', 'Game Server:'))
         self.jp_radio.config(text=lang_dict.get('jp_server_radio', 'JP'))
         self.kr_radio.config(text=lang_dict.get('kr_server_radio', 'KR'))
-        
-        self.controller.update_file_list(self.controller.current_filenames_in_list)
+
+        # 우클릭 컨텍스트 메뉴 다국어 갱신
+        self.listbox_menu.entryconfig(0, label=lang_dict.get('remove_selected', '선택 항목 제거'))
+        self.listbox_menu.entryconfig(1, label=lang_dict.get('remove_all', '전체 항목 제거'))
+        self.listbox_menu.entryconfig(3, label=lang_dict.get('export_this_item', '이 항목 내보내기'))
 
     def update_status_bar(self, key, **kwargs) -> None:
         """상태바 메시지를 다국어 키 기반으로 업데이트합니다."""
@@ -219,3 +240,43 @@ class StoryViewerView(ttk.Frame):
         """
         self.search_button.config(state=state)
         self.btn_export.config(state=state)
+
+    def _show_listbox_menu(self, event: Any) -> None:
+        """파일 목록 우클릭 컨텍스트 메뉴를 표시합니다.
+
+        Args:
+            event: 마우스 이벤트 객체.
+        """
+        if self.controller.is_loading:
+            return
+
+        # 마우스 커서 위치의 항목이 선택되어 있지 않으면 해당 항목 단일 선택
+        index = self.file_listbox.nearest(event.y)
+        if index >= 0:
+            cur_sel = self.file_listbox.curselection()
+            if index not in cur_sel:
+                self.file_listbox.selection_clear(0, tk.END)
+                self.file_listbox.selection_set(index)
+                self.file_listbox.activate(index)
+                self.controller.on_file_select()
+
+        has_selection = bool(self.file_listbox.curselection())
+        has_items = self.file_listbox.size() > 0
+        d = self.controller.get_lang_dict()
+
+        self.listbox_menu.entryconfig(
+            0,
+            label=d.get('remove_selected', '선택 항목 제거'),
+            state=tk.NORMAL if has_selection else tk.DISABLED
+        )
+        self.listbox_menu.entryconfig(
+            1,
+            label=d.get('remove_all', '전체 항목 제거'),
+            state=tk.NORMAL if has_items else tk.DISABLED
+        )
+        self.listbox_menu.entryconfig(
+            3,
+            label=d.get('export_this_item', '이 항목 내보내기'),
+            state=tk.NORMAL if has_selection else tk.DISABLED
+        )
+        self.listbox_menu.post(event.x_root, event.y_root)

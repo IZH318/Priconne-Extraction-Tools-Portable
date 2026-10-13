@@ -183,15 +183,15 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
         if b_dest and b_dest not in branch_scenes_set:
             merge_target_scenes.add(b_dest)
 
-    # 5. 다국어 라벨 로드
-    outline_title = lang_dict.get('story_viewer_outline_title', '줄거리')
-    branch_point_label = lang_dict.get('story_viewer_branch_point_label', '분기점')
-    choice_item_label = lang_dict.get('story_viewer_choice_item_label', '선택')
-    branch_dialogue_label = lang_dict.get('story_viewer_branch_dialogue_label', '분기 대사')
-    branch_leads_to_fmt = lang_dict.get('story_viewer_branch_leads_to', '[Scene {scene}] (으)로 이어짐')
-    branch_end_label = lang_dict.get('story_viewer_branch_end_label', '분기 종료')
-    place_prefix = lang_dict.get('story_viewer_place_prefix', '장소')
-    no_dialogue_msg = lang_dict.get('story_viewer_no_dialogue', '대사가 없습니다.')
+    # 5. 다국어 라벨 로드 (정규 script_* 키 매핑)
+    outline_title = lang_dict.get('script_outline_title', '줄거리')
+    branch_point_label = lang_dict.get('script_branch_point', '분기점')
+    choice_item_label = lang_dict.get('script_choice_item', '선택')
+    branch_dialogue_label = lang_dict.get('script_branch_dialogue', '분기 대사')
+    branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', '[Scene {scene}] (으)로 이어짐')
+    branch_end_label = lang_dict.get('script_branch_end', '[스토리 종료]')
+    place_prefix = lang_dict.get('script_place_prefix', '장소')
+    no_dialogue_msg = lang_dict.get('script_no_dialogue', '대사 데이터가 없는 스토리입니다')
 
     md_out: list[str] = []
     scene_0 = data.get('0', {})
@@ -405,7 +405,9 @@ class StoryExportHandler:
         filenames_to_export: list[str] = []
         if selected_options.get('story_data'):
             story_data_scope = selected_options.get('story_data_scope', 'current_list')
-            if story_data_scope == 'current_list':
+            if story_data_scope == 'single_file':
+                filenames_to_export = list(selected_options.get('target_filenames', []))
+            elif story_data_scope == 'current_list':
                 filenames_to_export = self._get_current_filenames()
             elif story_data_scope == 'all_loaded':
                 filenames_to_export = self._get_loaded_filenames()

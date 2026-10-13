@@ -270,6 +270,15 @@ class StoryViewerLangDict(TypedDict, total=False):
     export_view_mode_script: str
     export_view_mode_simple: str
     export_window_title: str
+    export_this_item: str
+    single_export_target_frame: str
+    single_export_window_title_fmt: str
+    single_export_target_title: str
+    single_export_target_file: str
+    remove_selected: str
+    remove_all: str
+    removed_selected_files: str
+    removed_all_files: str
     file_open: str
     file_options_group: str
     filename_label: str

@@ -14,7 +14,7 @@ from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
 from src.utils.about_dialog import show_about_dialog
 from .windows_search import SearchWindow
-from .windows_export import ExportWindow
+from .windows_export import ExportWindow, SingleExportWindow
 from .logic import StoryDataLoader, StoryFormatter
 from . import db_helper
 from src.queue_events import ActionEvent
@@ -207,7 +207,6 @@ class StoryViewerController(QueuePollingMixin):
         """
         try:
             self.view.update_ui_text()
-            self.on_display_mode_change(force_update=True)
             self.on_view_mode_change(force_update=True)
         except tk.TclError:
             pass
@@ -653,6 +652,106 @@ class StoryViewerController(QueuePollingMixin):
             db_status=self._db_manager.db_status,
             server_db_info=self.server_db_info,
         )
+
+    def open_single_export_window(self) -> None:
+        """선택한 단일 스토리 파일의 전용 내보내기 창을 엽니다."""
+        lang_dict = self.get_lang_dict()
+        if self.is_loading:
+            messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
+            return
+        if not self.view.file_listbox.curselection():
+            return
+
+        try:
+            display_name = self.view.file_listbox.get(self.view.file_listbox.curselection()[0])
+        except tk.TclError:
+            return
+
+        filename = self.display_name_to_filename.get(display_name)
+        if not filename or filename not in self.all_files:
+            return
+
+        # 타이틀 및 ID 추출
+        match = re.match(r'^storydata_(\d+)\.json$', filename)
+        adv_id = match.group(1) if match else ""
+        raw_title = self.file_titles.get(filename, "")
+
+        if adv_id and raw_title:
+            item_display_title = f"[{adv_id}] {raw_title}"
+        elif raw_title:
+            item_display_title = raw_title
+        elif adv_id:
+            item_display_title = f"storydata_{adv_id}"
+        else:
+            item_display_title = filename
+
+        SingleExportWindow(
+            master=self.master,
+            target_filename=filename,
+            item_display_title=item_display_title,
+            get_lang_dict=self.get_lang_dict,
+            export_func=self.export_master_thread,
+            update_status_bar=self.view.update_status_bar,
+            default_view_mode=self.view_mode_var.get(),
+            default_naming_rule='original',
+        )
+
+    def remove_selected_files(self, event: Any = None) -> None:
+        """선택된 파일(들)을 파일 목록에서 제거합니다."""
+        if self.is_loading:
+            return
+        selected_indices = self.view.file_listbox.curselection()
+        if not selected_indices:
+            return
+
+        to_remove = set()
+        for idx in selected_indices:
+            try:
+                display_name = self.view.file_listbox.get(idx)
+                if fn := self.display_name_to_filename.get(display_name):
+                    to_remove.add(fn)
+            except tk.TclError:
+                continue
+
+        if not to_remove:
+            return
+
+        self.current_filenames_in_list = [f for f in self.current_filenames_in_list if f not in to_remove]
+        self.loaded_filenames = [f for f in self.loaded_filenames if f not in to_remove]
+        for fn in to_remove:
+            self.all_files.pop(fn, None)
+
+        if self.current_filenames_in_list:
+            self.update_file_list(self.current_filenames_in_list)
+        else:
+            self._populate_generation += 1
+            self.display_name_to_filename.clear()
+            self.current_file_path = None
+            self.view.file_listbox.delete(0, tk.END)
+            self.view.update_story_text([])
+            self.view.btn_export.config(state=tk.DISABLED)
+            self.view.btn_copy.config(state=tk.DISABLED)
+            self.view.update_status_bar('status_bar_ready')
+
+    def remove_all_files(self, event: Any = None) -> None:
+        """모든 파일을 파일 목록에서 제거합니다."""
+        if self.is_loading:
+            return
+        if not self.current_filenames_in_list and not self.all_files:
+            return
+
+        self._populate_generation += 1
+        self.all_files.clear()
+        self.loaded_filenames.clear()
+        self.current_filenames_in_list.clear()
+        self.display_name_to_filename.clear()
+        self.current_file_path = None
+
+        self.view.file_listbox.delete(0, tk.END)
+        self.view.update_story_text([])
+        self.view.btn_export.config(state=tk.DISABLED)
+        self.view.btn_copy.config(state=tk.DISABLED)
+        self.view.update_status_bar('status_bar_ready')
 
     def update_file_list(self, filenames: list[str]) -> None:
         """파일 목록 뷰를 업데이트합니다."""
