@@ -7,37 +7,110 @@ from typing import Any, Callable
 
 from src.utils.tooltip import ToolTip
 
-class ExportWindow(tk.Toplevel):
-    """데이터 추출 옵션을 설정하는 대화상자 클래스입니다.
 
-    Note:
-        Controller와의 순환 참조를 방지하기 위해, Controller 전체를 참조하지 않고
-        필요한 콜백과 데이터 접근자만 개별 인자로 주입받습니다.
-    """
+class ExportProgressDialog(tk.Toplevel):
+    """데이터 내보내기 진행 상황을 실시간으로 표시하고 취소할 수 있는 진행 팝업 대화상자입니다."""
 
     def __init__(
         self,
         master: tk.Tk | tk.Toplevel,
         get_lang_dict: Callable[[], dict[str, str]],
-        export_func: Callable[[dict[str, Any], str], None],
+        on_cancel: Callable[[], None] | None = None,
+    ) -> None:
+        super().__init__(master)
+        self.withdraw()
+        self._master = master
+        self._get_lang_dict = get_lang_dict
+        self._on_cancel = on_cancel
+        self.is_cancelled = False
+
+        lang_dict = self._get_lang_dict()
+        self.title(lang_dict.get('export_progress_title', '데이터 추출 진행 중'))
+        self.geometry("380x150")
+        self.resizable(False, False)
+        self.transient(master)
+        self.grab_set()
+
+        self._center_window(380, 150)
+
+        main_frame = ttk.Frame(self, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.lbl_status = ttk.Label(
+            main_frame,
+            text=lang_dict.get('status_bar_export_prep', '내보내기 준비 중...'),
+            anchor="center"
+        )
+        self.lbl_status.pack(fill=tk.X, pady=(0, 10))
+
+        self.pb = ttk.Progressbar(main_frame, mode='determinate', maximum=100)
+        self.pb.pack(fill=tk.X, padx=10, pady=(0, 15))
+        self.pb['value'] = 0
+
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X)
+
+        self.btn_cancel = ttk.Button(
+            btn_frame,
+            text=lang_dict.get('export_progress_cancel', '취소'),
+            command=self._cancel_clicked
+        )
+        self.btn_cancel.pack(anchor="center")
+
+        self.protocol("WM_DELETE_WINDOW", self._cancel_clicked)
+        self.deiconify()
+
+    def _center_window(self, width: int, height: int) -> None:
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        x = (sw - width) // 2
+        y = (sh - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _cancel_clicked(self) -> None:
+        self.is_cancelled = True
+        self.btn_cancel.config(state=tk.DISABLED)
+        if self._on_cancel:
+            self._on_cancel()
+
+    def update_progress(self, current: int, total: int, type_name: str) -> None:
+        try:
+            percent = (current / total * 100) if total > 0 else 0
+            self.pb['value'] = percent
+            lang_dict = self._get_lang_dict()
+            status_fmt = lang_dict.get('export_progress_status', '[{type_name}] 추출 중... ({current} / {total})')
+            self.lbl_status.config(text=status_fmt.format(type_name=type_name, current=current, total=total))
+        except tk.TclError:
+            pass
+
+    def close(self) -> None:
+        try:
+            self.grab_release()
+            self.destroy()
+        except tk.TclError:
+            pass
+
+
+_SCOPE_KEYS = ['current_list', 'all_loaded']
+_FORMAT_KEYS = ['txt', 'md']
+_VIEW_MODE_KEYS = ['script', 'simple', 'detailed']
+_NAMING_KEYS = ['original', 'title', 'id_title']
+
+
+class ExportWindow(tk.Toplevel):
+    """데이터 추출 옵션을 설정하는 대화상자 클래스입니다."""
+
+    def __init__(
+        self,
+        master: tk.Tk | tk.Toplevel,
+        get_lang_dict: Callable[[], dict[str, str]],
+        export_func: Callable[..., None],
         update_status_bar: Callable[..., None],
         all_files_dict: dict[str, str],
         search_data: dict[str, Any],
         db_status: dict[str, bool],
         server_db_info: dict[str, Any],
     ) -> None:
-        """ExportWindow 객체를 초기화합니다.
-
-        Args:
-            master: 최상위 Tk 윈도우 (다이얼로그 위치 기준용).
-            get_lang_dict: 현재 언어 딕셔너리를 반환하는 콜백.
-            export_func: 내보내기 로직을 실행하는 콜백.
-            update_status_bar: 상태바를 업데이트하는 콜백.
-            all_files_dict: 전체 스토리 파일 딕셔너리.
-            search_data: 현재 검색 결과 데이터.
-            db_status: 각 지역 DB(JP, KR)의 로드 상태.
-            server_db_info: 서버 DB 메타데이터.
-        """
         super().__init__(master)
         self.withdraw()
         self._master = master
@@ -55,29 +128,29 @@ class ExportWindow(tk.Toplevel):
             'character_names': tk.BooleanVar(value=False),
             'bgm_names': tk.BooleanVar(value=False),
             'background_names': tk.BooleanVar(value=False),
+            'voice_names': tk.BooleanVar(value=False),
             'event_list_master': tk.BooleanVar(value=False),
             'event_list_jp': tk.BooleanVar(value=False),
             'event_list_kr': tk.BooleanVar(value=False),
+            'open_folder_after': tk.BooleanVar(value=False),
         }
-        self.story_data_scope = tk.StringVar(value='current_list') 
+        self.story_data_scope = tk.StringVar(value='current_list')
+        self.format_var = tk.StringVar(value='txt')
+        self.view_mode_var = tk.StringVar(value='script')
+        self.naming_var = tk.StringVar(value='original')
 
         self.transient(master)
         self.grab_set()
         self._setup_ui()
         self.focus_set()
-        self._center_window(400, 420)
+        self._center_window(440, 485)
+        self.resizable(False, False)
 
         self._toggle_story_data_options()
         self._toggle_event_list_options()
         self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:
-        """대화상자를 화면 중앙에 배치합니다.
-
-        Args:
-            width: 창 너비.
-            height: 창 높이.
-        """
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         x = (screen_width // 2) - (width // 2)
@@ -85,86 +158,144 @@ class ExportWindow(tk.Toplevel):
         self.geometry(f'{width}x{height}+{x}+{y}')
 
     def _setup_ui(self) -> None:
-        """대화상자의 UI 요소들을 초기화하고 배치합니다."""
         main_frame = ttk.Frame(self, padding="15")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.options_frame = ttk.LabelFrame(main_frame, text="", padding="10")
-        self.options_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        # 1. 스토리 데이터 추출 설정 프레임
+        self.story_data_group = ttk.LabelFrame(main_frame, text="", padding="10")
+        self.story_data_group.pack(fill=tk.X, pady=(0, 10))
 
-        self.cb_story_data = ttk.Checkbutton(self.options_frame, text="", variable=self.export_options['story_data'],
-                                            command=self._toggle_story_data_options)
-        self.cb_story_data.pack(anchor="w", pady=2)
-        
-        self.story_data_scope_frame = ttk.LabelFrame(self.options_frame, text="", padding="5")
-        self.story_data_scope_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
-
-        self.story_data_scope_current_list_radio = ttk.Radiobutton(
-            self.story_data_scope_frame, text="", variable=self.story_data_scope, value="current_list"
+        self.cb_story_data = ttk.Checkbutton(
+            self.story_data_group, text="", variable=self.export_options['story_data'],
+            command=self._toggle_story_data_options
         )
-        self.story_data_scope_current_list_radio.pack(anchor="w")
+        self.cb_story_data.pack(anchor="w", pady=(0, 5))
 
-        self.story_data_scope_all_loaded_radio = ttk.Radiobutton(
-            self.story_data_scope_frame, text="", variable=self.story_data_scope, value="all_loaded"
+        self.story_sub_frame = ttk.Frame(self.story_data_group, padding="5")
+        self.story_sub_frame.pack(fill=tk.X, padx=5)
+
+        # 1-1. 추출 범위 드롭박스
+        self.scope_label = ttk.Label(self.story_sub_frame, text="", anchor="w")
+        self.scope_label.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=2)
+        self.combo_scope = ttk.Combobox(self.story_sub_frame, state="readonly")
+        self.combo_scope.grid(row=0, column=1, sticky="ew", pady=2)
+        self.combo_scope.bind("<<ComboboxSelected>>", self._on_scope_selected)
+
+        # 1-2. 파일 형식 드롭박스
+        self.format_label = ttk.Label(self.story_sub_frame, text="", anchor="w")
+        self.format_label.grid(row=1, column=0, sticky="w", padx=(0, 10), pady=2)
+        self.combo_format = ttk.Combobox(self.story_sub_frame, state="readonly")
+        self.combo_format.grid(row=1, column=1, sticky="ew", pady=2)
+        self.combo_format.bind("<<ComboboxSelected>>", self._on_format_selected)
+
+        # 1-3. 서식 모드 드롭박스
+        self.view_mode_label = ttk.Label(self.story_sub_frame, text="", anchor="w")
+        self.view_mode_label.grid(row=2, column=0, sticky="w", padx=(0, 10), pady=2)
+        self.combo_view_mode = ttk.Combobox(self.story_sub_frame, state="readonly")
+        self.combo_view_mode.grid(row=2, column=1, sticky="ew", pady=2)
+        self.combo_view_mode.bind("<<ComboboxSelected>>", self._on_view_mode_selected)
+
+        # 1-4. 파일명 서식 드롭박스
+        self.naming_label = ttk.Label(self.story_sub_frame, text="", anchor="w")
+        self.naming_label.grid(row=3, column=0, sticky="w", padx=(0, 10), pady=2)
+        self.combo_naming = ttk.Combobox(self.story_sub_frame, state="readonly")
+        self.combo_naming.grid(row=3, column=1, sticky="ew", pady=2)
+        self.combo_naming.bind("<<ComboboxSelected>>", self._on_naming_selected)
+
+        self.story_sub_frame.columnconfigure(1, weight=1)
+
+        # 2. 기타 데이터 추출 프레임
+        self.other_options_frame = ttk.LabelFrame(main_frame, text="", padding="10")
+        self.other_options_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.cb_filenames = ttk.Checkbutton(self.other_options_frame, text="", variable=self.export_options['filenames'])
+        self.cb_filenames.pack(anchor="w", pady=1)
+
+        self.cb_character_names = ttk.Checkbutton(self.other_options_frame, text="", variable=self.export_options['character_names'])
+        self.cb_character_names.pack(anchor="w", pady=1)
+
+        self.cb_bgm_names = ttk.Checkbutton(self.other_options_frame, text="", variable=self.export_options['bgm_names'])
+        self.cb_bgm_names.pack(anchor="w", pady=1)
+
+        self.cb_background_names = ttk.Checkbutton(self.other_options_frame, text="", variable=self.export_options['background_names'])
+        self.cb_background_names.pack(anchor="w", pady=1)
+
+        self.cb_voice_names = ttk.Checkbutton(self.other_options_frame, text="", variable=self.export_options['voice_names'])
+        self.cb_voice_names.pack(anchor="w", pady=1)
+
+        self.cb_event_list_master = ttk.Checkbutton(
+            self.other_options_frame, text="", variable=self.export_options['event_list_master'],
+            command=self._toggle_event_list_options
         )
-        self.story_data_scope_all_loaded_radio.pack(anchor="w")
-        
-        self.cb_filenames = ttk.Checkbutton(self.options_frame, text="", variable=self.export_options['filenames'])
-        self.cb_filenames.pack(anchor="w", pady=2)
+        self.cb_event_list_master.pack(anchor="w", pady=1)
 
-        self.cb_character_names = ttk.Checkbutton(self.options_frame, text="", variable=self.export_options['character_names'])
-        self.cb_character_names.pack(anchor="w", pady=2)
-
-        self.cb_bgm_names = ttk.Checkbutton(self.options_frame, text="", variable=self.export_options['bgm_names'])
-        self.cb_bgm_names.pack(anchor="w", pady=2)
-
-        self.cb_background_names = ttk.Checkbutton(self.options_frame, text="", variable=self.export_options['background_names'])
-        self.cb_background_names.pack(anchor="w", pady=2)
-        
-        self.cb_event_list_master = ttk.Checkbutton(self.options_frame, text="", variable=self.export_options['event_list_master'],
-                                                    command=self._toggle_event_list_options)
-        self.cb_event_list_master.pack(anchor="w", pady=2)
-
-        self.event_list_group_frame = ttk.LabelFrame(self.options_frame, text="", padding="5")
-        self.event_list_group_frame.pack(fill=tk.X, padx=10, pady=(5, 5))
+        self.event_list_group_frame = ttk.Frame(self.other_options_frame, padding="0")
+        self.event_list_group_frame.pack(fill=tk.X, padx=15, pady=(2, 0))
 
         self.cb_event_list_jp = ttk.Checkbutton(self.event_list_group_frame, text="", variable=self.export_options['event_list_jp'])
-        self.cb_event_list_jp.pack(anchor="w", pady=2)
+        self.cb_event_list_jp.pack(anchor="w", pady=(1, 2))
+
         lang_dict = self._get_lang_dict()
-        
         if not self.db_status.get('JP', False):
             self.cb_event_list_jp.tooltip = ToolTip(self.cb_event_list_jp, text=lang_dict['export_db_not_found_tooltip'])
 
         self.cb_event_list_kr = ttk.Checkbutton(self.event_list_group_frame, text="", variable=self.export_options['event_list_kr'])
-        self.cb_event_list_kr.pack(anchor="w", pady=2)
+        self.cb_event_list_kr.pack(anchor="w", pady=(1, 0))
         if not self.db_status.get('KR', False):
             self.cb_event_list_kr.tooltip = ToolTip(self.cb_event_list_kr, text=lang_dict['export_db_not_found_tooltip'])
 
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        # 3. 하단 컨트롤 바
+        bottom_box = ttk.Frame(main_frame)
+        bottom_box.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.export_button = ttk.Button(button_frame, text="", command=self.start_export)
+        self.cb_open_folder = ttk.Checkbutton(bottom_box, text="", variable=self.export_options['open_folder_after'])
+        self.cb_open_folder.pack(side=tk.LEFT)
+
+        self.export_button = ttk.Button(bottom_box, text="", command=self.start_export)
         self.export_button.pack(side=tk.RIGHT)
 
-        self.cancel_button = ttk.Button(button_frame, text="", command=self.destroy)
+        self.cancel_button = ttk.Button(bottom_box, text="", command=self.destroy)
         self.cancel_button.pack(side=tk.RIGHT, padx=(0, 5))
 
         self._update_ui_text()
 
+    def _on_scope_selected(self, event: Any = None) -> None:
+        idx = self.combo_scope.current()
+        if 0 <= idx < len(_SCOPE_KEYS):
+            self.story_data_scope.set(_SCOPE_KEYS[idx])
+
+    def _on_format_selected(self, event: Any = None) -> None:
+        idx = self.combo_format.current()
+        if 0 <= idx < len(_FORMAT_KEYS):
+            self.format_var.set(_FORMAT_KEYS[idx])
+
+    def _on_view_mode_selected(self, event: Any = None) -> None:
+        idx = self.combo_view_mode.current()
+        if 0 <= idx < len(_VIEW_MODE_KEYS):
+            self.view_mode_var.set(_VIEW_MODE_KEYS[idx])
+
+    def _on_naming_selected(self, event: Any = None) -> None:
+        idx = self.combo_naming.current()
+        if 0 <= idx < len(_NAMING_KEYS):
+            self.naming_var.set(_NAMING_KEYS[idx])
+
     def _toggle_story_data_options(self) -> None:
-        """스토리 데이터 추출 옵션 선택 상태에 따라 하위 라디오 버튼의 활성화 상태를 토글합니다."""
-        is_story_data_selected = self.export_options['story_data'].get()
-        state_str = 'normal' if is_story_data_selected else 'disabled'
-        
-        for child in self.story_data_scope_frame.winfo_children():
-            child.config(state=state_str)
-        if state_str == 'disabled':
-            self.story_data_scope.set('')
-        elif is_story_data_selected and not self.story_data_scope.get():
-            self.story_data_scope.set('current_list')
+        is_selected = self.export_options['story_data'].get()
+        combo_state = 'readonly' if is_selected else 'disabled'
+        lbl_state = 'normal' if is_selected else 'disabled'
+
+        for lbl in (self.scope_label, self.format_label, self.view_mode_label, self.naming_label):
+            try:
+                lbl.config(state=lbl_state)
+            except tk.TclError:
+                pass
+        for cb in (self.combo_scope, self.combo_format, self.combo_view_mode, self.combo_naming):
+            try:
+                cb.config(state=combo_state)
+            except tk.TclError:
+                pass
 
     def _toggle_event_list_options(self) -> None:
-        """이벤트 리스트 추출 옵션 선택 상태에 따라 하위 체크박스의 활성화 상태를 토글합니다."""
         is_master_selected = self.export_options['event_list_master'].get()
 
         jp_can_be_enabled = self.db_status.get('JP', False)
@@ -180,42 +311,91 @@ class ExportWindow(tk.Toplevel):
             self.export_options['event_list_kr'].set(False)
 
     def _update_ui_text(self) -> None:
-        """현재 언어 설정에 맞춰 UI 텍스트를 업데이트합니다."""
         lang_dict = self._get_lang_dict()
         self.title(lang_dict['export_window_title'])
-        self.options_frame.config(text=lang_dict['export_type_frame'])
-        
-        self.cb_story_data.config(text=lang_dict['export_type_story_data'])
-        self.story_data_scope_frame.config(text=lang_dict['export_scope_frame'])
-        self.story_data_scope_current_list_radio.config(text=lang_dict['export_scope_current_list'])
-        self.story_data_scope_all_loaded_radio.config(text=lang_dict['export_scope_all_loaded'])
 
+        self.story_data_group.config(text=lang_dict.get('export_story_group_frame', '스토리 데이터 추출'))
+        self.cb_story_data.config(text=lang_dict.get('export_type_story_data', '스토리 데이터'))
+
+        self.scope_label.config(text=lang_dict.get('export_scope_frame', '추출 범위:'))
+        scope_values = [
+            lang_dict.get('export_scope_current_list', '현재 목록'),
+            lang_dict.get('export_scope_all_loaded', '전체 목록'),
+        ]
+        self.combo_scope['values'] = scope_values
+        cur_scope = self.story_data_scope.get()
+        if cur_scope in _SCOPE_KEYS:
+            self.combo_scope.current(_SCOPE_KEYS.index(cur_scope))
+        else:
+            self.combo_scope.current(0)
+
+        self.format_label.config(text=lang_dict.get('export_format_label', '파일 형식:'))
+        format_values = [
+            lang_dict.get('export_format_txt', '텍스트 (.txt)'),
+            lang_dict.get('export_format_md', '마크다운 (.md)'),
+        ]
+        self.combo_format['values'] = format_values
+        cur_fmt = self.format_var.get()
+        if cur_fmt in _FORMAT_KEYS:
+            self.combo_format.current(_FORMAT_KEYS.index(cur_fmt))
+        else:
+            self.combo_format.current(0)
+
+        self.view_mode_label.config(text=lang_dict.get('export_view_mode_label', '서식 모드:'))
+        vm_values = [
+            lang_dict.get('export_view_mode_script', '대본'),
+            lang_dict.get('export_view_mode_simple', '심플'),
+            lang_dict.get('export_view_mode_detailed', '상세'),
+        ]
+        self.combo_view_mode['values'] = vm_values
+        cur_vm = self.view_mode_var.get()
+        if cur_vm in _VIEW_MODE_KEYS:
+            self.combo_view_mode.current(_VIEW_MODE_KEYS.index(cur_vm))
+        else:
+            self.combo_view_mode.current(0)
+
+        self.naming_label.config(text=lang_dict.get('export_naming_label', '파일명:'))
+        naming_values = [
+            lang_dict.get('display_original_filename', '파일명'),
+            lang_dict.get('display_title', '제목'),
+            lang_dict.get('display_id_and_title', '[ID] + title 정보'),
+        ]
+        self.combo_naming['values'] = naming_values
+        cur_naming = self.naming_var.get()
+        if cur_naming in _NAMING_KEYS:
+            self.combo_naming.current(_NAMING_KEYS.index(cur_naming))
+        else:
+            self.combo_naming.current(0)
+
+        self.other_options_frame.config(text=lang_dict.get('export_type_frame', '기타 데이터 추출'))
         self.cb_filenames.config(text=lang_dict['export_type_filenames'])
         self.cb_character_names.config(text=lang_dict['export_type_character_names'])
         self.cb_bgm_names.config(text=lang_dict['export_type_bgm_names'])
         self.cb_background_names.config(text=lang_dict['export_type_background_names'])
-        
-        self.cb_event_list_master.config(text=lang_dict['export_type_event_list_master'])
-        self.event_list_group_frame.config(text=lang_dict['export_type_event_list_frame'])
+        self.cb_voice_names.config(text=lang_dict.get('export_type_voice_names', '보이스 이름 목록 (voice_names.txt)'))
+
+        self.cb_event_list_master.config(text=lang_dict.get('export_type_event_list_master', '이벤트 목록'))
         self.cb_event_list_jp.config(text=lang_dict['export_type_event_list_jp'])
         self.cb_event_list_kr.config(text=lang_dict['export_type_event_list_kr'])
-        
+
+        self.cb_open_folder.config(text=lang_dict.get('export_open_folder_after', '완료 후 저장 폴더 열기'))
         self.export_button.config(text=lang_dict['export_button_text'])
         self.cancel_button.config(text=lang_dict['cancel_button_text'])
 
-        if not self.db_status.get('JP', False) and hasattr(self.cb_event_list_jp, 'tooltip'):
-            self.cb_event_list_jp.tooltip.text = lang_dict['export_db_not_found_tooltip']
-        if not self.db_status.get('KR', False) and hasattr(self.cb_event_list_kr, 'tooltip'):
-            self.cb_event_list_kr.tooltip.text = lang_dict['export_db_not_found_tooltip']
-
     def start_export(self) -> None:
-        """사용자가 선택한 옵션들을 바탕으로 백그라운드 추출 작업을 시작합니다."""
         lang_dict = self._get_lang_dict()
         selected_options = {k: v.get() for k, v in self.export_options.items()}
         selected_options['story_data_scope'] = self.story_data_scope.get() if selected_options['story_data'] else None
-        actual_selected_exports = {k: v for k,v in selected_options.items() if k not in ['story_data_scope', 'event_list_master']}
+        selected_options['file_format'] = self.format_var.get()
+        selected_options['view_mode'] = self.view_mode_var.get()
+        selected_options['naming_rule'] = self.naming_var.get()
 
-        if not any(actual_selected_exports.values()):
+        actual_selected = {
+            k: v for k, v in selected_options.items()
+            if k not in ['story_data_scope', 'event_list_master', 'open_folder_after', 'file_format', 'view_mode', 'naming_rule']
+        }
+
+        if not any(actual_selected.values()):
             messagebox.showwarning(lang_dict['msgbox_export_options_title'], lang_dict['msgbox_no_export_types_selected'], parent=self)
             return
 
@@ -224,9 +404,24 @@ class ExportWindow(tk.Toplevel):
             return
 
         self._update_status_bar('status_bar_export_prep')
-        
-        thread = threading.Thread(target=self._export_func, args=(selected_options, output_folder))
+
+        # 진행 팝업 대화상자 생성 (안 B 연동)
+        progress_dialog = ExportProgressDialog(self._master, self._get_lang_dict)
+
+        def _progress_cb(cur: int, tot: int, tname: str) -> None:
+            self._master.after(0, lambda: progress_dialog.update_progress(cur, tot, tname))
+
+        def _check_cancelled() -> bool:
+            return bool(progress_dialog.is_cancelled)
+
+        def _on_finish() -> None:
+            self._master.after(0, progress_dialog.close)
+
+        thread = threading.Thread(
+            target=self._export_func,
+            args=(selected_options, output_folder, _progress_cb, _check_cancelled, _on_finish)
+        )
         thread.daemon = True
         thread.start()
-        
+
         self.destroy()

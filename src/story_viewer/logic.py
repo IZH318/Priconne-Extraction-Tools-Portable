@@ -373,7 +373,7 @@ class StoryFormatter:
             if is_branch_scene:
                 from_sc, ch_idx, ch_text = tag_to_choice_info[branch_tag]
                 branch_label_str = f"{choice_item_label} {ch_idx}번 {branch_dialogue_label}" if branch_dialogue_label == "분기 대사" else f"{choice_item_label} {ch_idx} {branch_dialogue_label}"
-                content_list.append((f"┌─ [ Scene {key} | {branch_label_str} (Tag {branch_tag}) ] " + "─" + "\n", 'script_branch'))
+                content_list.append((f"┌─ [ Scene {key} | {branch_label_str} (Tag {branch_tag}) ] ─┐\n", 'script_branch'))
                 has_dialogue = True
 
             indent = "│ " if is_branch_scene else ""

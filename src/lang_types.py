@@ -209,6 +209,7 @@ class StoryViewerLangDict(TypedDict, total=False):
     background_label: str
     basic_search_criteria_frame: str
     bgm_label: str
+    btn_copy_script: str
     cancel_button_text: str
     char_name_label: str
     char_type_label: str
@@ -241,9 +242,18 @@ class StoryViewerLangDict(TypedDict, total=False):
     export: str
     export_button_text: str
     export_db_not_found_tooltip: str
+    export_format_label: str
+    export_format_md: str
+    export_format_txt: str
+    export_naming_label: str
+    export_open_folder_after: str
+    export_progress_cancel: str
+    export_progress_status: str
+    export_progress_title: str
     export_scope_all_loaded: str
     export_scope_current_list: str
     export_scope_frame: str
+    export_story_group_frame: str
     export_type_background_names: str
     export_type_bgm_names: str
     export_type_character_names: str
@@ -254,6 +264,11 @@ class StoryViewerLangDict(TypedDict, total=False):
     export_type_filenames: str
     export_type_frame: str
     export_type_story_data: str
+    export_type_voice_names: str
+    export_view_mode_detailed: str
+    export_view_mode_label: str
+    export_view_mode_script: str
+    export_view_mode_simple: str
     export_window_title: str
     file_open: str
     file_options_group: str
@@ -276,6 +291,9 @@ class StoryViewerLangDict(TypedDict, total=False):
     menu_about: str
     menu_file: str
     menu_lang: str
+    msgbox_copy_complete: str
+    msgbox_export_cancelled_msg: str
+    msgbox_export_cancelled_title: str
     msgbox_export_complete_msg: str
     msgbox_export_complete_title: str
     msgbox_export_error_details_msg: str

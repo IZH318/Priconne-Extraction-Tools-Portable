@@ -105,6 +105,9 @@ class StoryViewerView(ttk.Frame):
         
         self.btn_export = ttk.Button(self.bottom_frame, text="", command=self.controller.open_export_window, state=tk.DISABLED)
         self.btn_export.pack(side=tk.RIGHT, padx=(5, 0))
+
+        self.btn_copy = ttk.Button(self.bottom_frame, text="", command=self.controller.copy_script_to_clipboard, state=tk.DISABLED)
+        self.btn_copy.pack(side=tk.RIGHT, padx=(5, 0))
         
         def reapply_weights(event=None):
             try:
@@ -143,6 +146,7 @@ class StoryViewerView(ttk.Frame):
         self.btn_open_file.config(text=lang_dict['file_open'])
         self.btn_open_folder.config(text=lang_dict['folder_open'])
         self.btn_export.config(text=lang_dict['export'])
+        self.btn_copy.config(text=lang_dict.get('btn_copy_script', '대본 복사'))
 
         self.open_frame.config(text=lang_dict.get('open_frame_title', 'Open'))
         self.detail_options_group.config(text=lang_dict['detail_options_group'])
@@ -205,6 +209,7 @@ class StoryViewerView(ttk.Frame):
         for content, tag in content_list:
             self.story_text.insert(tk.END, content, (tag,) if tag else ())
         self.story_text.config(state=tk.DISABLED)
+        self.btn_copy.config(state=tk.NORMAL if content_list else tk.DISABLED)
 
     def set_action_buttons_state(self, state: str) -> None:
         """검색 및 내보내기 버튼의 상태를 설정합니다.

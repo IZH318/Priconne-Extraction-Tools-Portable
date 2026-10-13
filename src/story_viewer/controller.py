@@ -185,6 +185,7 @@ class StoryViewerController(QueuePollingMixin):
             get_server_db_info=lambda: self.server_db_info,
             get_db_manager=lambda: self._db_manager,
             view=self.view,
+            get_file_titles=lambda: self.file_titles,
         )
         
         self.lang_var.trace_add('write', self._on_language_change)
@@ -338,6 +339,7 @@ class StoryViewerController(QueuePollingMixin):
         self.current_file_path = None
         self.view.search_button.config(state=tk.DISABLED)
         self.view.btn_export.config(state=tk.DISABLED)
+        self.view.btn_copy.config(state=tk.DISABLED)
         self.view.display_mode_combo.config(state=tk.DISABLED)
         self.view.jp_radio.config(state=tk.DISABLED)
         self.view.kr_radio.config(state=tk.DISABLED)
@@ -444,7 +446,7 @@ class StoryViewerController(QueuePollingMixin):
         
         file_list_to_process.sort()
         total_files = len(file_list_to_process)
-        unique_char_names, unique_bgms, unique_bgs = set(), set(), set()
+        unique_char_names, unique_bgms, unique_bgs, unique_voices = set(), set(), set(), set()
         temp_file_titles, temp_raw_titles = {}, {}
         temp_empty_titles = set()
 
@@ -467,6 +469,7 @@ class StoryViewerController(QueuePollingMixin):
                     if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
                     if 'bgm' in scene and (bgm_name := StoryDataLoader.extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
                     if 'background' in scene and (bg_name := StoryDataLoader.extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
+                    if 'vo' in scene and (vo_name := StoryDataLoader.extract_asset_name(scene['vo'])): unique_voices.add(vo_name)
             else:
                 invalid_files.append((path, error_reason))
         
@@ -478,7 +481,8 @@ class StoryViewerController(QueuePollingMixin):
             'filenames': sorted(list(temp_all_files.keys())), 
             'character_names': sorted(list(unique_char_names)), 
             'bgms': sorted(list(unique_bgms)), 
-            'backgrounds': sorted(list(unique_bgs))
+            'backgrounds': sorted(list(unique_bgs)),
+            'voices': sorted(list(unique_voices))
         }
         results = {
             "all_files": temp_all_files,
@@ -805,14 +809,47 @@ class StoryViewerController(QueuePollingMixin):
                 self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get(), self.get_lang_dict()))
 
     # Export functionality helper methods
-    def export_master_thread(self, selected_options: dict[str, Any], output_folder: str) -> None:
+    def export_master_thread(
+        self,
+        selected_options: dict[str, Any],
+        output_folder: str,
+        progress_callback: Any = None,
+        check_cancelled: Any = None,
+        on_finish: Any = None,
+    ) -> None:
         """선택된 여러 유형의 데이터들을 백그라운드 스레드에서 파일로 내보냅니다.
 
         Args:
             selected_options: 사용자가 선택한 내보내기 옵션 딕셔너리.
             output_folder: 내보낼 대상 폴더 경로.
+            progress_callback: 진행률 업데이트 콜백.
+            check_cancelled: 취소 상태 확인 콜백.
+            on_finish: 완료 후 정리 콜백.
         """
-        self._export_handler.export_master_thread(selected_options, output_folder)
+        self._export_handler.export_master_thread(
+            selected_options,
+            output_folder,
+            progress_callback=progress_callback,
+            check_cancelled=check_cancelled,
+            on_finish=on_finish,
+        )
+
+    def copy_script_to_clipboard(self) -> None:
+        """현재 화면에 표시된 대본 텍스트를 클립보드에 복사합니다."""
+        text = self.view.story_text.get("1.0", tk.END).strip()
+        if not text:
+            return
+        try:
+            self.master.clipboard_clear()
+            self.master.clipboard_append(text)
+            lang_dict = self.get_lang_dict()
+            messagebox.showinfo(
+                lang_dict.get('btn_copy_script', '대본 복사'),
+                lang_dict.get('msgbox_copy_complete', '대본이 클립보드에 복사되었습니다.'),
+                parent=self.view
+            )
+        except tk.TclError:
+            pass
 
     def cleanup(self) -> None:
         """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다."""
