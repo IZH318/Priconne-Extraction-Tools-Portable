@@ -93,6 +93,17 @@
             "id_col": "story_id",
             "boss_time_from_col": "boss_time_from",
             "boss_time_to_col": "boss_time_to"
+        },
+        "event_top_adv": {
+            "table": "event_top_adv",
+            "id_col": "story_id",
+            "character_id_col": "character_id",
+            "event_id_col": "event_id"
+        },
+        "unit": {
+            "table": "unit_data",
+            "id_col": "unit_id",
+            "name_col": "unit_name"
         }
     }
 }

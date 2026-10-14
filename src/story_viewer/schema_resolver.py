@@ -543,6 +543,12 @@ def resolve_all_servers_parallel(
         if info.get("sekai_top_story_data_table"):
             table_keys.append(("sekai_top_story_data_table", info.get("sekai_top_story_data_table", ""), baseline_path))
 
+        # 이벤트 톱 ADV 및 유닛 테이블
+        if info.get("event_top_adv_table"):
+            table_keys.append(("event_top_adv_table", info.get("event_top_adv_table", ""), baseline_path))
+        if info.get("unit_table"):
+            table_keys.append(("unit_table", info.get("unit_table", ""), baseline_path))
+
         for t_key, tbl_name, b_path in table_keys:
             if tbl_name and not tbl_name.startswith("v1_"):
                 all_tasks.append((server_key, t_key, b_path, db_path, tbl_name, target_tables_with_col))
@@ -566,6 +572,12 @@ def resolve_all_servers_parallel(
         ],
         "sekai_top_story_data_table": [
             "sekai_top_story_data_id_col", "sekai_top_story_data_boss_time_from_col", "sekai_top_story_data_boss_time_to_col"
+        ],
+        "event_top_adv_table": [
+            "event_top_adv_id_col", "event_top_adv_character_id_col", "event_top_adv_event_id_col"
+        ],
+        "unit_table": [
+            "unit_id_col", "unit_name_col"
         ]
     }
 
@@ -622,6 +634,10 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 progress_callback(server_key, "sekai_top_data_table")
             if server_info.get("sekai_top_story_data_table"):
                 progress_callback(server_key, "sekai_top_story_data_table")
+            if server_info.get("event_top_adv_table"):
+                progress_callback(server_key, "event_top_adv_table")
+            if server_info.get("unit_table"):
+                progress_callback(server_key, "unit_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -830,6 +846,32 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 val = server_info.get(col_key)
                 if val and val in sekai_story_col_map:
                     server_info[col_key] = sekai_story_col_map[val]
+
+        # 11. event_top_adv 테이블 매핑
+        top_table = server_info.get("event_top_adv_table", "")
+        if top_table and not top_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "event_top_adv_table")
+            obf_top_table, top_col_map = extractor._find_and_deobfuscate_table(top_table)
+            server_info["event_top_adv_table"] = obf_top_table
+
+            for col_key in ["event_top_adv_id_col", "event_top_adv_character_id_col", "event_top_adv_event_id_col"]:
+                val = server_info.get(col_key)
+                if val and val in top_col_map:
+                    server_info[col_key] = top_col_map[val]
+
+        # 12. unit_data 테이블 매핑
+        unit_table = server_info.get("unit_table", "")
+        if unit_table and not unit_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "unit_table")
+            obf_unit_table, unit_col_map = extractor._find_and_deobfuscate_table(unit_table)
+            server_info["unit_table"] = obf_unit_table
+
+            for col_key in ["unit_id_col", "unit_name_col"]:
+                val = server_info.get(col_key)
+                if val and val in unit_col_map:
+                    server_info[col_key] = unit_col_map[val]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:

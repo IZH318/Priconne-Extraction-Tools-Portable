@@ -614,5 +614,111 @@ def fetch_sekai_story_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) 
     return result_map
 
 
+def fetch_event_top_adv_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+    """adv_id 목록을 기반으로 event_top_adv, unit_data, event_story_data를 조회하여
+    '캐릭터명 [이벤트명]' 형식의 타이틀을 일괄 조회합니다.
+
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+
+    Returns:
+        dict[str, str]: adv_id를 키로, '캐릭터명 [이벤트명]'을 값으로 갖는 딕셔너리.
+    """
+    tbl_name = db_info.get('event_top_adv_table')
+    if not tbl_name:
+        return {}
+
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not adv_ids:
+        return {}
+
+    result_map = {}
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+
+            tbl_top = _validate_identifier(tbl_name)
+            col_top_id = _validate_identifier(db_info.get('event_top_adv_id_col', 'story_id'))
+            col_top_chara = _validate_identifier(db_info.get('event_top_adv_character_id_col', 'character_id'))
+
+            tbl_unit = _validate_identifier(db_info.get('unit_table', 'unit_data'))
+            col_unit_id = _validate_identifier(db_info.get('unit_id_col', 'unit_id'))
+            col_unit_name = _validate_identifier(db_info.get('unit_name_col', 'unit_name'))
+
+            tbl_event = _validate_identifier(db_info.get('event_list_table', 'event_story_data'))
+            col_event_group = _validate_identifier(db_info.get('event_group_id_col_list', 'story_group_id'))
+            col_event_title = _validate_identifier(db_info.get('event_name_col_list', 'title'))
+
+            chunk_size = 500
+            for i in range(0, len(adv_ids), chunk_size):
+                chunk = adv_ids[i:i + chunk_size]
+                placeholders = ', '.join(['?'] * len(chunk))
+
+                # 1. event_top_adv에서 대상 story_id의 character_id 조회
+                query = f'SELECT "{col_top_id}", "{col_top_chara}" FROM "{tbl_top}" WHERE "{col_top_id}" IN ({placeholders})'
+                cursor.execute(query, chunk)
+                rows = cursor.fetchall()
+                if not rows:
+                    continue
+
+                # 2. 관련 character_id 및 story_group_id 수집
+                chara_ids = list({r[1] for r in rows if r[1] is not None})
+                group_ids = list({int(r[0]) // 1000 for r in rows if r[0] is not None and str(r[0]).isdigit()})
+
+                # 캐릭터 유닛명 조회
+                unit_map = {}
+                if chara_ids:
+                    u_holders = ', '.join(['?'] * len(chara_ids))
+                    cursor.execute(f'SELECT "{col_unit_id}", "{col_unit_name}" FROM "{tbl_unit}" WHERE "{col_unit_id}" IN ({u_holders})', chara_ids)
+                    for r in cursor.fetchall():
+                        if r[0] is not None and r[1] is not None:
+                            unit_map[r[0]] = str(r[1]).strip()
+
+                    # 혹시 unit_map에 없는 02/03 특수 폼은 01 베이스 유닛 ID로 조회
+                    missing_cids = [cid for cid in chara_ids if cid not in unit_map and cid % 10 != 1]
+                    if missing_cids:
+                        base_cids = list({(cid // 10) * 10 + 1 for cid in missing_cids})
+                        b_holders = ', '.join(['?'] * len(base_cids))
+                        cursor.execute(f'SELECT "{col_unit_id}", "{col_unit_name}" FROM "{tbl_unit}" WHERE "{col_unit_id}" IN ({b_holders})', base_cids)
+                        base_map = {r[0]: str(r[1]).strip() for r in cursor.fetchall() if r[0] is not None and r[1] is not None}
+                        for mcid in missing_cids:
+                            b_id = (mcid // 10) * 10 + 1
+                            if b_id in base_map:
+                                unit_map[mcid] = base_map[b_id]
+
+                # 이벤트명 조회
+                event_map = {}
+                if group_ids:
+                    e_holders = ', '.join(['?'] * len(group_ids))
+                    cursor.execute(f'SELECT "{col_event_group}", "{col_event_title}" FROM "{tbl_event}" WHERE "{col_event_group}" IN ({e_holders})', group_ids)
+                    for r in cursor.fetchall():
+                        if r[0] is not None and r[1] is not None:
+                            t_clean = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
+                            event_map[r[0]] = t_clean
+
+                # 3. 타이틀 조립: '캐릭터명 [이벤트명]'
+                for r in rows:
+                    sid_raw = r[0]
+                    sid_str = str(sid_raw)
+                    cid = r[1]
+
+                    chara_name = unit_map.get(cid, "")
+                    grp_id = int(sid_raw) // 1000 if str(sid_raw).isdigit() else 0
+                    event_title = event_map.get(grp_id, "")
+
+                    if chara_name and event_title:
+                        result_map[sid_str] = f"{chara_name} [{event_title}]"
+                    elif chara_name:
+                        result_map[sid_str] = chara_name
+                    elif event_title:
+                        result_map[sid_str] = f"[{event_title}]"
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+
+    return result_map
+
+
+
 
 

@@ -82,13 +82,24 @@ def _load_db_config() -> dict[str, dict[str, str]]:
             flat_tables["sekai_top_story_data_id_col"] = sks.get("id_col", "story_id")
             flat_tables["sekai_top_story_data_boss_time_from_col"] = sks.get("boss_time_from_col", "boss_time_from")
             flat_tables["sekai_top_story_data_boss_time_to_col"] = sks.get("boss_time_to_col", "boss_time_to")
+        if "event_top_adv" in tables:
+            eta = tables["event_top_adv"]
+            flat_tables["event_top_adv_table"] = eta.get("table", "")
+            flat_tables["event_top_adv_id_col"] = eta.get("id_col", "story_id")
+            flat_tables["event_top_adv_character_id_col"] = eta.get("character_id_col", "character_id")
+            flat_tables["event_top_adv_event_id_col"] = eta.get("event_id_col", "event_id")
+        if "unit" in tables:
+            u = tables["unit"]
+            flat_tables["unit_table"] = u.get("table", "")
+            flat_tables["unit_id_col"] = u.get("id_col", "unit_id")
+            flat_tables["unit_name_col"] = u.get("name_col", "unit_name")
         merged = {"Common": common}
         for s_key, s_info in raw_cfg["servers"].items():
             s_dict = dict(s_info)
             s_dict.update(flat_tables)
             s_baseline_dbs = s_info.get("baseline_dbs", {})
             for key, entry in tables.items():
-                if key in ("event_story", "birthday", "quest", "sekai_top_data", "sekai_top_story_data"):
+                if key in ("event_story", "birthday", "quest", "sekai_top_data", "sekai_top_story_data", "event_top_adv", "unit"):
                     continue
                 if isinstance(entry, dict) and "table" in entry:
                     req_base = entry.get("baseline")
@@ -265,11 +276,11 @@ class StoryViewerController(QueuePollingMixin):
         # 2. adv_id 목록 수집
         filename_to_adv_id = {}
         for filename in self.all_files:
-            match = re.match(r'^storydata_(\d+)\.json$', filename)
+            match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
             if match:
                 filename_to_adv_id[filename] = match.group(1)
         
-        # 3. 일괄 조회 (우선순위: story_detail -> dear_story_detail -> tower_story_detail -> alchemy -> sekai -> birthday -> quest)
+        # 3. 일괄 조회 (우선순위: story_detail -> dear_story_detail -> tower_story_detail -> alchemy -> sekai -> birthday -> quest -> event_top_adv)
         fetched_titles = {}
         if filename_to_adv_id:
             adv_ids = list(filename_to_adv_id.values())
@@ -293,6 +304,9 @@ class StoryViewerController(QueuePollingMixin):
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'quest_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_quest_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if 'event_top_adv_table' in db_info and remaining_ids:
+                fetched_titles.update(db_helper.fetch_event_top_adv_titles_batch(db_info, remaining_ids))
             
         # 4. 타이틀 갱신: DB 결과 우선, 미존재 시 JSON 원본 타이틀(또는 파일명) 유지
         for filename in self.all_files:
@@ -672,7 +686,7 @@ class StoryViewerController(QueuePollingMixin):
             return
 
         # 타이틀 및 ID 추출
-        match = re.match(r'^storydata_(\d+)\.json$', filename)
+        match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
         adv_id = match.group(1) if match else ""
         raw_title = self.file_titles.get(filename, "")
 
@@ -787,7 +801,7 @@ class StoryViewerController(QueuePollingMixin):
                     if title := self.file_titles.get(filename, filename):
                         display_name = f"{title}"
                 elif display_mode == 'id_title':
-                    match = re.match(r'^storydata_(\d+)\.json$', filename)
+                    match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
                     adv_id = match.group(1) if match else filename
                     title = self.file_titles.get(filename, filename)
                     display_name = f"[{adv_id}] {title}"
@@ -828,7 +842,7 @@ class StoryViewerController(QueuePollingMixin):
             if query in fname.lower():
                 matched.append(fname)
                 continue
-            match = re.match(r'^storydata_(\d+)\.json$', fname)
+            match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', fname)
             if match and query in match.group(1):
                 matched.append(fname)
                 continue
