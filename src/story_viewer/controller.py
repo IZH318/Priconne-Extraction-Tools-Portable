@@ -56,6 +56,7 @@ def _load_db_config() -> dict[str, dict[str, str]]:
             flat_tables["event_details_table"] = ev.get("details_table", "")
             flat_tables["event_group_id_col_details"] = ev.get("group_id_col_details", "story_group_id")
             flat_tables["event_info_col_details"] = ev.get("info_col", "")
+            flat_tables["event_title_col_details"] = ev.get("title_col", "title")
             flat_tables["event_id_col_details"] = ev.get("id_col", "")
         if "birthday" in tables:
             bd = tables["birthday"]
@@ -118,17 +119,23 @@ def _load_db_config() -> dict[str, dict[str, str]]:
                 if isinstance(entry, dict) and "table" in entry:
                     req_base = entry.get("baseline")
                     if req_base and req_base not in s_baseline_dbs:
-                        s_dict[f"{key}_table"] = ""
-                        s_dict[f"{key}_id_col"] = ""
-                        s_dict[f"{key}_title_col"] = ""
-                        s_dict[f"{key}_sub_title_col"] = ""
-                        s_dict[f"{key}_baseline"] = ""
+                        for col_k in entry:
+                            if col_k == "table":
+                                s_dict[f"{key}_table"] = ""
+                            elif col_k == "baseline":
+                                s_dict[f"{key}_baseline"] = ""
+                            else:
+                                s_dict[f"{key}_{col_k}"] = ""
                     else:
-                        s_dict[f"{key}_table"] = entry["table"]
-                        s_dict[f"{key}_id_col"] = entry.get("id_col", "story_id")
-                        s_dict[f"{key}_title_col"] = entry.get("title_col", "title")
-                        s_dict[f"{key}_sub_title_col"] = entry.get("sub_title_col", "sub_title")
-                        s_dict[f"{key}_baseline"] = entry.get("baseline", "default")
+                        for col_k, col_v in entry.items():
+                            if col_k == "table":
+                                s_dict[f"{key}_table"] = col_v
+                            elif col_k == "baseline":
+                                s_dict[f"{key}_baseline"] = col_v
+                            else:
+                                s_dict[f"{key}_{col_k}"] = col_v
+                        s_dict.setdefault(f"{key}_id_col", "story_id")
+                        s_dict.setdefault(f"{key}_title_col", "title")
             merged[s_key] = s_dict
         return merged
 
@@ -330,10 +337,18 @@ class StoryViewerController(QueuePollingMixin):
                 fetched_titles.update(db_helper.fetch_quest_titles_batch(db_info, remaining_ids))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'event_top_adv_table' in db_info and remaining_ids:
-                fetched_titles.update(db_helper.fetch_event_top_adv_titles_batch(db_info, remaining_ids))
+                eta_meta = {
+                    aid: (self.file_voice_adv_ids.get(fn), self.file_situations.get(fn))
+                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
+                }
+                fetched_titles.update(db_helper.fetch_event_top_adv_titles_batch(db_info, remaining_ids, eta_meta))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if ('hatsune_boss_table' in db_info or 'hatsune_special_battle_table' in db_info or 'event_list_table' in db_info) and remaining_ids:
                 fetched_titles.update(db_helper.fetch_event_boss_battle_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            sub_5_ids = [aid for aid in remaining_ids if aid.startswith('5')]
+            if sub_5_ids:
+                fetched_titles.update(db_helper.fetch_event_minigame_and_sub_scenes_batch(db_info, sub_5_ids))
             
         # 4. 타이틀 갱신: DB 결과 우선, 미존재 시 JSON 원본 타이틀(또는 파일명) 유지
         for filename in self.all_files:
@@ -503,12 +518,12 @@ class StoryViewerController(QueuePollingMixin):
                 filename = os.path.basename(path)
                 temp_all_files[filename] = path
                 json_title = str(data.get('0', {}).get('title', '') or '').strip()
-                base_title = json_title if json_title else filename
-                temp_raw_titles[filename] = base_title
-                temp_file_titles[filename] = base_title
                 situation = str(data.get('0', {}).get('situation', '') or '').strip()
                 if situation:
                     temp_file_situations[filename] = situation
+                base_title = json_title if json_title else (situation if situation else filename)
+                temp_raw_titles[filename] = base_title
+                temp_file_titles[filename] = base_title
                 if not json_title:
                     temp_empty_titles.add(filename)
                 for scene in data.values():

@@ -43,6 +43,7 @@
             "details_table": "event_story_detail",
             "group_id_col_details": "story_group_id",
             "info_col": "sub_title",
+            "title_col": "title",
             "id_col": "story_id"
         },
         "birthday": {
@@ -118,7 +119,66 @@
             "mode_col": "mode",
             "mode_start_col": "story_id_mode_start",
             "mode_end_col": "story_id_mode_end"
+        },
+        "hatsune_scenario_boss": {
+            "table": "v1_d86aa9b33eaea462fdd7b1b9181c6484b2c381e1141fc349af469824192b9ca2",
+            "quest_name_col": "b3156f543f63fe0020c06738a14b33a243ac9ff339146d7cc304d734f93b837b",
+            "wavestart_col": "dc19b8972861c12b5b40c25fa28d62129b0bf54a85a26e8e5a22c2fc845f1519",
+            "waveend_col": "f82a7730d167aef224366103e2fa84be14b913d1d5fbeba8128790794d585629"
+        },
+        "hatsune_boss_v2": {
+            "table": "v1_9afbff2f16c1d0d081d6aa6611dc9cd2084fe9ea33b76870b9f4dc53e16b68a0",
+            "quest_name_col": "92594256c28ed5df615995b154fbf3b6ab31219faef4077603c96a1841967331",
+            "wavestart_col": "da8425b3eccee1104ed79ceaa89402e112981c8229a703e3de9f9c00bda9770a",
+            "waveend_col": "ca289cd55a6b0c5e79af261a62c6606292b97e662d30aa723c6b4b40256fa9ed",
+            "boss_id_col": "76cf8b2017e91cf8d83aa4d1bdb1358722895e80f1b25255529b5c40fa4a56de",
+            "event_id_col": "cb8de460272ab0a31140ab41fc04b8b5eae816dbdc9a49aeb56833ae983ff537",
+            "mode_col": "d487db0a091543e8b32c870285af46d7b77d065cd0dd3dc8abc2d4abfadb0fa3"
+        },
+        "hatsune_sp_battle_v2": {
+            "table": "v1_c4a849ce542757db3ab38fe9470d8f0130823d5bb08ea33c3bb0f6d6bfc936df",
+            "mode_col": "60dd887825d1354cf3afddb9f37fbd4dffc627113e7aec4e7d2c4af3f0fd7f82",
+            "mode_start_col": "9e61ae0fe7334e8315cb3a2ed5f7d8212f5d3b366f6c53a3b5df57d12f83e9dd",
+            "mode_end_col": "f48f57ff26468d9d8c045e2efeae4c29ffbc56e0d2df9fd22bce69148694bf97"
+        },
+        "hatsune_ex_battle": {
+            "table": "v1_7d112361430d3968c61f3c36c9fcc249cb02a6bcdbf4695c25ca5bc7215dfa08",
+            "id_col": "041d13315f7fab2e635b6e7b3d71c43d9372ff24a980beb7bf0b15e2f31217a0"
+        },
+        "event_cooking_minigame": {
+            "table": "v1_212dc9cec15f3af52e327ee9db01f6355612a1a0a1e4d5ecb85309883f3ce73b",
+            "id_col": "83e984ef8b1a9bdac3f7273e9f9542fec68455a0780f70d4c96e46950d1c4a72",
+            "title_col": "82ca6da7ba250ad8cae2bf9b706bb5e50908d19295dec8fdf2e674fca9ca2478"
+        },
+        "event_cooking_reaction": {
+            "table": "v1_f7c26f6a3787a3fea7ec330e726e38632fcee2b1969b6afa1c44d3d953d1b58b",
+            "id_col": "bd4ae3d9b34f37fb31fb2633c8fa3f371dbf71a0f40ca2a6988f39c80bf2ff85"
+        },
+        "event_museum_minigame": {
+            "table": "v1_ed85d9150c028b907ade08ee25cb628b3470ab31c6e984bb310b6d820224bfbf",
+            "id_col": "3b6ce22765a614a01c3c9ba18642ca53d1d35ce7a3d1dcefed68b0e8b280179e",
+            "title_col": "566488811babad37d32438add239b31115a09d1cb2dee131861a6f41afd679b9",
+            "sub_title_col": "2828a746ab0c879c90ea2ca2eb904f40c26361fb6f32a3ad6ce1966950fbf9d6"
+        },
+        "event_riddle_minigame": {
+            "table": "v1_c508569d34c504a4d3cbb29f07ef521e9ea0243cf0c2511f4f7c41d871c47929",
+            "point_name_col": "cafc37baad89226305f2d059e1211997acc6ac0e3331ece2ff97997e2b16ce2d",
+            "title_col": "2ba0dc5bcba3572c90ba7256063d19e2da38135d66aeb1205e967acc5f694617",
+            "start_id_col": "740818df0deafcfe5af0d25482c4b5a977bc7d4824f0a546c9b26c5d7587948f",
+            "end_id_col": "c93191ec229a06aaf5cd07f0007a82bd7ab92df206831cec87dba9f616b67090"
+        },
+        "hatsune_quiz": {
+            "table": "hatsune_quiz",
+            "point_name_col": "quiz_point_name",
+            "title_col": "question_title",
+            "start_id_col": "adv_id_quiz_start",
+            "end_id_col": "adv_id_quiz_end"
+        },
+        "event_story_v2": {
+            "table": "v1_0b976328284e18ee5a60f4e43c47380cf76a6ddce0f3fed13bb8856102091086",
+            "id_col": "4db6d6165a2d68a7397404e0dd811fc52140ab64f0caf633a496b2c6a692af24",
+            "title_col": "13578115532e37b9ef8227a3f3257dbd21eb3eda2002153e9d0e4e60e98b5760",
+            "sub_title_col": "51982ec73aae682761e66fc43c3168ecbcc3f8dc2f7b93d3d93168db30171f7b"
         }
     }
 }
-

@@ -563,7 +563,7 @@ def resolve_all_servers_parallel(
     # 컬럼 매핑 관계 정의
     COLUMN_MAPPINGS = {
         "event_list_table": ["event_name_col_list", "event_group_id_col_list"],
-        "event_details_table": ["event_info_col_details", "event_id_col_details", "event_group_id_col_details"],
+        "event_details_table": ["event_info_col_details", "event_title_col_details", "event_id_col_details", "event_group_id_col_details"],
         "birthday_table": ["birthday_name_col", "birthday_adv_id_col"],
         "quest_table": ["quest_name_col", "quest_wavestart_col", "quest_waveend_col"],
         "story_detail_table": ["story_detail_id_col", "story_detail_title_col", "story_detail_sub_title_col"],
@@ -700,6 +700,10 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             event_id_col_details = server_info.get("event_id_col_details")
             if event_id_col_details and event_id_col_details in details_col_map:
                 server_info["event_id_col_details"] = details_col_map[event_id_col_details]
+
+            event_title_col_details = server_info.get("event_title_col_details")
+            if event_title_col_details and event_title_col_details in details_col_map:
+                server_info["event_title_col_details"] = details_col_map[event_title_col_details]
 
             event_group_id_col_details = server_info.get("event_group_id_col_details")
             if event_group_id_col_details and event_group_id_col_details in details_col_map:

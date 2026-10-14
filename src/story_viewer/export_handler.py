@@ -196,13 +196,19 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
     md_out: list[str] = []
     scene_0 = data.get('0', {})
     title = str(scene_0.get('title', '') or '').strip() if isinstance(scene_0, dict) else ''
+    situation = str(scene_0.get('situation', '') or '').strip() if isinstance(scene_0, dict) else ''
     outline = str(scene_0.get('outline', '') or '').strip() if isinstance(scene_0, dict) else ''
 
-    if title:
+    if title and situation and title != situation:
+        md_out.append(f"# {title}\n\n### {situation}\n\n")
+    elif title:
         md_out.append(f"# {title}\n\n")
+    elif situation:
+        md_out.append(f"# {situation}\n\n")
+
     if outline:
         md_out.append(f"---\n\n### 【 {outline_title} 】\n\n{outline}\n\n---\n\n")
-    elif title:
+    elif title or situation:
         md_out.append("---\n\n")
 
     has_dialogue = False
@@ -219,13 +225,17 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
         if key != '0' and key in merge_target_scenes:
             md_out.append(f"---\n\n### ═ [ Scene {key} ] ═\n\n")
 
-        place = scene.get('place') or scene.get('situation')
-        if place:
-            p_str = str(place).strip()
-            if p_str and p_str != title and p_str != last_place:
-                md_out.append(f"*[{place_prefix}: {p_str}]*\n\n")
-                last_place = p_str
-                has_dialogue = True
+        raw_place = scene.get('place')
+        p_str = ""
+        if isinstance(raw_place, list) and raw_place:
+            p_str = str(raw_place[0]).strip()
+        elif isinstance(raw_place, str):
+            p_str = raw_place.strip()
+
+        if p_str and p_str != title and p_str != situation and p_str != last_place:
+            md_out.append(f"*[{place_prefix}: {p_str}]*\n\n")
+            last_place = p_str
+            has_dialogue = True
 
         branch_tag = str(scene.get('tag', '') or '').strip()
         is_branch = (key != '0' and bool(branch_tag) and branch_tag in tag_to_choice_info and has_content)

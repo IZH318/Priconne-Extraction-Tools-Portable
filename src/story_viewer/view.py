@@ -147,6 +147,7 @@ class StoryViewerView(ttk.Frame):
 
         # 대본 모드(script) 전용 폰트 및 컬러 태그
         self.story_text.tag_configure('script_title', font=(default_font_family, 13, 'bold'), foreground='#1A365D')
+        self.story_text.tag_configure('script_subtitle', font=(default_font_family, 11, 'italic'), foreground='#2B6CB0')
         self.story_text.tag_configure('script_speaker', font=(default_font_family, 11, 'bold'), foreground='#0D5C75')
         self.story_text.tag_configure('script_dialogue', font=(default_font_family, 11), foreground='#1A202C')
         self.story_text.tag_configure('script_narration', font=(default_font_family, 10, 'italic'), foreground='#4A5568')

@@ -321,20 +321,27 @@ class StoryFormatter:
         # 5. 상단 타이틀 및 줄거리 (Scene 0)
         scene_0 = data.get('0', {})
         title = ""
+        situation = ""
         outline = ""
         if isinstance(scene_0, dict):
             title = str(scene_0.get('title', '') or '').strip()
+            situation = str(scene_0.get('situation', '') or '').strip()
             outline = str(scene_0.get('outline', '') or '').strip()
 
-        if title:
+        if title and situation and title != situation:
             content_list.append((f"■ {title}\n", 'script_title'))
+            content_list.append((f"▶ {situation}\n", 'script_subtitle'))
+        elif title:
+            content_list.append((f"■ {title}\n", 'script_title'))
+        elif situation:
+            content_list.append((f"■ {situation}\n", 'script_title'))
 
         if outline:
             content_list.append(("─" * 37 + "\n", 'script_divider'))
             content_list.append((f"【 {outline_title} 】\n", 'script_outline_header'))
             content_list.append((f"{outline}\n", 'script_narration'))
 
-        if title or outline:
+        if title or situation or outline:
             content_list.append(("─" * 37 + "\n\n", 'script_divider'))
 
         has_dialogue = False
@@ -353,16 +360,18 @@ class StoryFormatter:
             if key != '0' and key in merge_target_scenes:
                 content_list.append((f"═ [ Scene {key} ] " + "═" + "\n", 'script_branch'))
 
-            # 장소 / 상황 변경 안내
-            place = scene.get('place')
-            situation = scene.get('situation')
-            loc = place if place else situation
-            if loc:
-                loc_str = str(loc).strip()
-                if loc_str and loc_str != title and loc_str != last_place:
-                    content_list.append((f"[{place_prefix}: {loc_str}]\n\n", 'script_place'))
-                    last_place = loc_str
-                    has_dialogue = True
+            # 장소 안내 (실제 물리적 지명만 출력)
+            raw_place = scene.get('place')
+            place_str = ""
+            if isinstance(raw_place, list) and raw_place:
+                place_str = str(raw_place[0]).strip()
+            elif isinstance(raw_place, str):
+                place_str = raw_place.strip()
+
+            if place_str and place_str != title and place_str != situation and place_str != last_place:
+                content_list.append((f"[{place_prefix}: {place_str}]\n\n", 'script_place'))
+                last_place = place_str
+                has_dialogue = True
 
             # 분기 씬 판정
             branch_tag = str(scene.get('tag', '') or '').strip()
