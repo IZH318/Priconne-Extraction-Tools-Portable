@@ -383,6 +383,108 @@ def fetch_dear_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[
     return result_map
 
 
+_JP_SITUATION_TO_CANONICAL_ID: dict[str, str] | None = None
+
+
+def _get_jp_situation_to_canonical_id() -> dict[str, str]:
+    """JP baseline DB의 dear_story_detail 테이블에서 situation(일어) -> canonical story_id 매핑을 반환합니다."""
+    global _JP_SITUATION_TO_CANONICAL_ID
+    if _JP_SITUATION_TO_CANONICAL_ID is not None:
+        return _JP_SITUATION_TO_CANONICAL_ID
+
+    _JP_SITUATION_TO_CANONICAL_ID = {}
+    candidates = [
+        os.path.join(os.path.dirname(__file__), '..', 'master_jp_10052900.db'),
+        os.path.join(os.path.dirname(__file__), 'master_jp_10052900.db'),
+    ]
+    for p in candidates:
+        norm_p = os.path.abspath(p).replace('\\', '/')
+        if os.path.exists(norm_p):
+            try:
+                with sqlite3.connect(f"file:{norm_p}?mode=ro", uri=True) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT story_id, sub_title FROM dear_story_detail')
+                    for r in cursor.fetchall():
+                        if r[0] and r[1]:
+                            clean = re.sub(r'\s+', '', str(r[1]).replace('\\n', ''))
+                            _JP_SITUATION_TO_CANONICAL_ID[clean] = str(r[0])
+                break
+            except Exception:
+                pass
+    return _JP_SITUATION_TO_CANONICAL_ID
+
+
+def fetch_dear_story_detail_fallback_titles_batch(
+    db_info: dict[str, Any], 
+    meta_dict: dict[str, tuple[str | None, str | None]]
+) -> dict[str, str]:
+    """
+    복각 및 신규 이벤트에서 재활용된 6xxxxxx 신뢰도 에피소드에 대해
+    voice_adv_id(내부 음성 번호) 또는 situation(상황 대사)을 기반으로
+    dear_story_detail 테이블과 교차 매핑하여 공식 타이틀을 반환합니다.
+    
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        meta_dict (dict): adv_id를 키로 하고, (voice_adv_id, situation) 튜플을 값으로 갖는 딕셔너리.
+        
+    Returns:
+        dict[str, str]: adv_id를 키로, 'title - sub_title'을 값으로 갖는 딕셔너리.
+    """
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not meta_dict:
+        return {}
+
+    result_map = {}
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+            tbl = _validate_identifier(db_info['dear_story_detail_table'])
+            col_id = _validate_identifier(db_info['dear_story_detail_id_col'])
+            col_title = _validate_identifier(db_info['dear_story_detail_title_col'])
+            col_sub = _validate_identifier(db_info['dear_story_detail_sub_title_col'])
+
+            cursor.execute(f'SELECT "{col_id}", "{col_title}", "{col_sub}" FROM "{tbl}"')
+            
+            id_to_title = {}
+            sub_to_title = {}
+            for row in cursor.fetchall():
+                sid = str(row[0]) if row[0] is not None else ''
+                t = str(row[1]).replace('\\n', ' ').strip() if row[1] is not None else ''
+                sub = str(row[2]).replace('\\n', ' ').strip() if row[2] is not None else ''
+                if t and sub:
+                    fmt = f"{t} - {sub}"
+                elif t:
+                    fmt = t
+                elif sub:
+                    fmt = sub
+                else:
+                    continue
+                
+                if sid:
+                    id_to_title[sid] = fmt
+                clean_sub = re.sub(r'\s+', '', sub)
+                if clean_sub:
+                    sub_to_title[clean_sub] = fmt
+
+            jp_sit_map = _get_jp_situation_to_canonical_id()
+            for aid, (vo_id, situation) in meta_dict.items():
+                if vo_id and vo_id in id_to_title:
+                    result_map[aid] = id_to_title[vo_id]
+                elif situation:
+                    clean_sit = re.sub(r'\s+', '', situation)
+                    if clean_sit in sub_to_title:
+                        result_map[aid] = sub_to_title[clean_sit]
+                    elif clean_sit in jp_sit_map:
+                        canonical_id = jp_sit_map[clean_sit]
+                        if canonical_id in id_to_title:
+                            result_map[aid] = id_to_title[canonical_id]
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+
+    return result_map
+
+
+
 def fetch_tower_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
     """
     adv_id 목록을 기반으로 tower_story_detail 테이블에서 title과 sub_title을 일괄 조회합니다.

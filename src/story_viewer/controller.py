@@ -157,6 +157,8 @@ class StoryViewerController(QueuePollingMixin):
         self.search_data = {}
         self.file_titles = {}
         self.raw_file_titles = {}
+        self.file_situations = {}
+        self.file_voice_adv_ids = {}
         self.display_name_to_filename = {}
         self.current_filenames_in_list = []
         self.loaded_filenames = []
@@ -303,6 +305,14 @@ class StoryViewerController(QueuePollingMixin):
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'dear_story_detail_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_dear_story_detail_titles_batch(db_info, remaining_ids))
+                remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+                dear_fallback_ids = [aid for aid in remaining_ids if aid.startswith('6')]
+                if dear_fallback_ids:
+                    meta_dict = {
+                        aid: (self.file_voice_adv_ids.get(fn), self.file_situations.get(fn))
+                        for fn, aid in filename_to_adv_id.items() if aid in dear_fallback_ids
+                    }
+                    fetched_titles.update(db_helper.fetch_dear_story_detail_fallback_titles_batch(db_info, meta_dict))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'tower_story_detail_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_tower_story_detail_titles_batch(db_info, remaining_ids))
@@ -361,6 +371,8 @@ class StoryViewerController(QueuePollingMixin):
         self.view.file_listbox.delete(0, tk.END)
         self.file_titles.clear()
         self.raw_file_titles.clear()
+        self.file_situations.clear()
+        self.file_voice_adv_ids.clear()
         self.display_name_to_filename.clear()
         self.current_filenames_in_list = []
         self.loaded_filenames = []
@@ -478,6 +490,7 @@ class StoryViewerController(QueuePollingMixin):
         total_files = len(file_list_to_process)
         unique_char_names, unique_bgms, unique_bgs, unique_voices = set(), set(), set(), set()
         temp_file_titles, temp_raw_titles = {}, {}
+        temp_file_situations, temp_file_voice_adv_ids = {}, {}
         temp_empty_titles = set()
 
         for i, path in enumerate(file_list_to_process):
@@ -493,13 +506,22 @@ class StoryViewerController(QueuePollingMixin):
                 base_title = json_title if json_title else filename
                 temp_raw_titles[filename] = base_title
                 temp_file_titles[filename] = base_title
+                situation = str(data.get('0', {}).get('situation', '') or '').strip()
+                if situation:
+                    temp_file_situations[filename] = situation
                 if not json_title:
                     temp_empty_titles.add(filename)
                 for scene in data.values():
-                    if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
-                    if 'bgm' in scene and (bgm_name := StoryDataLoader.extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
-                    if 'background' in scene and (bg_name := StoryDataLoader.extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
-                    if 'vo' in scene and (vo_name := StoryDataLoader.extract_asset_name(scene['vo'])): unique_voices.add(vo_name)
+                    if isinstance(scene, dict):
+                        if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()): unique_char_names.add(name)
+                        if 'bgm' in scene and (bgm_name := StoryDataLoader.extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
+                        if 'background' in scene and (bg_name := StoryDataLoader.extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
+                        if 'vo' in scene and (vo_name := StoryDataLoader.extract_asset_name(scene['vo'])):
+                            unique_voices.add(vo_name)
+                            if filename not in temp_file_voice_adv_ids:
+                                m = re.search(r'vo_adv_(\d+)_', vo_name)
+                                if m:
+                                    temp_file_voice_adv_ids[filename] = m.group(1)
             else:
                 invalid_files.append((path, error_reason))
         
@@ -518,6 +540,8 @@ class StoryViewerController(QueuePollingMixin):
             "all_files": temp_all_files,
             "titles": temp_file_titles,
             "raw_titles": temp_raw_titles,
+            "file_situations": temp_file_situations,
+            "file_voice_adv_ids": temp_file_voice_adv_ids,
             "empty_titles": temp_empty_titles,
             "search_data": temp_search_data
         }
@@ -564,6 +588,8 @@ class StoryViewerController(QueuePollingMixin):
         self.all_files = results['all_files']
         self.file_titles = results['titles']
         self.raw_file_titles = results.get('raw_titles', {})
+        self.file_situations = results.get('file_situations', {})
+        self.file_voice_adv_ids = results.get('file_voice_adv_ids', {})
         self.empty_title_files = results['empty_titles']
         self.search_data = results['search_data']
         self.loaded_filenames = sorted(list(self.all_files.keys()))
