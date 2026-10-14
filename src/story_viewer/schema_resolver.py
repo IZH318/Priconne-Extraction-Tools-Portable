@@ -548,6 +548,10 @@ def resolve_all_servers_parallel(
             table_keys.append(("event_top_adv_table", info.get("event_top_adv_table", ""), baseline_path))
         if info.get("unit_table"):
             table_keys.append(("unit_table", info.get("unit_table", ""), baseline_path))
+        if info.get("hatsune_boss_table"):
+            table_keys.append(("hatsune_boss_table", info.get("hatsune_boss_table", ""), baseline_path))
+        if info.get("hatsune_special_battle_table"):
+            table_keys.append(("hatsune_special_battle_table", info.get("hatsune_special_battle_table", ""), baseline_path))
 
         for t_key, tbl_name, b_path in table_keys:
             if tbl_name and not tbl_name.startswith("v1_"):
@@ -578,6 +582,12 @@ def resolve_all_servers_parallel(
         ],
         "unit_table": [
             "unit_id_col", "unit_name_col"
+        ],
+        "hatsune_boss_table": [
+            "hatsune_boss_event_id_col", "hatsune_boss_quest_name_col", "hatsune_boss_wavestart_col", "hatsune_boss_waveend_col"
+        ],
+        "hatsune_special_battle_table": [
+            "hatsune_special_battle_event_id_col", "hatsune_special_battle_mode_col", "hatsune_special_battle_mode_start_col", "hatsune_special_battle_mode_end_col"
         ]
     }
 
@@ -638,6 +648,10 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 progress_callback(server_key, "event_top_adv_table")
             if server_info.get("unit_table"):
                 progress_callback(server_key, "unit_table")
+            if server_info.get("hatsune_boss_table"):
+                progress_callback(server_key, "hatsune_boss_table")
+            if server_info.get("hatsune_special_battle_table"):
+                progress_callback(server_key, "hatsune_special_battle_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -872,6 +886,32 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 val = server_info.get(col_key)
                 if val and val in unit_col_map:
                     server_info[col_key] = unit_col_map[val]
+
+        # 13. hatsune_boss 테이블 매핑
+        hb_table = server_info.get("hatsune_boss_table", "")
+        if hb_table and not hb_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "hatsune_boss_table")
+            obf_hb_table, hb_col_map = extractor._find_and_deobfuscate_table(hb_table)
+            server_info["hatsune_boss_table"] = obf_hb_table
+
+            for col_key in ["hatsune_boss_event_id_col", "hatsune_boss_quest_name_col", "hatsune_boss_wavestart_col", "hatsune_boss_waveend_col"]:
+                val = server_info.get(col_key)
+                if val and val in hb_col_map:
+                    server_info[col_key] = hb_col_map[val]
+
+        # 14. hatsune_special_battle 테이블 매핑
+        hsb_table = server_info.get("hatsune_special_battle_table", "")
+        if hsb_table and not hsb_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "hatsune_special_battle_table")
+            obf_hsb_table, hsb_col_map = extractor._find_and_deobfuscate_table(hsb_table)
+            server_info["hatsune_special_battle_table"] = obf_hsb_table
+
+            for col_key in ["hatsune_special_battle_event_id_col", "hatsune_special_battle_mode_col", "hatsune_special_battle_mode_start_col", "hatsune_special_battle_mode_end_col"]:
+                val = server_info.get(col_key)
+                if val and val in hsb_col_map:
+                    server_info[col_key] = hsb_col_map[val]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:

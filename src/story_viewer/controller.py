@@ -93,13 +93,27 @@ def _load_db_config() -> dict[str, dict[str, str]]:
             flat_tables["unit_table"] = u.get("table", "")
             flat_tables["unit_id_col"] = u.get("id_col", "unit_id")
             flat_tables["unit_name_col"] = u.get("name_col", "unit_name")
+        if "hatsune_boss" in tables:
+            hb = tables["hatsune_boss"]
+            flat_tables["hatsune_boss_table"] = hb.get("table", "")
+            flat_tables["hatsune_boss_event_id_col"] = hb.get("event_id_col", "event_id")
+            flat_tables["hatsune_boss_quest_name_col"] = hb.get("quest_name_col", "quest_name")
+            flat_tables["hatsune_boss_wavestart_col"] = hb.get("wavestart_col", "story_id_wavestart_1")
+            flat_tables["hatsune_boss_waveend_col"] = hb.get("waveend_col", "story_id_waveend_1")
+        if "hatsune_special_battle" in tables:
+            hsb = tables["hatsune_special_battle"]
+            flat_tables["hatsune_special_battle_table"] = hsb.get("table", "")
+            flat_tables["hatsune_special_battle_event_id_col"] = hsb.get("event_id_col", "event_id")
+            flat_tables["hatsune_special_battle_mode_col"] = hsb.get("mode_col", "mode")
+            flat_tables["hatsune_special_battle_mode_start_col"] = hsb.get("mode_start_col", "story_id_mode_start")
+            flat_tables["hatsune_special_battle_mode_end_col"] = hsb.get("mode_end_col", "story_id_mode_end")
         merged = {"Common": common}
         for s_key, s_info in raw_cfg["servers"].items():
             s_dict = dict(s_info)
             s_dict.update(flat_tables)
             s_baseline_dbs = s_info.get("baseline_dbs", {})
             for key, entry in tables.items():
-                if key in ("event_story", "birthday", "quest", "sekai_top_data", "sekai_top_story_data", "event_top_adv", "unit"):
+                if key in ("event_story", "birthday", "quest", "sekai_top_data", "sekai_top_story_data", "event_top_adv", "unit", "hatsune_boss", "hatsune_special_battle"):
                     continue
                 if isinstance(entry, dict) and "table" in entry:
                     req_base = entry.get("baseline")
@@ -307,6 +321,9 @@ class StoryViewerController(QueuePollingMixin):
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if 'event_top_adv_table' in db_info and remaining_ids:
                 fetched_titles.update(db_helper.fetch_event_top_adv_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if ('hatsune_boss_table' in db_info or 'hatsune_special_battle_table' in db_info or 'event_list_table' in db_info) and remaining_ids:
+                fetched_titles.update(db_helper.fetch_event_boss_battle_titles_batch(db_info, remaining_ids))
             
         # 4. 타이틀 갱신: DB 결과 우선, 미존재 시 JSON 원본 타이틀(또는 파일명) 유지
         for filename in self.all_files:

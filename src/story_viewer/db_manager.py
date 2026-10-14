@@ -168,6 +168,8 @@ class StoryDBManager:
                         + (1 if i.get('sekai_top_story_data_table') else 0)
                         + (1 if i.get('event_top_adv_table') else 0)
                         + (1 if i.get('unit_table') else 0)
+                        + (1 if i.get('hatsune_boss_table') else 0)
+                        + (1 if i.get('hatsune_special_battle_table') else 0)
                     )
             total_steps = max(1, total_steps)
             step_size = 90 / total_steps

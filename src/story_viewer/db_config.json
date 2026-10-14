@@ -104,6 +104,21 @@
             "table": "unit_data",
             "id_col": "unit_id",
             "name_col": "unit_name"
+        },
+        "hatsune_boss": {
+            "table": "hatsune_boss",
+            "event_id_col": "event_id",
+            "quest_name_col": "quest_name",
+            "wavestart_col": "story_id_wavestart_1",
+            "waveend_col": "story_id_waveend_1"
+        },
+        "hatsune_special_battle": {
+            "table": "hatsune_special_battle",
+            "event_id_col": "event_id",
+            "mode_col": "mode",
+            "mode_start_col": "story_id_mode_start",
+            "mode_end_col": "story_id_mode_end"
         }
     }
 }
+
