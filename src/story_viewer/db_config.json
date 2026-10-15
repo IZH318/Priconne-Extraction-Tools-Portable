@@ -15,9 +15,9 @@
                     "db_path": "master_jp_10052900.db",
                     "db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db"
                 },
-                "10059300": {
-                    "db_path": "master_jp_10059300.db",
-                    "db_url": "https://github.com/Expugn/priconne-database/raw/8988ee44795a9cebcfa57844198576e095b4e3f6/master_jp.db"
+                "10067600": {
+                    "db_path": "master_jp_10067600.db",
+                    "db_url": "https://github.com/Expugn/priconne-database/raw/b323c9749494ff28977fd7766355b96e3f1a1fce/master_jp.db"
                 }
             }
         },
@@ -76,10 +76,10 @@
             "sub_title_col": "sub_title"
         },
         "alchemy_story_detail": {
-            "baseline": "10059300",
-            "table": "v1_65ffb7d88e41fdf1ec6250d9508205ff1d4dd54c3bd2f2686c8fc4c827793245",
-            "id_col": "12b1086147efcc64bd3aedd19a91ad5799f098ed4317d01e02da2422a3925e43",
-            "title_col": "07fff6e2f2004bdd8af10461b7b4fabbeb38c2c2ec38261c81fcef15950c35a8"
+            "baseline": "10067600",
+            "table": "v1_1c7fca22d1f9894817b16ca15432c8096f5d2d77043235ca4a3a9296cf1fd4ca",
+            "id_col": "8b5592e232d5f0b02956f5628369d045553ffed601918b40cd7ac9acda80d8b7",
+            "title_col": "6df8e5a67020c174b9a275773c8b792ca530676fd96d5254e27510d86f8b14a6"
         },
         "sekai_top_data": {
             "table": "sekai_top_data",
@@ -121,51 +121,59 @@
             "mode_end_col": "story_id_mode_end"
         },
         "hatsune_scenario_boss": {
-            "table": "v1_d86aa9b33eaea462fdd7b1b9181c6484b2c381e1141fc349af469824192b9ca2",
-            "quest_name_col": "b3156f543f63fe0020c06738a14b33a243ac9ff339146d7cc304d734f93b837b",
-            "wavestart_col": "dc19b8972861c12b5b40c25fa28d62129b0bf54a85a26e8e5a22c2fc845f1519",
-            "waveend_col": "f82a7730d167aef224366103e2fa84be14b913d1d5fbeba8128790794d585629"
+            "baseline": "10067600",
+            "table": "v1_c0e7ffb9985fc25db8bc41ca3b5f11ba83e5139fdb5d3adaa3a6bb415aabc2b7",
+            "quest_name_col": "c613ea17f54b281b4b679e57e702d8345ad1f7cfa6e50400c8bdb03e73bfa6bc",
+            "wavestart_col": "c9befde0d0128623ea734fa55843b54f9bef761d8046f7653d1e3df5a75fbd72",
+            "waveend_col": "2ecf58c4ee95aebe0535a9195246c3191945b569122c5327713839e6f06f2ada"
         },
         "hatsune_boss_v2": {
-            "table": "v1_9afbff2f16c1d0d081d6aa6611dc9cd2084fe9ea33b76870b9f4dc53e16b68a0",
-            "quest_name_col": "92594256c28ed5df615995b154fbf3b6ab31219faef4077603c96a1841967331",
-            "wavestart_col": "da8425b3eccee1104ed79ceaa89402e112981c8229a703e3de9f9c00bda9770a",
-            "waveend_col": "ca289cd55a6b0c5e79af261a62c6606292b97e662d30aa723c6b4b40256fa9ed",
-            "boss_id_col": "76cf8b2017e91cf8d83aa4d1bdb1358722895e80f1b25255529b5c40fa4a56de",
-            "event_id_col": "cb8de460272ab0a31140ab41fc04b8b5eae816dbdc9a49aeb56833ae983ff537",
-            "mode_col": "d487db0a091543e8b32c870285af46d7b77d065cd0dd3dc8abc2d4abfadb0fa3"
+            "baseline": "10067600",
+            "table": "v1_c0e7ffb9985fc25db8bc41ca3b5f11ba83e5139fdb5d3adaa3a6bb415aabc2b7",
+            "quest_name_col": "c613ea17f54b281b4b679e57e702d8345ad1f7cfa6e50400c8bdb03e73bfa6bc",
+            "wavestart_col": "c9befde0d0128623ea734fa55843b54f9bef761d8046f7653d1e3df5a75fbd72",
+            "waveend_col": "2ecf58c4ee95aebe0535a9195246c3191945b569122c5327713839e6f06f2ada",
+            "boss_id_col": "735df67b64a6b91af84e4c462c4cf888ac7284e42fcc7fb79c99c82512952188",
+            "event_id_col": "9cc8e49952f929eb16196c12808464e9e7f316eb38f6eff4ceefd8fdbc5ef923",
+            "mode_col": "e26bf8495ec87a0f82b2efd2ee650339d140e7e02d44fda15769a16c816edc70"
         },
         "hatsune_sp_battle_v2": {
-            "table": "v1_c4a849ce542757db3ab38fe9470d8f0130823d5bb08ea33c3bb0f6d6bfc936df",
-            "mode_col": "60dd887825d1354cf3afddb9f37fbd4dffc627113e7aec4e7d2c4af3f0fd7f82",
-            "mode_start_col": "9e61ae0fe7334e8315cb3a2ed5f7d8212f5d3b366f6c53a3b5df57d12f83e9dd",
-            "mode_end_col": "f48f57ff26468d9d8c045e2efeae4c29ffbc56e0d2df9fd22bce69148694bf97"
+            "baseline": "10067600",
+            "table": "v1_9d5401b10e65bb549b93e0056d018659cbc5fdce23804e6267b15a67fd24cd06",
+            "mode_col": "fa9b6e8dafd8b3fdede203c4addc22d6708f3b9459bc27e480d67bdb2899cd3d",
+            "mode_start_col": "c1aee788ef889953e608a1c4065ab3b569fa23561be05de53293562df920cb99",
+            "mode_end_col": "58132ac8be1a5b9993506ab1806303fabc13c945d97c8dd2b684e133a2ace0e7"
         },
         "hatsune_ex_battle": {
-            "table": "v1_7d112361430d3968c61f3c36c9fcc249cb02a6bcdbf4695c25ca5bc7215dfa08",
-            "id_col": "041d13315f7fab2e635b6e7b3d71c43d9372ff24a980beb7bf0b15e2f31217a0"
+            "baseline": "10067600",
+            "table": "v1_18c80742d1a20fa687f42856b3b9b996ab1da64d6d1bab2a6a0a58e559250bce",
+            "id_col": "e44d240ba77290530bdf4dd3dda05feafff0c875d2983454e5316a7aebfc60e8"
         },
         "event_cooking_minigame": {
-            "table": "v1_212dc9cec15f3af52e327ee9db01f6355612a1a0a1e4d5ecb85309883f3ce73b",
-            "id_col": "83e984ef8b1a9bdac3f7273e9f9542fec68455a0780f70d4c96e46950d1c4a72",
-            "title_col": "82ca6da7ba250ad8cae2bf9b706bb5e50908d19295dec8fdf2e674fca9ca2478"
+            "baseline": "10067600",
+            "table": "v1_cd03b541e40f0450938d64bf2cfac9b6709aae779a3e01d97b3af5833db680f9",
+            "id_col": "661a68955e3ac2fd50c2a3567230c9435f9c499dc8a83545df27f0aabd170006",
+            "title_col": "78757bfb0f33e17891007679a4e409cdedb3094f2bd8327a4acbe3f4ecd92e6e"
         },
         "event_cooking_reaction": {
-            "table": "v1_f7c26f6a3787a3fea7ec330e726e38632fcee2b1969b6afa1c44d3d953d1b58b",
-            "id_col": "bd4ae3d9b34f37fb31fb2633c8fa3f371dbf71a0f40ca2a6988f39c80bf2ff85"
+            "baseline": "10067600",
+            "table": "v1_9f485b9b32e33f9d26dc0b0d907ef5dc93bb41f5f0dcd20fd8fa0ed703cac974",
+            "id_col": "dc74953d7740483e43b6386653875c77e21540cc26cd8a3f0e802b57e7268baa"
         },
         "event_museum_minigame": {
-            "table": "v1_ed85d9150c028b907ade08ee25cb628b3470ab31c6e984bb310b6d820224bfbf",
-            "id_col": "3b6ce22765a614a01c3c9ba18642ca53d1d35ce7a3d1dcefed68b0e8b280179e",
-            "title_col": "566488811babad37d32438add239b31115a09d1cb2dee131861a6f41afd679b9",
-            "sub_title_col": "2828a746ab0c879c90ea2ca2eb904f40c26361fb6f32a3ad6ce1966950fbf9d6"
+            "baseline": "10067600",
+            "table": "v1_d2d26e4aec6acdbb8b2e5158a38835dc9624480ea665681341fba75ddac31725",
+            "id_col": "7170f400e1c423ae4f09080337016216ea932a8aacf2c43ab77af39b33b7a165",
+            "title_col": "21c9af69dd3da79135de381bbd146ca4d90a078046484b691a781a9fed8f6dc7",
+            "sub_title_col": "35d3b9199250ab8dc3cf83f8dbe7faadd29e34942770bc75bf733796d04e7aa5"
         },
         "event_riddle_minigame": {
-            "table": "v1_c508569d34c504a4d3cbb29f07ef521e9ea0243cf0c2511f4f7c41d871c47929",
-            "point_name_col": "cafc37baad89226305f2d059e1211997acc6ac0e3331ece2ff97997e2b16ce2d",
-            "title_col": "2ba0dc5bcba3572c90ba7256063d19e2da38135d66aeb1205e967acc5f694617",
-            "start_id_col": "740818df0deafcfe5af0d25482c4b5a977bc7d4824f0a546c9b26c5d7587948f",
-            "end_id_col": "c93191ec229a06aaf5cd07f0007a82bd7ab92df206831cec87dba9f616b67090"
+            "baseline": "10067600",
+            "table": "v1_7529db0a10047c52e9219b139fabba2096e51936fefd35458290db4d32bf2c53",
+            "point_name_col": "fbbc8e2e212afb4dbd87d2e181ea9555552bac778362288cb222c4cfc151f018",
+            "title_col": "44e83224ca9e0cf0aa8fa9a595d27d0d6e22abd1edb69dc9ad0357313ffb1c86",
+            "start_id_col": "7c8985845789c7eeec794f90059e9b09b63d3d39dc4114a509ff09ac1d2a80ac",
+            "end_id_col": "c39890c93ce164b076662c66f718683391232e0a16e7a9076aba5f0dc24467d3"
         },
         "hatsune_quiz": {
             "table": "hatsune_quiz",
@@ -175,10 +183,11 @@
             "end_id_col": "adv_id_quiz_end"
         },
         "event_story_v2": {
-            "table": "v1_0b976328284e18ee5a60f4e43c47380cf76a6ddce0f3fed13bb8856102091086",
-            "id_col": "4db6d6165a2d68a7397404e0dd811fc52140ab64f0caf633a496b2c6a692af24",
-            "title_col": "13578115532e37b9ef8227a3f3257dbd21eb3eda2002153e9d0e4e60e98b5760",
-            "sub_title_col": "51982ec73aae682761e66fc43c3168ecbcc3f8dc2f7b93d3d93168db30171f7b"
+            "baseline": "10067600",
+            "table": "v1_5dc6443a480cd7e8a680f6904c9125ceba8a8b571beaf0f7c6c8b2788f4dc2eb",
+            "id_col": "5b802c21ec8ff3e0285a4aae847211dc5d0c1251fb2a070436b7bc86e1699985",
+            "title_col": "d0dedbca2813f9d5743870c2d29ed064f0acfddbb004a7d967292a999844e2a6",
+            "sub_title_col": "c6064be3e0ab536646b7ce09315a0bda7958e82c6da3194472c2431345a34c35"
         }
     }
 }

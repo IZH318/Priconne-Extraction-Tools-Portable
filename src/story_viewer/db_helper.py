@@ -1010,20 +1010,23 @@ def fetch_event_minigame_and_sub_scenes_batch(db_info: dict[str, Any], adv_ids: 
             cursor = conn.cursor()
 
             # 1. 이벤트 타이틀 캐시 로드
-            tbl_event = _validate_identifier(db_info.get('event_list_table', 'event_story_data'))
-            col_event_grp = _validate_identifier(db_info.get('event_group_id_col_list', 'story_group_id'))
-            col_event_title = _validate_identifier(db_info.get('event_name_col_list', 'title'))
-
-            grp_ids = list({int(aid) // 1000 for aid in adv_ids if aid.isdigit() and len(aid) == 7 and aid.startswith('5')})
             event_map = {}
-            if grp_ids:
-                for i in range(0, len(grp_ids), 500):
-                    chunk = grp_ids[i:i + 500]
-                    placeholders = ', '.join(['?'] * len(chunk))
-                    cursor.execute(f'SELECT "{col_event_grp}", "{col_event_title}" FROM "{tbl_event}" WHERE "{col_event_grp}" IN ({placeholders})', chunk)
-                    for r in cursor.fetchall():
-                        if r[0] is not None and r[1] is not None:
-                            event_map[r[0]] = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
+            try:
+                tbl_event = _validate_identifier(db_info.get('event_list_table', 'event_story_data'))
+                col_event_grp = _validate_identifier(db_info.get('event_group_id_col_list', 'story_group_id'))
+                col_event_title = _validate_identifier(db_info.get('event_name_col_list', 'title'))
+
+                grp_ids = list({int(aid) // 1000 for aid in adv_ids if aid.isdigit() and len(aid) == 7 and aid.startswith('5')})
+                if grp_ids:
+                    for i in range(0, len(grp_ids), 500):
+                        chunk = grp_ids[i:i + 500]
+                        placeholders = ', '.join(['?'] * len(chunk))
+                        cursor.execute(f'SELECT "{col_event_grp}", "{col_event_title}" FROM "{tbl_event}" WHERE "{col_event_grp}" IN ({placeholders})', chunk)
+                        for r in cursor.fetchall():
+                            if r[0] is not None and r[1] is not None:
+                                event_map[r[0]] = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
+            except (sqlite3.Error, UnsafeIdentifierError):
+                pass
 
             def get_ev_prefix(aid_int: int) -> str:
                 ev = event_map.get(aid_int // 1000, "")
@@ -1032,36 +1035,14 @@ def fetch_event_minigame_and_sub_scenes_batch(db_info: dict[str, Any], adv_ids: 
             # 2. 최신 이벤트 스토리 v2 (10201+)
             tbl_ev2 = db_info.get('event_story_v2_table')
             if tbl_ev2:
-                tbl_ev2_v = _validate_identifier(tbl_ev2)
-                col_id = _validate_identifier(db_info.get('event_story_v2_id_col', 'story_id'))
-                col_t = _validate_identifier(db_info.get('event_story_v2_title_col', 'title'))
-                col_sub = _validate_identifier(db_info.get('event_story_v2_sub_title_col', 'sub_title'))
+                try:
+                    tbl_ev2_v = _validate_identifier(tbl_ev2)
+                    col_id = _validate_identifier(db_info.get('event_story_v2_id_col', 'story_id'))
+                    col_t = _validate_identifier(db_info.get('event_story_v2_title_col', 'title'))
+                    col_sub = _validate_identifier(db_info.get('event_story_v2_sub_title_col', 'sub_title'))
 
-                cursor.execute(f'SELECT "{col_id}", "{col_t}", "{col_sub}" FROM "{tbl_ev2_v}"')
-                for sid, t, sub in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        t_clean = str(t).replace('\\n', ' ').strip() if t else ''
-                        sub_clean = str(sub).replace('\\n', ' ').strip() if sub else ''
-                        if sub_clean and t_clean:
-                            result_map[sid_str] = f"{sub_clean} - {t_clean}"
-                        else:
-                            val = sub_clean or t_clean
-                            if val:
-                                result_map[sid_str] = val
-
-            # 3. 이벤트 상세 / 엔딩 / 특별 드라마 (event_details_table)
-            tbl_ev_det = db_info.get('event_details_table')
-            if tbl_ev_det:
-                tbl_ev_det_v = _validate_identifier(tbl_ev_det)
-                col_id = _validate_identifier(db_info.get('event_id_col_details', 'story_id'))
-                col_t = _validate_identifier(db_info.get('event_info_col_details', 'sub_title'))
-                col_title_det = db_info.get('event_title_col_details')
-
-                if col_title_det:
-                    col_title_det_v = _validate_identifier(col_title_det)
-                    cursor.execute(f'SELECT "{col_id}", "{col_t}", "{col_title_det_v}" FROM "{tbl_ev_det_v}"')
-                    for sid, sub, t in cursor.fetchall():
+                    cursor.execute(f'SELECT "{col_id}", "{col_t}", "{col_sub}" FROM "{tbl_ev2_v}"')
+                    for sid, t, sub in cursor.fetchall():
                         sid_str = str(sid)
                         if sid_str in adv_ids and sid_str not in result_map:
                             t_clean = str(t).replace('\\n', ' ').strip() if t else ''
@@ -1069,120 +1050,171 @@ def fetch_event_minigame_and_sub_scenes_batch(db_info: dict[str, Any], adv_ids: 
                             if sub_clean and t_clean:
                                 result_map[sid_str] = f"{sub_clean} - {t_clean}"
                             else:
-                                ev_p = get_ev_prefix(int(sid))
                                 val = sub_clean or t_clean
                                 if val:
-                                    result_map[sid_str] = f"{ev_p}{val}"
-                else:
-                    cursor.execute(f'SELECT "{col_id}", "{col_t}" FROM "{tbl_ev_det_v}"')
-                    for sid, sub in cursor.fetchall():
-                        sid_str = str(sid)
-                        if sid_str in adv_ids and sid_str not in result_map:
-                            sub_clean = str(sub).replace('\\n', ' ').strip() if sub else ''
-                            if sub_clean:
-                                ev_p = get_ev_prefix(int(sid))
-                                result_map[sid_str] = f"{ev_p}{sub_clean}"
+                                    result_map[sid_str] = val
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    pass
+
+            # 3. 이벤트 상세 / 엔딩 / 특별 드라마 (event_details_table)
+            tbl_ev_det = db_info.get('event_details_table')
+            if tbl_ev_det:
+                try:
+                    tbl_ev_det_v = _validate_identifier(tbl_ev_det)
+                    col_id = _validate_identifier(db_info.get('event_id_col_details', 'story_id'))
+                    col_t = _validate_identifier(db_info.get('event_info_col_details', 'sub_title'))
+                    col_title_det = db_info.get('event_title_col_details')
+
+                    if col_title_det:
+                        col_title_det_v = _validate_identifier(col_title_det)
+                        cursor.execute(f'SELECT "{col_id}", "{col_t}", "{col_title_det_v}" FROM "{tbl_ev_det_v}"')
+                        for sid, sub, t in cursor.fetchall():
+                            sid_str = str(sid)
+                            if sid_str in adv_ids and sid_str not in result_map:
+                                t_clean = str(t).replace('\\n', ' ').strip() if t else ''
+                                sub_clean = str(sub).replace('\\n', ' ').strip() if sub else ''
+                                if sub_clean and t_clean:
+                                    result_map[sid_str] = f"{sub_clean} - {t_clean}"
+                                else:
+                                    ev_p = get_ev_prefix(int(sid))
+                                    val = sub_clean or t_clean
+                                    if val:
+                                        result_map[sid_str] = f"{ev_p}{val}"
+                    else:
+                        cursor.execute(f'SELECT "{col_id}", "{col_t}" FROM "{tbl_ev_det_v}"')
+                        for sid, sub in cursor.fetchall():
+                            sid_str = str(sid)
+                            if sid_str in adv_ids and sid_str not in result_map:
+                                sub_clean = str(sub).replace('\\n', ' ').strip() if sub else ''
+                                if sub_clean:
+                                    ev_p = get_ev_prefix(int(sid))
+                                    result_map[sid_str] = f"{ev_p}{sub_clean}"
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    pass
 
             # 4. 시나리오 보스 배틀 (hatsune_boss_v2 / hatsune_scenario_boss)
             boss_tbls = [
                 (db_info.get('hatsune_boss_v2_table'), db_info.get('hatsune_boss_v2_quest_name_col', 'quest_name'), db_info.get('hatsune_boss_v2_wavestart_col', 'story_id_wavestart_1'), db_info.get('hatsune_boss_v2_waveend_col', 'story_id_waveend_1')),
                 (db_info.get('hatsune_scenario_boss_table'), db_info.get('hatsune_scenario_boss_quest_name_col', 'quest_name'), db_info.get('hatsune_scenario_boss_wavestart_col', 'story_id_wavestart_1'), db_info.get('hatsune_scenario_boss_waveend_col', 'story_id_waveend_1')),
+                # 10061600 하위 호환 후보
+                ('v1_62da2e9924c716b713b50ba5b98fdf6fb4b00edd33a726d77f26e5645f2ac56c', 'd2de788a5b97de69e7cd89e44538c449e4964655c6f544794a5428c600448449', 'a8e5845f1910754597eb16a2920266762b4396b2759de187a4619fd639d8265a', '000c4a2a54553549639505fcd615042770ad16d1f902339806c2adafee420cc6'),
             ]
             for b_tbl, b_qn, b_ws, b_we in boss_tbls:
                 if not b_tbl:
                     continue
-                tbl_sb_v = _validate_identifier(b_tbl)
-                col_qn = _validate_identifier(b_qn)
-                col_ws = _validate_identifier(b_ws)
-                col_we = _validate_identifier(b_we)
+                try:
+                    tbl_sb_v = _validate_identifier(b_tbl)
+                    col_qn = _validate_identifier(b_qn)
+                    col_ws = _validate_identifier(b_ws)
+                    col_we = _validate_identifier(b_we)
 
-                cursor.execute(f'SELECT "{col_ws}", "{col_qn}" FROM "{tbl_sb_v}" WHERE "{col_ws}" != 0')
-                for sid, qn in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        ev_p = get_ev_prefix(int(sid))
-                        q_clean = str(qn).strip() if qn else ""
-                        if q_clean:
-                            result_map[sid_str] = f"{ev_p}{q_clean} (wavestart)"
+                    cursor.execute(f'SELECT "{col_ws}", "{col_qn}" FROM "{tbl_sb_v}" WHERE "{col_ws}" != 0')
+                    for sid, qn in cursor.fetchall():
+                        sid_str = str(sid)
+                        if sid_str in adv_ids and sid_str not in result_map:
+                            ev_p = get_ev_prefix(int(sid))
+                            q_clean = str(qn).strip() if qn else ""
+                            if q_clean:
+                                result_map[sid_str] = f"{ev_p}{q_clean} (wavestart)"
 
-                cursor.execute(f'SELECT "{col_we}", "{col_qn}" FROM "{tbl_sb_v}" WHERE "{col_we}" != 0')
-                for sid, qn in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        ev_p = get_ev_prefix(int(sid))
-                        q_clean = str(qn).strip() if qn else ""
-                        if q_clean:
-                            result_map[sid_str] = f"{ev_p}{q_clean} (waveend)"
+                    cursor.execute(f'SELECT "{col_we}", "{col_qn}" FROM "{tbl_sb_v}" WHERE "{col_we}" != 0')
+                    for sid, qn in cursor.fetchall():
+                        sid_str = str(sid)
+                        if sid_str in adv_ids and sid_str not in result_map:
+                            ev_p = get_ev_prefix(int(sid))
+                            q_clean = str(qn).strip() if qn else ""
+                            if q_clean:
+                                result_map[sid_str] = f"{ev_p}{q_clean} (waveend)"
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    continue
 
             # 5. SP 배틀 v2 (hatsune_sp_battle_v2)
-            tbl_sp = db_info.get('hatsune_sp_battle_v2_table')
-            if tbl_sp:
-                tbl_sp_v = _validate_identifier(tbl_sp)
-                col_mode = _validate_identifier(db_info.get('hatsune_sp_battle_v2_mode_col', 'mode'))
-                col_ms = _validate_identifier(db_info.get('hatsune_sp_battle_v2_mode_start_col', 'story_id_mode_start'))
-                col_me = _validate_identifier(db_info.get('hatsune_sp_battle_v2_mode_end_col', 'story_id_mode_end'))
+            sp_tbls = [
+                (db_info.get('hatsune_sp_battle_v2_table'), db_info.get('hatsune_sp_battle_v2_mode_col', 'mode'), db_info.get('hatsune_sp_battle_v2_mode_start_col', 'story_id_mode_start'), db_info.get('hatsune_sp_battle_v2_mode_end_col', 'story_id_mode_end')),
+                # 10061600 하위 호환 후보
+                ('v1_925518ad624d33c97b5c6b1217cff2f77c6bea2ce835af0f6522aff44fa60fef', '07f267b1b2032da295e9140aeb449775139f05a590c42ba30175ea611dcdddcd', 'f711a059c2dc8230d4764c8ed9bb54e47dadc862b25ca2aa2fad4ef22af27b20', '64bbdc98663043a40cc8762161250e89fc91cd4d43f374ad42282ba3de644c85'),
+            ]
+            for s_tbl, s_mode, s_ms, s_me in sp_tbls:
+                if not s_tbl:
+                    continue
+                try:
+                    tbl_sp_v = _validate_identifier(s_tbl)
+                    col_mode = _validate_identifier(s_mode)
+                    col_ms = _validate_identifier(s_ms)
+                    col_me = _validate_identifier(s_me)
 
-                cursor.execute(f'SELECT "{col_ms}", "{col_mode}" FROM "{tbl_sp_v}" WHERE "{col_ms}" != 0')
-                for sid, mode in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        ev_p = get_ev_prefix(int(sid))
-                        result_map[sid_str] = f"{ev_p}SPECIAL MODE {mode} (mode_start)"
+                    cursor.execute(f'SELECT "{col_ms}", "{col_mode}" FROM "{tbl_sp_v}" WHERE "{col_ms}" != 0')
+                    for sid, mode in cursor.fetchall():
+                        sid_str = str(sid)
+                        if sid_str in adv_ids and sid_str not in result_map:
+                            ev_p = get_ev_prefix(int(sid))
+                            result_map[sid_str] = f"{ev_p}SPECIAL MODE {mode} (mode_start)"
 
-                cursor.execute(f'SELECT "{col_me}", "{col_mode}" FROM "{tbl_sp_v}" WHERE "{col_me}" != 0')
-                for sid, mode in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        ev_p = get_ev_prefix(int(sid))
-                        result_map[sid_str] = f"{ev_p}SPECIAL MODE {mode} (mode_end)"
+                    cursor.execute(f'SELECT "{col_me}", "{col_mode}" FROM "{tbl_sp_v}" WHERE "{col_me}" != 0')
+                    for sid, mode in cursor.fetchall():
+                        sid_str = str(sid)
+                        if sid_str in adv_ids and sid_str not in result_map:
+                            ev_p = get_ev_prefix(int(sid))
+                            result_map[sid_str] = f"{ev_p}SPECIAL MODE {mode} (mode_end)"
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    continue
 
             # 6. 전시 배틀 EX (hatsune_ex_battle)
             tbl_ex = db_info.get('hatsune_ex_battle_table')
             if tbl_ex:
-                tbl_ex_v = _validate_identifier(tbl_ex)
-                col_id = _validate_identifier(db_info.get('hatsune_ex_battle_id_col', 'story_id'))
+                try:
+                    tbl_ex_v = _validate_identifier(tbl_ex)
+                    col_id = _validate_identifier(db_info.get('hatsune_ex_battle_id_col', 'story_id'))
 
-                cursor.execute(f'SELECT "{col_id}" FROM "{tbl_ex_v}" WHERE "{col_id}" != 0')
-                for sid, in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        ev_p = get_ev_prefix(int(sid))
-                        result_map[sid_str] = f"{ev_p}EX (ex_battle)"
+                    cursor.execute(f'SELECT "{col_id}" FROM "{tbl_ex_v}" WHERE "{col_id}" != 0')
+                    for sid, in cursor.fetchall():
+                        sid_str = str(sid)
+                        if sid_str in adv_ids and sid_str not in result_map:
+                            ev_p = get_ev_prefix(int(sid))
+                            result_map[sid_str] = f"{ev_p}EX (ex_battle)"
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    pass
 
             # 7. 요리 교실 미니게임 (event_cooking_minigame)
             tbl_cook = db_info.get('event_cooking_minigame_table')
             if tbl_cook:
-                tbl_cook_v = _validate_identifier(tbl_cook)
-                col_id = _validate_identifier(db_info.get('event_cooking_minigame_id_col', 'story_id'))
-                col_t = _validate_identifier(db_info.get('event_cooking_minigame_title_col', 'title'))
+                try:
+                    tbl_cook_v = _validate_identifier(tbl_cook)
+                    col_id = _validate_identifier(db_info.get('event_cooking_minigame_id_col', 'story_id'))
+                    col_t = _validate_identifier(db_info.get('event_cooking_minigame_title_col', 'title'))
 
-                cursor.execute(f'SELECT "{col_id}", "{col_t}" FROM "{tbl_cook_v}" WHERE "{col_id}" != 0')
-                for sid, t in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        t_clean = str(t).strip() if t else ""
-                        if t_clean:
-                            ev_p = get_ev_prefix(int(sid))
-                            result_map[sid_str] = f"{ev_p}{t_clean}"
+                    cursor.execute(f'SELECT "{col_id}", "{col_t}" FROM "{tbl_cook_v}" WHERE "{col_id}" != 0')
+                    for sid, t in cursor.fetchall():
+                        sid_str = str(sid)
+                        if sid_str in adv_ids and sid_str not in result_map:
+                            t_clean = str(t).strip() if t else ""
+                            if t_clean:
+                                ev_p = get_ev_prefix(int(sid))
+                                result_map[sid_str] = f"{ev_p}{t_clean}"
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    pass
 
             # 8. 몬스터 박물관 미니게임 (event_museum_minigame)
             tbl_mus = db_info.get('event_museum_minigame_table')
             if tbl_mus:
-                tbl_mus_v = _validate_identifier(tbl_mus)
-                col_id = _validate_identifier(db_info.get('event_museum_minigame_id_col', 'story_id'))
-                col_t = _validate_identifier(db_info.get('event_museum_minigame_title_col', 'title'))
-                col_sub = _validate_identifier(db_info.get('event_museum_minigame_sub_title_col', 'sub_title'))
+                try:
+                    tbl_mus_v = _validate_identifier(tbl_mus)
+                    col_id = _validate_identifier(db_info.get('event_museum_minigame_id_col', 'story_id'))
+                    col_t = _validate_identifier(db_info.get('event_museum_minigame_title_col', 'title'))
+                    col_sub = _validate_identifier(db_info.get('event_museum_minigame_sub_title_col', 'sub_title'))
 
-                cursor.execute(f'SELECT "{col_id}", "{col_t}", "{col_sub}" FROM "{tbl_mus_v}" WHERE "{col_id}" != 0')
-                for sid, t, sub in cursor.fetchall():
-                    sid_str = str(sid)
-                    if sid_str in adv_ids and sid_str not in result_map:
-                        t_clean = str(t).strip() if t else ""
-                        sub_clean = str(sub).strip() if sub else ""
-                        full_t = f"{t_clean} ({sub_clean})" if (t_clean and sub_clean) else (t_clean or sub_clean)
-                        if full_t:
-                            ev_p = get_ev_prefix(int(sid))
-                            result_map[sid_str] = f"{ev_p}{full_t}"
+                    cursor.execute(f'SELECT "{col_id}", "{col_t}", "{col_sub}" FROM "{tbl_mus_v}" WHERE "{col_id}" != 0')
+                    for sid, t, sub in cursor.fetchall():
+                        sid_str = str(sid)
+                        if sid_str in adv_ids and sid_str not in result_map:
+                            t_clean = str(t).strip() if t else ""
+                            sub_clean = str(sub).strip() if sub else ""
+                            full_t = f"{t_clean} ({sub_clean})" if (t_clean and sub_clean) else (t_clean or sub_clean)
+                            if full_t:
+                                ev_p = get_ev_prefix(int(sid))
+                                result_map[sid_str] = f"{ev_p}{full_t}"
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    pass
 
             # 9. 수수께끼/추리 미니게임 (event_riddle_minigame / hatsune_quiz)
             riddle_configs = [

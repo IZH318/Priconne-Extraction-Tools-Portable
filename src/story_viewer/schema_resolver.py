@@ -27,6 +27,65 @@ WEIGHT_SAMPLE_MATCH: float = 0.80
 WEIGHT_AVG_OVERLAP: float = 0.15
 WEIGHT_COL_PROXIMITY: float = 0.05
 
+COLUMN_MAPPINGS: Dict[str, List[str]] = {
+    "event_list_table": ["event_name_col_list", "event_group_id_col_list"],
+    "event_details_table": ["event_info_col_details", "event_title_col_details", "event_id_col_details", "event_group_id_col_details"],
+    "birthday_table": ["birthday_name_col", "birthday_adv_id_col"],
+    "quest_table": ["quest_name_col", "quest_wavestart_col", "quest_waveend_col"],
+    "story_detail_table": ["story_detail_id_col", "story_detail_title_col", "story_detail_sub_title_col"],
+    "dear_story_detail_table": ["dear_story_detail_id_col", "dear_story_detail_title_col", "dear_story_detail_sub_title_col"],
+    "tower_story_detail_table": ["tower_story_detail_id_col", "tower_story_detail_title_col", "tower_story_detail_sub_title_col"],
+    "alchemy_story_detail_table": ["alchemy_story_detail_id_col", "alchemy_story_detail_title_col"],
+    "sekai_top_data_table": [
+        "sekai_top_data_id_col", "sekai_top_data_name_col", "sekai_top_data_boss_mode_col",
+        "sekai_top_data_boss_time_from_col", "sekai_top_data_boss_hp_from_col"
+    ],
+    "sekai_top_story_data_table": [
+        "sekai_top_story_data_id_col", "sekai_top_story_data_boss_time_from_col", "sekai_top_story_data_boss_time_to_col"
+    ],
+    "event_top_adv_table": [
+        "event_top_adv_id_col", "event_top_adv_character_id_col", "event_top_adv_event_id_col"
+    ],
+    "unit_table": [
+        "unit_id_col", "unit_name_col"
+    ],
+    "hatsune_boss_table": [
+        "hatsune_boss_event_id_col", "hatsune_boss_quest_name_col", "hatsune_boss_wavestart_col", "hatsune_boss_waveend_col"
+    ],
+    "hatsune_special_battle_table": [
+        "hatsune_special_battle_event_id_col", "hatsune_special_battle_mode_col", "hatsune_special_battle_mode_start_col", "hatsune_special_battle_mode_end_col"
+    ],
+    "hatsune_scenario_boss_table": [
+        "hatsune_scenario_boss_quest_name_col", "hatsune_scenario_boss_wavestart_col", "hatsune_scenario_boss_waveend_col"
+    ],
+    "hatsune_boss_v2_table": [
+        "hatsune_boss_v2_quest_name_col", "hatsune_boss_v2_wavestart_col", "hatsune_boss_v2_waveend_col",
+        "hatsune_boss_v2_boss_id_col", "hatsune_boss_v2_event_id_col", "hatsune_boss_v2_mode_col"
+    ],
+    "hatsune_sp_battle_v2_table": [
+        "hatsune_sp_battle_v2_mode_col", "hatsune_sp_battle_v2_mode_start_col", "hatsune_sp_battle_v2_mode_end_col"
+    ],
+    "hatsune_ex_battle_table": [
+        "hatsune_ex_battle_id_col"
+    ],
+    "event_cooking_minigame_table": [
+        "event_cooking_minigame_id_col", "event_cooking_minigame_title_col"
+    ],
+    "event_cooking_reaction_table": [
+        "event_cooking_reaction_id_col"
+    ],
+    "event_museum_minigame_table": [
+        "event_museum_minigame_id_col", "event_museum_minigame_title_col", "event_museum_minigame_sub_title_col"
+    ],
+    "event_riddle_minigame_table": [
+        "event_riddle_minigame_point_name_col", "event_riddle_minigame_title_col",
+        "event_riddle_minigame_start_id_col", "event_riddle_minigame_end_id_col"
+    ],
+    "event_story_v2_table": [
+        "event_story_v2_id_col", "event_story_v2_title_col", "event_story_v2_sub_title_col"
+    ]
+}
+
 
 def escape_identifier(identifier: str) -> str:
     """SQLite 식별자(테이블 및 컬럼명)를 안전하게 이스케이프합니다."""
@@ -411,7 +470,10 @@ def resolve_single_table_worker(args: tuple) -> tuple:
         (server_key, table_key, base_table_name, best_table, human_to_hash_map)
     """
     server_key, table_key, base_db_path, target_db_path, base_table_name, target_tables_with_col = args
-    if not base_table_name or base_table_name.startswith("v1_"):
+    if not base_table_name:
+        return server_key, table_key, base_table_name, base_table_name, {}
+
+    if base_db_path == target_db_path:
         return server_key, table_key, base_table_name, base_table_name, {}
 
     if not os.path.exists(base_db_path) or not os.path.exists(target_db_path):
@@ -526,70 +588,45 @@ def resolve_all_servers_parallel(
             ("story_detail_table", info.get("story_detail_table", ""), baseline_path),
             ("dear_story_detail_table", info.get("dear_story_detail_table", ""), baseline_path),
             ("tower_story_detail_table", info.get("tower_story_detail_table", ""), baseline_path),
+            ("sekai_top_data_table", info.get("sekai_top_data_table", ""), baseline_path),
+            ("sekai_top_story_data_table", info.get("sekai_top_story_data_table", ""), baseline_path),
+            ("event_top_adv_table", info.get("event_top_adv_table", ""), baseline_path),
+            ("unit_table", info.get("unit_table", ""), baseline_path),
+            ("hatsune_boss_table", info.get("hatsune_boss_table", ""), baseline_path),
+            ("hatsune_special_battle_table", info.get("hatsune_special_battle_table", ""), baseline_path),
         ]
         
-        # 알케스 연금당 숏드라마 스토리 상세 테이블
-        alchemy_table = info.get("alchemy_story_detail_table", "")
-        if alchemy_table:
-            alchemy_base_key = info.get("alchemy_story_detail_baseline", "10059300")
-            b_info = info.get("baseline_dbs", {}).get(alchemy_base_key, {})
-            alchemy_base_filename = b_info.get("db_path", f"master_{server_key.lower()}_{alchemy_base_key}.db")
-            alchemy_base_path = os.path.join(src_dir, alchemy_base_filename)
-            table_keys.append(("alchemy_story_detail_table", alchemy_table, alchemy_base_path))
-
-        # 만우절 레이드 sekai 테이블들
-        if info.get("sekai_top_data_table"):
-            table_keys.append(("sekai_top_data_table", info.get("sekai_top_data_table", ""), baseline_path))
-        if info.get("sekai_top_story_data_table"):
-            table_keys.append(("sekai_top_story_data_table", info.get("sekai_top_story_data_table", ""), baseline_path))
-
-        # 이벤트 톱 ADV 및 유닛 테이블
-        if info.get("event_top_adv_table"):
-            table_keys.append(("event_top_adv_table", info.get("event_top_adv_table", ""), baseline_path))
-        if info.get("unit_table"):
-            table_keys.append(("unit_table", info.get("unit_table", ""), baseline_path))
-        if info.get("hatsune_boss_table"):
-            table_keys.append(("hatsune_boss_table", info.get("hatsune_boss_table", ""), baseline_path))
-        if info.get("hatsune_special_battle_table"):
-            table_keys.append(("hatsune_special_battle_table", info.get("hatsune_special_battle_table", ""), baseline_path))
+        # baseline_dbs가 지정된 테이블들 (alchemy_story_detail 및 신규 9개 테이블)
+        baseline_dbs = info.get("baseline_dbs", {})
+        baseline_tables = [
+            "alchemy_story_detail",
+            "hatsune_scenario_boss",
+            "hatsune_boss_v2",
+            "hatsune_sp_battle_v2",
+            "hatsune_ex_battle",
+            "event_cooking_minigame",
+            "event_cooking_reaction",
+            "event_museum_minigame",
+            "event_riddle_minigame",
+            "event_story_v2"
+        ]
+        for tbl_prefix in baseline_tables:
+            tbl_k = f"{tbl_prefix}_table"
+            tbl_v = info.get(tbl_k, "")
+            if tbl_v:
+                b_key = info.get(f"{tbl_prefix}_baseline", "10067600")
+                b_info = baseline_dbs.get(b_key, {})
+                b_filename = b_info.get("db_path", f"master_{server_key.lower()}_{b_key}.db")
+                b_tbl_path = os.path.join(src_dir, b_filename)
+                table_keys.append((tbl_k, tbl_v, b_tbl_path))
 
         for t_key, tbl_name, b_path in table_keys:
-            if tbl_name and not tbl_name.startswith("v1_"):
+            if tbl_name and os.path.exists(b_path) and b_path != db_path:
                 all_tasks.append((server_key, t_key, b_path, db_path, tbl_name, target_tables_with_col))
 
     if not all_tasks:
         return
 
-    # 컬럼 매핑 관계 정의
-    COLUMN_MAPPINGS = {
-        "event_list_table": ["event_name_col_list", "event_group_id_col_list"],
-        "event_details_table": ["event_info_col_details", "event_title_col_details", "event_id_col_details", "event_group_id_col_details"],
-        "birthday_table": ["birthday_name_col", "birthday_adv_id_col"],
-        "quest_table": ["quest_name_col", "quest_wavestart_col", "quest_waveend_col"],
-        "story_detail_table": ["story_detail_id_col", "story_detail_title_col", "story_detail_sub_title_col"],
-        "dear_story_detail_table": ["dear_story_detail_id_col", "dear_story_detail_title_col", "dear_story_detail_sub_title_col"],
-        "tower_story_detail_table": ["tower_story_detail_id_col", "tower_story_detail_title_col", "tower_story_detail_sub_title_col"],
-        "alchemy_story_detail_table": ["alchemy_story_detail_id_col", "alchemy_story_detail_title_col"],
-        "sekai_top_data_table": [
-            "sekai_top_data_id_col", "sekai_top_data_name_col", "sekai_top_data_boss_mode_col",
-            "sekai_top_data_boss_time_from_col", "sekai_top_data_boss_hp_from_col"
-        ],
-        "sekai_top_story_data_table": [
-            "sekai_top_story_data_id_col", "sekai_top_story_data_boss_time_from_col", "sekai_top_story_data_boss_time_to_col"
-        ],
-        "event_top_adv_table": [
-            "event_top_adv_id_col", "event_top_adv_character_id_col", "event_top_adv_event_id_col"
-        ],
-        "unit_table": [
-            "unit_id_col", "unit_name_col"
-        ],
-        "hatsune_boss_table": [
-            "hatsune_boss_event_id_col", "hatsune_boss_quest_name_col", "hatsune_boss_wavestart_col", "hatsune_boss_waveend_col"
-        ],
-        "hatsune_special_battle_table": [
-            "hatsune_special_battle_event_id_col", "hatsune_special_battle_mode_col", "hatsune_special_battle_mode_start_col", "hatsune_special_battle_mode_end_col"
-        ]
-    }
 
     try:
         max_workers = min(len(all_tasks), os.cpu_count() or 4)
@@ -652,6 +689,13 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 progress_callback(server_key, "hatsune_boss_table")
             if server_info.get("hatsune_special_battle_table"):
                 progress_callback(server_key, "hatsune_special_battle_table")
+            for tbl_prefix in [
+                "alchemy_story_detail", "hatsune_scenario_boss", "hatsune_boss_v2", "hatsune_sp_battle_v2",
+                "hatsune_ex_battle", "event_cooking_minigame", "event_cooking_reaction", "event_museum_minigame",
+                "event_riddle_minigame", "event_story_v2"
+            ]:
+                if server_info.get(f"{tbl_prefix}_table"):
+                    progress_callback(server_key, f"{tbl_prefix}_table")
         return
 
     if not os.path.exists(baseline_path):
@@ -805,29 +849,38 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             if tower_sub_title_col and tower_sub_title_col in tower_col_map:
                 server_info["tower_story_detail_sub_title_col"] = tower_col_map[tower_sub_title_col]
 
-        # 8. 알케스 연금당 숏드라마 스토리 상세 테이블 매핑
-        alchemy_table = server_info.get("alchemy_story_detail_table", "")
-        if alchemy_table:
-            if progress_callback:
-                progress_callback(server_key, "alchemy_story_detail_table")
-            
-            alchemy_base_key = server_info.get("alchemy_story_detail_baseline", "10059300")
-            b_info = server_info.get("baseline_dbs", {}).get(alchemy_base_key, {})
-            alchemy_base_filename = b_info.get("db_path", f"master_{server_key.lower()}_{alchemy_base_key}.db")
-            alchemy_base_path = os.path.join(os.path.dirname(baseline_path), alchemy_base_filename)
-            
-            if os.path.exists(alchemy_base_path):
-                alchemy_extractor = get_extractor(alchemy_base_path)
-                obf_alchemy_table, alchemy_col_map = alchemy_extractor._find_and_deobfuscate_table(alchemy_table)
-                server_info["alchemy_story_detail_table"] = obf_alchemy_table
-                
-                alchemy_id_col = server_info.get("alchemy_story_detail_id_col")
-                if alchemy_id_col and alchemy_id_col in alchemy_col_map:
-                    server_info["alchemy_story_detail_id_col"] = alchemy_col_map[alchemy_id_col]
-                    
-                alchemy_title_col = server_info.get("alchemy_story_detail_title_col")
-                if alchemy_title_col and alchemy_title_col in alchemy_col_map:
-                    server_info["alchemy_story_detail_title_col"] = alchemy_col_map[alchemy_title_col]
+        # 8. baseline_dbs 기반 추가 테이블(알케스 및 신규 9개 테이블) 역난독화 매핑
+        baseline_tables = [
+            "alchemy_story_detail",
+            "hatsune_scenario_boss",
+            "hatsune_boss_v2",
+            "hatsune_sp_battle_v2",
+            "hatsune_ex_battle",
+            "event_cooking_minigame",
+            "event_cooking_reaction",
+            "event_museum_minigame",
+            "event_riddle_minigame",
+            "event_story_v2"
+        ]
+        baseline_dbs = server_info.get("baseline_dbs", {})
+        for tbl_prefix in baseline_tables:
+            tbl_k = f"{tbl_prefix}_table"
+            tbl_v = server_info.get(tbl_k, "")
+            if tbl_v:
+                if progress_callback:
+                    progress_callback(server_key, tbl_k)
+                b_key = server_info.get(f"{tbl_prefix}_baseline", "10067600")
+                b_info = baseline_dbs.get(b_key, {})
+                b_filename = b_info.get("db_path", f"master_{server_key.lower()}_{b_key}.db")
+                b_tbl_path = os.path.join(os.path.dirname(baseline_path), b_filename)
+                if os.path.exists(b_tbl_path) and b_tbl_path != latest_path:
+                    b_extractor = get_extractor(b_tbl_path)
+                    obf_tbl, col_map = b_extractor._find_and_deobfuscate_table(tbl_v)
+                    server_info[tbl_k] = obf_tbl
+                    for col_key in COLUMN_MAPPINGS.get(tbl_k, []):
+                        val = server_info.get(col_key)
+                        if val and val in col_map:
+                            server_info[col_key] = col_map[val]
 
         # 9. 만우절 레이드 sekai_top_data 테이블 매핑
         sekai_table = server_info.get("sekai_top_data_table", "")

@@ -150,7 +150,7 @@ class StoryDBManager:
             missing_db_files = [] # 누락 메시지용 문자열 리스트
             downloads_list = []   # (url, dest_path, dest_filename) 튜플 리스트
             
-            from .schema_resolver import resolve_server_config
+            from .schema_resolver import resolve_server_config, COLUMN_MAPPINGS
             
             tag_missing = lang_dict.get('tag_missing', '[Missing] ')
             tag_update = lang_dict.get('tag_update', '[Update] ')
@@ -161,16 +161,7 @@ class StoryDBManager:
             total_steps = 0
             for s, i in self._server_db_info.items():
                 if isinstance(i, dict) and 'db_path' in i:
-                    total_steps += (
-                        7
-                        + (1 if i.get('alchemy_story_detail_table') else 0)
-                        + (1 if i.get('sekai_top_data_table') else 0)
-                        + (1 if i.get('sekai_top_story_data_table') else 0)
-                        + (1 if i.get('event_top_adv_table') else 0)
-                        + (1 if i.get('unit_table') else 0)
-                        + (1 if i.get('hatsune_boss_table') else 0)
-                        + (1 if i.get('hatsune_special_battle_table') else 0)
-                    )
+                    total_steps += sum(1 for t in COLUMN_MAPPINGS if i.get(t))
             total_steps = max(1, total_steps)
             step_size = 90 / total_steps
             current_progress = 10
