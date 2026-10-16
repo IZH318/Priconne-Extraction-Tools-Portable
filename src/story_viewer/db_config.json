@@ -120,6 +120,23 @@
             "mode_start_col": "story_id_mode_start",
             "mode_end_col": "story_id_mode_end"
         },
+        "legion_special_battle": {
+            "table": "legion_special_battle",
+            "mode_col": "mode",
+            "mode_start_col": "story_id_mode_start",
+            "mode_end_col": "story_id_mode_end"
+        },
+        "byway_battle_quest_data": {
+            "table": "byway_battle_quest_data",
+            "quest_id_col": "quest_id",
+            "wavestart_col": "story_id_wavestart_1",
+            "waveend_col": "story_id_waveend_1"
+        },
+        "byway_quest_data": {
+            "table": "byway_quest_data",
+            "quest_id_col": "quest_id",
+            "quest_name_col": "quest_name"
+        },
         "hatsune_scenario_boss": {
             "baseline": "10067600",
             "table": "v1_c0e7ffb9985fc25db8bc41ca3b5f11ba83e5139fdb5d3adaa3a6bb415aabc2b7",

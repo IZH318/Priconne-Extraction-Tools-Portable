@@ -55,6 +55,15 @@ COLUMN_MAPPINGS: Dict[str, List[str]] = {
     "hatsune_special_battle_table": [
         "hatsune_special_battle_event_id_col", "hatsune_special_battle_mode_col", "hatsune_special_battle_mode_start_col", "hatsune_special_battle_mode_end_col"
     ],
+    "legion_special_battle_table": [
+        "legion_special_battle_mode_col", "legion_special_battle_mode_start_col", "legion_special_battle_mode_end_col"
+    ],
+    "byway_battle_quest_data_table": [
+        "byway_battle_quest_data_quest_id_col", "byway_battle_quest_data_wavestart_col", "byway_battle_quest_data_waveend_col"
+    ],
+    "byway_quest_data_table": [
+        "byway_quest_data_quest_id_col", "byway_quest_data_quest_name_col"
+    ],
     "hatsune_scenario_boss_table": [
         "hatsune_scenario_boss_quest_name_col", "hatsune_scenario_boss_wavestart_col", "hatsune_scenario_boss_waveend_col"
     ],
@@ -594,6 +603,9 @@ def resolve_all_servers_parallel(
             ("unit_table", info.get("unit_table", ""), baseline_path),
             ("hatsune_boss_table", info.get("hatsune_boss_table", ""), baseline_path),
             ("hatsune_special_battle_table", info.get("hatsune_special_battle_table", ""), baseline_path),
+            ("legion_special_battle_table", info.get("legion_special_battle_table", ""), baseline_path),
+            ("byway_battle_quest_data_table", info.get("byway_battle_quest_data_table", ""), baseline_path),
+            ("byway_quest_data_table", info.get("byway_quest_data_table", ""), baseline_path),
         ]
         
         # baseline_dbs가 지정된 테이블들 (alchemy_story_detail 및 신규 9개 테이블)
@@ -689,6 +701,12 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 progress_callback(server_key, "hatsune_boss_table")
             if server_info.get("hatsune_special_battle_table"):
                 progress_callback(server_key, "hatsune_special_battle_table")
+            if server_info.get("legion_special_battle_table"):
+                progress_callback(server_key, "legion_special_battle_table")
+            if server_info.get("byway_battle_quest_data_table"):
+                progress_callback(server_key, "byway_battle_quest_data_table")
+            if server_info.get("byway_quest_data_table"):
+                progress_callback(server_key, "byway_quest_data_table")
             for tbl_prefix in [
                 "alchemy_story_detail", "hatsune_scenario_boss", "hatsune_boss_v2", "hatsune_sp_battle_v2",
                 "hatsune_ex_battle", "event_cooking_minigame", "event_cooking_reaction", "event_museum_minigame",
@@ -969,6 +987,45 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
                 val = server_info.get(col_key)
                 if val and val in hsb_col_map:
                     server_info[col_key] = hsb_col_map[val]
+
+        # 15. legion_special_battle 테이블 매핑
+        lsb_table = server_info.get("legion_special_battle_table", "")
+        if lsb_table and not lsb_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "legion_special_battle_table")
+            obf_lsb_table, lsb_col_map = extractor._find_and_deobfuscate_table(lsb_table)
+            server_info["legion_special_battle_table"] = obf_lsb_table
+
+            for col_key in ["legion_special_battle_mode_col", "legion_special_battle_mode_start_col", "legion_special_battle_mode_end_col"]:
+                val = server_info.get(col_key)
+                if val and val in lsb_col_map:
+                    server_info[col_key] = lsb_col_map[val]
+
+        # 16. byway_battle_quest_data 테이블 매핑
+        bb_table = server_info.get("byway_battle_quest_data_table", "")
+        if bb_table and not bb_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "byway_battle_quest_data_table")
+            obf_bb_table, bb_col_map = extractor._find_and_deobfuscate_table(bb_table)
+            server_info["byway_battle_quest_data_table"] = obf_bb_table
+
+            for col_key in ["byway_battle_quest_data_quest_id_col", "byway_battle_quest_data_wavestart_col", "byway_battle_quest_data_waveend_col"]:
+                val = server_info.get(col_key)
+                if val and val in bb_col_map:
+                    server_info[col_key] = bb_col_map[val]
+
+        # 17. byway_quest_data 테이블 매핑
+        bq_table = server_info.get("byway_quest_data_table", "")
+        if bq_table and not bq_table.startswith("v1_"):
+            if progress_callback:
+                progress_callback(server_key, "byway_quest_data_table")
+            obf_bq_table, bq_col_map = extractor._find_and_deobfuscate_table(bq_table)
+            server_info["byway_quest_data_table"] = obf_bq_table
+
+            for col_key in ["byway_quest_data_quest_id_col", "byway_quest_data_quest_name_col"]:
+                val = server_info.get(col_key)
+                if val and val in bq_col_map:
+                    server_info[col_key] = bq_col_map[val]
 
         logging.info("Successfully extracted obfuscated table/column names from the latest DB.")
     except Exception as e:

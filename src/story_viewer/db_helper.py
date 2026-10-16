@@ -94,6 +94,37 @@ def _get_db_path(db_info: dict[str, Any]) -> str:
     return os.path.join(script_dir, db_info['db_path'])
 
 
+def _get_baseline_db_path(db_info: dict[str, Any], baseline_version: str = 'default') -> str | None:
+    """지정된 baseline DB(기본 10052900, 10067600 등)의 실제 파일 경로를 반환합니다."""
+    script_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    src_dir = os.path.join(script_dir, 'src')
+
+    baseline_dbs = db_info.get('baseline_dbs')
+    if isinstance(baseline_dbs, dict) and baseline_version in baseline_dbs:
+        fname = baseline_dbs[baseline_version].get('db_path', '')
+        if fname:
+            p = os.path.join(src_dir, fname)
+            if os.path.exists(p):
+                return p
+
+    if baseline_version == 'default':
+        fname = db_info.get('baseline_db_path', '')
+        if fname:
+            p = os.path.join(src_dir, fname)
+            if os.path.exists(p):
+                return p
+
+    candidates = [
+        os.path.join(src_dir, f"master_jp_{baseline_version}.db"),
+        os.path.join(os.path.dirname(__file__), '..', f"master_jp_{baseline_version}.db"),
+        os.path.join(os.path.dirname(__file__), f"master_jp_{baseline_version}.db"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
+
 def fetch_event_names(db_info: dict[str, Any]) -> list[str]:
     """
     이벤트 이름 목록을 DB에서 조회하여 반환합니다.
@@ -988,14 +1019,18 @@ def fetch_event_boss_battle_titles_batch(db_info: dict[str, Any], adv_ids: list[
     return result_map
 
 
-def fetch_event_minigame_and_sub_scenes_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+def fetch_event_minigame_and_sub_scenes_batch(
+    db_info: dict[str, Any], 
+    adv_ids: list[str],
+    speaker_map: dict[str, str] | None = None
+) -> dict[str, str]:
     """adv_id 목록(5xxxxxx 잔여)을 기반으로 이벤트 미니게임 스토리, 신규 보스/SP/EX 배틀 연출,
-    이벤트 엔딩 및 메모리얼 토크 타이틀을 일괄 조회합니다.
-    대사 없는 단순 영상/오디오 재생 파일은 매핑하지 않고 원본명을 유지합니다.
+    요리 리액션 및 이벤트 가이드 타이틀을 일괄 조회합니다.
 
     Args:
         db_info (dict): 서버별 DB 정보 딕셔너리.
         adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+        speaker_map (dict, optional): adv_id->화자명 매핑 딕셔너리.
 
     Returns:
         dict[str, str]: adv_id를 키로, 공식 이벤트명과 결합된 타이틀을 값으로 갖는 딕셔너리.
@@ -1027,6 +1062,66 @@ def fetch_event_minigame_and_sub_scenes_batch(db_info: dict[str, Any], adv_ids: 
                                 event_map[r[0]] = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
             except (sqlite3.Error, UnsafeIdentifierError):
                 pass
+
+            # baseline default(10052900) 보강
+            p_base = _get_baseline_db_path(db_info, 'default')
+            if p_base and os.path.exists(p_base):
+                norm_base = p_base.replace('\\', '/')
+                try:
+                    with sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True) as conn_b:
+                        cur_b = conn_b.cursor()
+                        cur_b.execute('SELECT story_group_id, title FROM event_story_data')
+                        for r in cur_b.fetchall():
+                            if r[0] is not None and r[1] is not None and r[0] not in event_map:
+                                event_map[r[0]] = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
+                except Exception:
+                    pass
+
+            # baseline 10067600 보강 (최신 이벤트 및 요리 미니게임 리액션)
+            cooking_pairs = {}
+            v2_titles = {}
+            mypage_names = {}
+            story_to_mypage = {}
+
+            p_676 = _get_baseline_db_path(db_info, '10067600')
+            v2_table = db_info.get('event_story_v2_table', 'v1_5dc6443a480cd7e8a680f6904c9125ceba8a8b571beaf0f7c6c8b2788f4dc2eb')
+            if p_676 and os.path.exists(p_676):
+                norm_676 = p_676.replace('\\', '/')
+                try:
+                    with sqlite3.connect(f"file:{norm_676}?mode=ro", uri=True) as conn_676:
+                        cur_676 = conn_676.cursor()
+                        cur_676.execute(f'SELECT [bc69627001b433fade0a20e641d68ecd7f8b1e8b66370f29099c48ecc3c65afc], [c6064be3e0ab536646b7ce09315a0bda7958e82c6da3194472c2431345a34c35] FROM "{v2_table}"')
+                        for ev_id, full_t in cur_676.fetchall():
+                            grp = ev_id % 10000 if ev_id > 10000 else ev_id
+                            if grp not in event_map:
+                                clean_t = str(full_t).split(' ')[0].split('\u3000')[0].replace('\\n', ' ').strip()
+                                event_map[grp] = clean_t
+                                event_map[ev_id] = clean_t
+
+                        cur_676.execute('''
+                            SELECT f.[dc74953d7740483e43b6386653875c77e21540cc26cd8a3f0e802b57e7268baa], s.[f12d807789adeed6bccdb807e76bac3d299582a4a1ebed1caa5fdb045499a84d]
+                            FROM (SELECT * FROM v1_9f485b9b32e33f9d26dc0b0d907ef5dc93bb41f5f0dcd20fd8fa0ed703cac974 WHERE [dd05c32b741bbc005e7e29fdf97d4617786274bdec22143e69dae4c1c38c848d] = 3) f
+                            JOIN (SELECT * FROM v1_9f485b9b32e33f9d26dc0b0d907ef5dc93bb41f5f0dcd20fd8fa0ed703cac974 WHERE [dd05c32b741bbc005e7e29fdf97d4617786274bdec22143e69dae4c1c38c848d] = 2) s
+                            ON f.[f12d807789adeed6bccdb807e76bac3d299582a4a1ebed1caa5fdb045499a84d] = s.[dc74953d7740483e43b6386653875c77e21540cc26cd8a3f0e802b57e7268baa]
+                        ''')
+                        for r in cur_676.fetchall():
+                            cooking_pairs[str(r[0])] = str(r[1])
+
+                        cur_676.execute(f'SELECT [5b802c21ec8ff3e0285a4aae847211dc5d0c1251fb2a070436b7bc86e1699985], [c6064be3e0ab536646b7ce09315a0bda7958e82c6da3194472c2431345a34c35] FROM "{v2_table}"')
+                        for sid, sub in cur_676.fetchall():
+                            v2_titles[str(sid)] = str(sub).replace('\\n', ' ').strip() if sub else ''
+
+                        mypage_table = 'v1_e249e1c41d6767271e5bc0df243fe5f0de2eff1e70cb2e5c501318ef33f59f64'
+                        cur_676.execute(f'SELECT [c7b81a6de35976d0586d541b42f0a6249219165076d2d550b908f3a0b2a5f689], [8f2a28a54d18237e54de33e65d39bb4f5328a1b2a505c770aebc27fb157dd474] FROM "{mypage_table}" WHERE [8f2a28a54d18237e54de33e65d39bb4f5328a1b2a505c770aebc27fb157dd474] LIKE "%ビストロ%"')
+                        for mp_id, mp_name in cur_676.fetchall():
+                            mypage_names[mp_id] = mp_name.replace('福弾ける出張ビストロ', '').strip()
+
+                        cur_676.execute(f'SELECT * FROM "{v2_table}"')
+                        for r in cur_676.fetchall():
+                            if r[13] is not None:
+                                story_to_mypage[str(r[13])] = r[19]
+                except Exception:
+                    pass
 
             def get_ev_prefix(aid_int: int) -> str:
                 ev = event_map.get(aid_int // 1000, "")
@@ -1257,6 +1352,120 @@ def fetch_event_minigame_and_sub_scenes_batch(db_info: dict[str, Any], adv_ids: 
                             result_map[s2_str] = f"{ev_p}{full_name} (quiz_end)"
                 except (sqlite3.Error, UnsafeIdentifierError):
                     continue
+
+            # 10. 요리 미니게임 리액션 및 잔여 5xxxxxx 이벤트 가이드 매핑
+            for aid in adv_ids:
+                if aid in result_map:
+                    continue
+
+                # A. 요리 미니게임 실패 리액션 (21개)
+                if aid in cooking_pairs:
+                    succ_id = cooking_pairs[aid]
+                    dish_title = v2_titles.get(succ_id, '')
+                    mp_id = story_to_mypage.get(succ_id)
+                    char_name = mypage_names.get(mp_id) or (speaker_map.get(aid, '') if speaker_map else '')
+                    if dish_title and char_name:
+                        result_map[aid] = f"{dish_title} - {char_name}"
+                    elif dish_title:
+                        result_map[aid] = dish_title
+                    continue
+
+                # B. 이벤트 시스템 가이드 / 컷인 연출 (513개)
+                if aid.startswith('5') and len(aid) == 7:
+                    aid_int = int(aid)
+                    grp = aid_int // 1000
+                    suffix = aid_int % 1000
+                    ev_title = event_map.get(grp) or event_map.get(grp + 10000, f"イベント {grp}")
+
+                    if 201 <= suffix <= 210:
+                        keyword = "ボスバトル"
+                    elif 600 <= suffix <= 610:
+                        keyword = "後編"
+                    elif 10 <= suffix <= 19:
+                        keyword = "オープニング"
+                    else:
+                        keyword = "特別演出"
+
+                    spk = speaker_map.get(aid) if speaker_map else None
+                    if spk and spk != 'ナレーション':
+                        result_map[aid] = f"[{ev_title}] {keyword} - {spk}"
+                    else:
+                        result_map[aid] = f"[{ev_title}] {keyword}"
+
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
+        pass
+
+    return result_map
+
+
+def fetch_legion_and_byway_battle_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
+    """adv_id 목록을 기반으로 legion_special_battle, byway_battle_quest_data, byway_quest_data를 조회하여
+    왕도종말결전 및 우회로 특수전투 타이틀을 일괄 조회합니다.
+
+    Args:
+        db_info (dict): 서버별 DB 정보 딕셔너리.
+        adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
+
+    Returns:
+        dict[str, str]: adv_id를 키로 생성된 타이틀을 값으로 갖는 딕셔너리.
+    """
+    db_path = _get_db_path(db_info).replace('\\', '/')
+    if not os.path.exists(db_path) or not adv_ids:
+        return {}
+
+    adv_set = set(adv_ids)
+    result_map = {}
+
+    try:
+        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            cursor = conn.cursor()
+
+            # 1. 왕도종말결전 (legion_special_battle)
+            tbl_legion = db_info.get('legion_special_battle_table')
+            if tbl_legion:
+                tbl_legion_v = _validate_identifier(tbl_legion)
+                col_mode = _validate_identifier(db_info.get('legion_special_battle_mode_col', 'mode'))
+                col_ms = _validate_identifier(db_info.get('legion_special_battle_mode_start_col', 'story_id_mode_start'))
+                col_me = _validate_identifier(db_info.get('legion_special_battle_mode_end_col', 'story_id_mode_end'))
+
+                cursor.execute(f'SELECT "{col_mode}", "{col_ms}", "{col_me}" FROM "{tbl_legion_v}"')
+                for mode, ms, me in cursor.fetchall():
+                    ms_str = str(ms)
+                    me_str = str(me)
+                    if ms_str != '0' and ms_str in adv_set:
+                        result_map[ms_str] = f"[王都終末決戦] SPECIAL MODE {mode} (wavestart)"
+                    if me_str != '0' and me_str in adv_set:
+                        result_map[me_str] = f"[王都終末決戦] SPECIAL MODE {mode} (waveend)"
+
+            # 2. 우회로 특수전투 (byway_battle_quest_data + byway_quest_data)
+            tbl_bb = db_info.get('byway_battle_quest_data_table')
+            tbl_bq = db_info.get('byway_quest_data_table')
+            if tbl_bb and tbl_bq:
+                tbl_bb_v = _validate_identifier(tbl_bb)
+                tbl_bq_v = _validate_identifier(tbl_bq)
+                col_bb_qid = _validate_identifier(db_info.get('byway_battle_quest_data_quest_id_col', 'quest_id'))
+                col_bb_ws = _validate_identifier(db_info.get('byway_battle_quest_data_wavestart_col', 'story_id_wavestart_1'))
+                col_bb_we = _validate_identifier(db_info.get('byway_battle_quest_data_waveend_col', 'story_id_waveend_1'))
+                col_bq_qid = _validate_identifier(db_info.get('byway_quest_data_quest_id_col', 'quest_id'))
+                col_bq_name = _validate_identifier(db_info.get('byway_quest_data_quest_name_col', 'quest_name'))
+
+                cursor.execute(f'''
+                    SELECT 
+                        b."{col_bb_ws}", 
+                        b."{col_bb_we}", 
+                        q."{col_bq_name}"
+                    FROM "{tbl_bb_v}" b
+                    JOIN "{tbl_bq_v}" q ON b."{col_bb_qid}" = q."{col_bq_qid}"
+                    WHERE b."{col_bb_ws}" != 0 OR b."{col_bb_we}" != 0
+                ''')
+                for ws, we, qname in cursor.fetchall():
+                    q_clean = str(qname).strip() if qname else ""
+                    ws_str = str(ws)
+                    we_str = str(we)
+                    if ws_str != '0' and ws_str in adv_set:
+                        result_map[ws_str] = f"{q_clean} (wavestart)"
+                    if we_str != '0' and we_str in adv_set:
+                        result_map[we_str] = f"{q_clean} (waveend)"
 
     except (sqlite3.Error, KeyError, UnsafeIdentifierError):
         pass
