@@ -205,6 +205,133 @@
             "id_col": "5b802c21ec8ff3e0285a4aae847211dc5d0c1251fb2a070436b7bc86e1699985",
             "title_col": "d0dedbca2813f9d5743870c2d29ed064f0acfddbb004a7d967292a999844e2a6",
             "sub_title_col": "c6064be3e0ab536646b7ce09315a0bda7958e82c6da3194472c2431345a34c35"
+        },
+        "event_secret_minigame": {
+            "baseline": "10067600",
+            "table": "v1_d49d608ebf0465bc553d485d9f9786dc834ed78c4cb06c3435342ebe97babcba",
+            "id_col": "4c5ec2a09ed1862eb3d56e415f81081d42b0fee2c1c766c61a626c73fc728fd5",
+            "title_col": "f44a6f5b72f5727d44d2f426c383ea7c2e11ccbdcaf6ae813cbce5688bdb237a"
+        },
+        "event_collab_minigame": {
+            "baseline": "10067600",
+            "table": "v1_b6a2109c947d88aae5fd65ca6883583001da8786a33a2e43dc0030870ef6c741",
+            "id_col": "5be6dd70caa116540f98c3184f75394e7f7b586f84016dc9ae2c9bf43bb262da",
+            "title_col": "291fb4788519a5cd61b27eb8e8dd67bf269737e3a237732cb7a79d95e2881a75",
+            "sub_title_col": "523220e4252aa003d1cef690938893b004049348d59140b4f279654a07a6d0eb"
+        },
+        "event_vampire_minigame": {
+            "baseline": "10067600",
+            "table": "v1_c10a1ecf68f6ec0df12605f599f569c59d89d90537c0f9bf527a571347ccfb5b",
+            "id_col": "4283a158ae7677d40e030b66ed24c563c3db4e68ccdb8b10cecde36922b35b6a",
+            "title_col": "71a71b2976b02382661ccd9066257c8d6f5babbe2efdd705e0b78b3419750b43"
+        },
+        "event_crybaby_minigame": {
+            "baseline": "10067600",
+            "table": "v1_c58a427ba92d8ef1d65e191a732294726bf01e6c6ff5adf0a09bd5ef0dd789c4",
+            "id_col": "fb27e55820566005e0f5e924f364d6540d7298dac573c4af79da700fa4bd7a8d",
+            "title_col": "f94346d7bcc32132a96370eef33ebba028d63416539d35e9e0c7970f065d746a",
+            "sub_title_col": "494429e3b88480b7121e15754f212641b2aab19be30897d281ef0e05faa6d35c"
+        },
+        "event_summer_minigame": {
+            "baseline": "10067600",
+            "table": "v1_fb6ff60b989ba65bef3440d5c5569be693ea942d48ad24c96890a1e20d86fa4c",
+            "id_col": "76ee08eec6a7c4267f26d66fdb57a936be279392cde1b0b95d86dda4340ac9a5",
+            "title_col": "051d9a9441c23038ea10e491b00b07864ac1cbc04f37de8c124877239c303b13"
+        },
+        "event_liberate_minigame": {
+            "baseline": "10067600",
+            "table": "v1_f4ca647c6d1458f4f20ef7412d7f7e08bb690aaf10e0dadc80359d7916857f7e",
+            "id_col": "07e6edd52631df85644c6e1b0654fbe7876c21958171f095d0cfd758b4bced84",
+            "title_col": "db4480129c0ce82c3f8ae8a8277494c09ffc1a3847e12da294fdb152598096c7",
+            "sub_title_col": "2e79ca3aee48ec25eb4a4d3cf63968e8e4159d080eaa21a7f62c15bb2c5c0508"
+        },
+        "event_hatsune_dream_minigame": {
+            "baseline": "10067600",
+            "table": "v1_1024a8ceb2e1e80ce075b05e7c7eb8b13753524caa181de4008682f3bdf56b4c",
+            "id_col": "de910de1c6e7f30848bc006145bdb822a367ccbe143f50129027dff8f79ae124",
+            "title_col": "d8aaf0d0884bf53ca87fb66eb3abc362fbfe6527b377c9d38780c8bcf8a48624"
+        },
+        "event_christmas_minigame": {
+            "baseline": "10067600",
+            "table": "v1_022a96f39363c035bc72d82c2d13252af82a5287f3ac18bb1c644da3207bf087",
+            "id_col": "2fe1cbafc5531034038391a89605c1c4263eb915994b776816108f8d2989fdb8",
+            "title_col": "1e4e58e282c38e5869924707f94383eebc72cc73c47592e1666a0e7197dd6427"
+        },
+        "event_coaster_minigame": {
+            "baseline": "10067600",
+            "table": "v1_2ba16384df54efc94735a21c23b3241513a7def427421ec4d5b05c57a2e409ef",
+            "id_col": "18fd0c4f27f31155d10c88b232a6eaab409f1e17861b633decf85a76317cc8b6",
+            "title_col": "7ca27d86d4a28130eacf6fa0e051845093584793c21155374b230b8b508a8ee6",
+            "sub_title_col": "e988141211210c3a52913d58ef9dff458423ac3df2479009aa0e8da2f560e793"
+        },
+        "event_nebia_minigame": {
+            "baseline": "10067600",
+            "table": "v1_7a0982cbb042e5beec038707e25d7958a2811bfddfa05a14c213216fb929e9fb",
+            "id_col": "a9155c3da6d764e9d7ed97fa0c07ff5b3a3e0e0826137e1b6717aa30beff9aaf",
+            "title_col": "ee504cf46bad79e204602bf0a2656c4ea18ad878cf7156b9c97045466077d5d1"
+        },
+        "event_taiso_minigame": {
+            "baseline": "10067600",
+            "table": "v1_7bfbcdfe4501b304399f68c7d85fcac82ee2921142f8fc5aeaf399d06213510f",
+            "id_col": "b981ae906d24b58fd6ca696ef36ce389fcd5f054ff931c6bf94ce8245fd7d1b6",
+            "title_col": "3835c8478f5b3312830bc7829d10453a939af7c41b14cf0a77f9273a102e546d",
+            "sub_title_col": "c129a773d56c8c1653e4dc71c40d183d5c91a034d3019e8d7ce43a67be10bc92"
+        },
+        "event_alces_minigame": {
+            "baseline": "10067600",
+            "table": "v1_88a6bb3bf7aa1f2ad3f62375785679d5d25d548c8d7718152032c8ae49931127",
+            "id_col": "4ba80eceb7815132039c363d1a9fd869cbcfb90600b067148bdf677452e2314d",
+            "title_col": "c9b5e2df7357ad993d2e2172701f0b47cde254365dc786b461a4ff272c332d80",
+            "sub_title_col": "0c06e37c01e88e78fe23ca8cb413c74312d532fb497379ff14cf1fa6adf6215b"
+        },
+        "event_trip_minigame": {
+            "baseline": "10067600",
+            "table": "v1_90f6266d84e2a5b5b06add382aaad5dfa914726a1345afec3b64bb7b984640b5",
+            "id_col": "cac248dca33325ef34dfdc2f776a1abdd7a0be76182680f671713bb50a7bc7be",
+            "title_col": "174fced6b94f901607933f3de71c2bfccff2df9dd463c6706578ed442f48d732"
+        },
+        "event_house_minigame": {
+            "baseline": "10067600",
+            "table": "v1_ab647d7e16c4680320e4e69b810bd2a2a80438791caa7d4b102f7da11697a44f",
+            "id_col": "ea572597b0dd8336fc835a531e34a6cf919a49ddea22e07e9029acc4c92ece70",
+            "title_col": "83cb035c740ef6c9f432b5d23626b359941ff68cc24d34274be39bc5d674d83a"
+        },
+        "event_diary_minigame": {
+            "baseline": "10067600",
+            "table": "v1_aa2a0318030d3c48b80c042120a2ecdf02ba073f3c07958488c0d5aae910040b",
+            "id_col": "5ad92e5b4cb794da4721b1b7e00cb3695a069a980067d334829e464e6d9084f0",
+            "title_col": "3e35a764aff062e1c75616b0e9a2f384ce3ec4a7dd125ca0256e7afe2c208d94"
+        },
+        "event_opening_adv": {
+            "baseline": "10067600",
+            "table": "v1_78f2d38752f2dd374b61d6e087d727ea74a1610b6c9043e90ef53a1ca8fcd483",
+            "id_col": "8d3c6db54bdaca622133f5b7dc8b0e73a09231d5eec5285c0030c8897fed87c3",
+            "title_col": "3d52c7b73257ffc27e1dcc750f3e769d826038ad9f0e56ced67e2c9af48f9788",
+            "sub_title_col": "70c63930470ffc9c2506182639e8a3358813c4044b14de8f24d029239defe083"
+        },
+        "event_boss_battle_v3": {
+            "baseline": "10067600",
+            "table": "v1_ff0c555fed19fa5d9f027453e2108282f640903b52daf4fa2f8aae282b164a61",
+            "id_col": "49efb860aea4e94a5e4c19eebebdfacf49e670a6ba92a2b901251b9237d74006",
+            "title_col": "90baf9169949551826643bdbee43effd325dd9dd50e5b1f80a8beb58f8913a5e"
+        },
+        "event_remember_story": {
+            "baseline": "10067600",
+            "table": "v1_a10f2aaf6e8ac9c0866d418c9c4278085b8f11b9e70cd98f862ce99fb9ae29ed",
+            "id_col": "fb53564488d51de053cf0fb1f4da1579e0edd4eade52755faa2ef5495d640eb9",
+            "title_col": "3c87c492a14981c4a35e24782622f1670f1ab6749dd52cdc88909a7a02c1940e"
+        },
+        "hatsune_present": {
+            "baseline": "10067600",
+            "table": "v1_b2f11b4754ce70788a0af71b919dc780f6524e81ac66005c5219cbaf4066ff42",
+            "id_col": "c678db049f990a21f0ea43c13d16c1565d9eb87ce0a362d7a8cbd5dd4a648f94",
+            "title_col": "6127dac8173fa3b9f1d225930bb005d88fe9381387a1bf9008717073bd33e210"
+        },
+        "hatsune_quest": {
+            "baseline": "10067600",
+            "table": "v1_09aee483d2060794e513d168dbf06288605fc4eea9f70a138f9fed081dea0898",
+            "id_col": "5558b085491cdee48dd691e20b59347cbed1bae1829101a3ef24c6249b9557b0",
+            "title_col": "9ca9799da5499f242f515f51e9a66caa6183c9e82ef44756fca3a4e43729c24a"
         }
     }
 }

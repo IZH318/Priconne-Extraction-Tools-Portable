@@ -347,16 +347,19 @@ class StoryViewerController(QueuePollingMixin):
             if ('hatsune_boss_table' in db_info or 'hatsune_special_battle_table' in db_info or 'event_list_table' in db_info) and remaining_ids:
                 fetched_titles.update(db_helper.fetch_event_boss_battle_titles_batch(db_info, remaining_ids))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            sub_5_ids = [aid for aid in remaining_ids if aid.startswith('5')]
-            if sub_5_ids:
-                speaker_meta = {
-                    aid: self.file_speakers.get(fn)
-                    for fn, aid in filename_to_adv_id.items() if aid in sub_5_ids
-                }
-                fetched_titles.update(db_helper.fetch_event_minigame_and_sub_scenes_batch(db_info, sub_5_ids, speaker_meta))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if ('legion_special_battle_table' in db_info or 'byway_battle_quest_data_table' in db_info) and remaining_ids:
                 fetched_titles.update(db_helper.fetch_legion_and_byway_battle_titles_batch(db_info, remaining_ids))
+            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
+            if remaining_ids:
+                speaker_meta = {
+                    aid: self.file_speakers.get(fn)
+                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
+                }
+                raw_titles_meta = {
+                    aid: self.raw_file_titles.get(fn, "")
+                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
+                }
+                fetched_titles.update(db_helper.fetch_event_minigame_and_sub_scenes_batch(db_info, remaining_ids, speaker_meta, raw_titles_meta))
             
         # 4. 타이틀 갱신: DB 결과 우선, 미존재 시 JSON 원본 타이틀(또는 파일명) 유지
         for filename in self.all_files:

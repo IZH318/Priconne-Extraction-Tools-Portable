@@ -92,6 +92,66 @@ COLUMN_MAPPINGS: Dict[str, List[str]] = {
     ],
     "event_story_v2_table": [
         "event_story_v2_id_col", "event_story_v2_title_col", "event_story_v2_sub_title_col"
+    ],
+    "event_secret_minigame_table": [
+        "event_secret_minigame_id_col", "event_secret_minigame_title_col"
+    ],
+    "event_collab_minigame_table": [
+        "event_collab_minigame_id_col", "event_collab_minigame_title_col", "event_collab_minigame_sub_title_col"
+    ],
+    "event_vampire_minigame_table": [
+        "event_vampire_minigame_id_col", "event_vampire_minigame_title_col"
+    ],
+    "event_crybaby_minigame_table": [
+        "event_crybaby_minigame_id_col", "event_crybaby_minigame_title_col", "event_crybaby_minigame_sub_title_col"
+    ],
+    "event_summer_minigame_table": [
+        "event_summer_minigame_id_col", "event_summer_minigame_title_col"
+    ],
+    "event_liberate_minigame_table": [
+        "event_liberate_minigame_id_col", "event_liberate_minigame_title_col", "event_liberate_minigame_sub_title_col"
+    ],
+    "event_hatsune_dream_minigame_table": [
+        "event_hatsune_dream_minigame_id_col", "event_hatsune_dream_minigame_title_col"
+    ],
+    "event_christmas_minigame_table": [
+        "event_christmas_minigame_id_col", "event_christmas_minigame_title_col"
+    ],
+    "event_coaster_minigame_table": [
+        "event_coaster_minigame_id_col", "event_coaster_minigame_title_col", "event_coaster_minigame_sub_title_col"
+    ],
+    "event_nebia_minigame_table": [
+        "event_nebia_minigame_id_col", "event_nebia_minigame_title_col"
+    ],
+    "event_taiso_minigame_table": [
+        "event_taiso_minigame_id_col", "event_taiso_minigame_title_col", "event_taiso_minigame_sub_title_col"
+    ],
+    "event_alces_minigame_table": [
+        "event_alces_minigame_id_col", "event_alces_minigame_title_col", "event_alces_minigame_sub_title_col"
+    ],
+    "event_trip_minigame_table": [
+        "event_trip_minigame_id_col", "event_trip_minigame_title_col"
+    ],
+    "event_house_minigame_table": [
+        "event_house_minigame_id_col", "event_house_minigame_title_col"
+    ],
+    "event_diary_minigame_table": [
+        "event_diary_minigame_id_col", "event_diary_minigame_title_col"
+    ],
+    "event_opening_adv_table": [
+        "event_opening_adv_id_col", "event_opening_adv_title_col", "event_opening_adv_sub_title_col"
+    ],
+    "event_boss_battle_v3_table": [
+        "event_boss_battle_v3_id_col", "event_boss_battle_v3_title_col"
+    ],
+    "event_remember_story_table": [
+        "event_remember_story_id_col", "event_remember_story_title_col"
+    ],
+    "hatsune_present_table": [
+        "hatsune_present_id_col", "hatsune_present_title_col"
+    ],
+    "hatsune_quest_table": [
+        "hatsune_quest_id_col", "hatsune_quest_title_col"
     ]
 }
 
@@ -620,7 +680,27 @@ def resolve_all_servers_parallel(
             "event_cooking_reaction",
             "event_museum_minigame",
             "event_riddle_minigame",
-            "event_story_v2"
+            "event_story_v2",
+            "event_secret_minigame",
+            "event_collab_minigame",
+            "event_vampire_minigame",
+            "event_crybaby_minigame",
+            "event_summer_minigame",
+            "event_liberate_minigame",
+            "event_hatsune_dream_minigame",
+            "event_christmas_minigame",
+            "event_coaster_minigame",
+            "event_nebia_minigame",
+            "event_taiso_minigame",
+            "event_alces_minigame",
+            "event_trip_minigame",
+            "event_house_minigame",
+            "event_diary_minigame",
+            "event_opening_adv",
+            "event_boss_battle_v3",
+            "event_remember_story",
+            "hatsune_present",
+            "hatsune_quest"
         ]
         for tbl_prefix in baseline_tables:
             tbl_k = f"{tbl_prefix}_table"
@@ -710,7 +790,12 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             for tbl_prefix in [
                 "alchemy_story_detail", "hatsune_scenario_boss", "hatsune_boss_v2", "hatsune_sp_battle_v2",
                 "hatsune_ex_battle", "event_cooking_minigame", "event_cooking_reaction", "event_museum_minigame",
-                "event_riddle_minigame", "event_story_v2"
+                "event_riddle_minigame", "event_story_v2",
+                "event_secret_minigame", "event_collab_minigame", "event_vampire_minigame", "event_crybaby_minigame",
+                "event_summer_minigame", "event_liberate_minigame", "event_hatsune_dream_minigame", "event_christmas_minigame",
+                "event_coaster_minigame", "event_nebia_minigame", "event_taiso_minigame", "event_alces_minigame",
+                "event_trip_minigame", "event_house_minigame", "event_diary_minigame", "event_opening_adv",
+                "event_boss_battle_v3", "event_remember_story", "hatsune_present", "hatsune_quest"
             ]:
                 if server_info.get(f"{tbl_prefix}_table"):
                     progress_callback(server_key, f"{tbl_prefix}_table")
@@ -878,7 +963,24 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             "event_cooking_reaction",
             "event_museum_minigame",
             "event_riddle_minigame",
-            "event_story_v2"
+            "event_story_v2",
+            "event_secret_minigame",
+            "event_collab_minigame",
+            "event_vampire_minigame",
+            "event_crybaby_minigame",
+            "event_summer_minigame",
+            "event_liberate_minigame",
+            "event_hatsune_dream_minigame",
+            "event_christmas_minigame",
+            "event_coaster_minigame",
+            "event_nebia_minigame",
+            "event_taiso_minigame",
+            "event_alces_minigame",
+            "event_trip_minigame",
+            "event_house_minigame",
+            "event_diary_minigame",
+            "event_opening_adv",
+            "event_boss_battle_v3"
         ]
         baseline_dbs = server_info.get("baseline_dbs", {})
         for tbl_prefix in baseline_tables:

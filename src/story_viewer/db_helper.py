@@ -1022,15 +1022,17 @@ def fetch_event_boss_battle_titles_batch(db_info: dict[str, Any], adv_ids: list[
 def fetch_event_minigame_and_sub_scenes_batch(
     db_info: dict[str, Any], 
     adv_ids: list[str],
-    speaker_map: dict[str, str] | None = None
+    speaker_map: dict[str, str] | None = None,
+    raw_titles_map: dict[str, str] | None = None
 ) -> dict[str, str]:
-    """adv_id 목록(5xxxxxx 잔여)을 기반으로 이벤트 미니게임 스토리, 신규 보스/SP/EX 배틀 연출,
+    """adv_id 목록을 기반으로 이벤트 미니게임 스토리, 신규 보스/SP/EX 배틀 연출,
     요리 리액션 및 이벤트 가이드 타이틀을 일괄 조회합니다.
 
     Args:
         db_info (dict): 서버별 DB 정보 딕셔너리.
         adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
         speaker_map (dict, optional): adv_id->화자명 매핑 딕셔너리.
+        raw_titles_map (dict, optional): adv_id->JSON Frame 0 원본 타이틀 매핑 딕셔너리.
 
     Returns:
         dict[str, str]: adv_id를 키로, 공식 이벤트명과 결합된 타이틀을 값으로 갖는 딕셔너리.
@@ -1039,6 +1041,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
     if not os.path.exists(db_path) or not adv_ids:
         return {}
 
+    adv_set = set(adv_ids)
     result_map = {}
     try:
         with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
@@ -1353,7 +1356,72 @@ def fetch_event_minigame_and_sub_scenes_batch(
                 except (sqlite3.Error, UnsafeIdentifierError):
                     continue
 
-            # 10. 요리 미니게임 리액션 및 잔여 5xxxxxx 이벤트 가이드 매핑
+            # 10. 이벤트 미니게임 및 추가 서브씬 (17개 테이블 일괄 조회)
+            def _clean_sub(s: Any) -> str:
+                if not s:
+                    return ""
+                clean = str(s).replace('\\n', ' ').strip()
+                if len(clean) > 30 or clean.isdigit() or re.match(r'^\d{4}/\d{2}/\d{2}', clean):
+                    return ""
+                return clean
+
+            generic_minigame_tables = [
+                'event_secret_minigame', 'event_collab_minigame', 'event_vampire_minigame',
+                'event_crybaby_minigame', 'event_summer_minigame', 'event_liberate_minigame',
+                'event_hatsune_dream_minigame', 'event_christmas_minigame', 'event_coaster_minigame',
+                'event_nebia_minigame', 'event_taiso_minigame', 'event_alces_minigame',
+                'event_trip_minigame', 'event_house_minigame', 'event_diary_minigame',
+                'event_opening_adv', 'event_boss_battle_v3',
+                'event_remember_story', 'hatsune_present', 'hatsune_quest'
+            ]
+
+            for t_prefix in generic_minigame_tables:
+                tbl_name = db_info.get(f'{t_prefix}_table')
+                if not tbl_name:
+                    continue
+                try:
+                    tbl_name_v = _validate_identifier(tbl_name)
+                    id_col = _validate_identifier(db_info.get(f'{t_prefix}_id_col', 'story_id'))
+                    title_col = _validate_identifier(db_info.get(f'{t_prefix}_title_col', 'title'))
+                    sub_col_raw = db_info.get(f'{t_prefix}_sub_title_col')
+
+                    if sub_col_raw:
+                        sub_col_v = _validate_identifier(sub_col_raw)
+                        cursor.execute(f'SELECT "{id_col}", "{title_col}", "{sub_col_v}" FROM "{tbl_name_v}" WHERE "{id_col}" != 0')
+                        for sid, t, sub in cursor.fetchall():
+                            sid_str = str(sid)
+                            if sid_str in adv_set and sid_str not in result_map:
+                                t_c = str(t).replace('\\n', ' ').strip() if t else ""
+                                s_c = _clean_sub(sub)
+                                full_t = f"{t_c} - {s_c}" if (t_c and s_c) else (t_c or s_c)
+                                if full_t:
+                                    try:
+                                        ev_p = get_ev_prefix(int(sid))
+                                    except (ValueError, TypeError):
+                                        ev_p = ""
+                                    if ev_p and ev_p.strip('[] ') in full_t:
+                                        result_map[sid_str] = full_t
+                                    else:
+                                        result_map[sid_str] = f"{ev_p}{full_t}"
+                    else:
+                        cursor.execute(f'SELECT "{id_col}", "{title_col}" FROM "{tbl_name_v}" WHERE "{id_col}" != 0')
+                        for sid, t in cursor.fetchall():
+                            sid_str = str(sid)
+                            if sid_str in adv_set and sid_str not in result_map:
+                                t_c = str(t).replace('\\n', ' ').strip() if t else ""
+                                if t_c:
+                                    try:
+                                        ev_p = get_ev_prefix(int(sid))
+                                    except (ValueError, TypeError):
+                                        ev_p = ""
+                                    if ev_p and ev_p.strip('[] ') in t_c:
+                                        result_map[sid_str] = t_c
+                                    else:
+                                        result_map[sid_str] = f"{ev_p}{t_c}"
+                except (sqlite3.Error, UnsafeIdentifierError):
+                    continue
+
+            # 11. 요리 미니게임 리액션, JSON 원본 타이틀 및 이벤트 가이드 매핑
             for aid in adv_ids:
                 if aid in result_map:
                     continue
@@ -1370,27 +1438,12 @@ def fetch_event_minigame_and_sub_scenes_batch(
                         result_map[aid] = dish_title
                     continue
 
-                # B. 이벤트 시스템 가이드 / 컷인 연출 (513개)
-                if aid.startswith('5') and len(aid) == 7:
-                    aid_int = int(aid)
-                    grp = aid_int // 1000
-                    suffix = aid_int % 1000
-                    ev_title = event_map.get(grp) or event_map.get(grp + 10000, f"イベント {grp}")
-
-                    if 201 <= suffix <= 210:
-                        keyword = "ボスバトル"
-                    elif 600 <= suffix <= 610:
-                        keyword = "後編"
-                    elif 10 <= suffix <= 19:
-                        keyword = "オープニング"
-                    else:
-                        keyword = "特別演出"
-
-                    spk = speaker_map.get(aid) if speaker_map else None
-                    if spk and spk != 'ナレーション':
-                        result_map[aid] = f"[{ev_title}] {keyword} - {spk}"
-                    else:
-                        result_map[aid] = f"[{ev_title}] {keyword}"
+                # B. JSON 원본 Frame 0 / 메타데이터 타이틀 보존 (128개 등)
+                if raw_titles_map and aid in raw_titles_map:
+                    raw_t = raw_titles_map[aid].strip()
+                    if raw_t and not raw_t.startswith("storydata_") and not raw_t.isdigit():
+                        result_map[aid] = raw_t
+                        continue
 
     except (sqlite3.Error, KeyError, UnsafeIdentifierError):
         pass
