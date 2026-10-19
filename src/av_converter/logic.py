@@ -20,6 +20,7 @@ from src.constants import (
     SEPARATOR_SHORT, AV_TEMP_EXTENSIONS, FFMPEG_URL, 
     FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
     FFMPEG_TARGET_VERSION, FFMPEG_EXPECTED_SHA256, FFMPEG_VERSION_FILENAME,
+    FFMPEG_VERSION_MARKER_PATH,
     SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE, TabType,
 )
 from src.subprocess_runner import SubprocessRunner
@@ -415,7 +416,13 @@ class ConversionLogic:
 
 
 class FFmpegDownloader:
-    def __init__(self, log_queue: queue.Queue, usmtoolkit_path_parent_dir: Path, get_lang_data_func: Callable[[], dict[str, str]]) -> None:
+    def __init__(
+        self,
+        log_queue: queue.Queue,
+        usmtoolkit_path_parent_dir: Path,
+        get_lang_data_func: Callable[[], dict[str, str]],
+        version_marker_path: Path | None = None,
+    ) -> None:
         """
         FFmpegDownloader 인스턴스 초기화.
 
@@ -423,13 +430,15 @@ class FFmpegDownloader:
             log_queue (queue.Queue): GUI와 통신하기 위한 큐.
             usmtoolkit_path_parent_dir (Path): FFmpeg를 설치할 기준 디렉터리.
             get_lang_data_func (function): 현재 언어 데이터를 가져오는 함수.
+            version_marker_path (Path, optional): 버전 캐시 마커 파일 경로.
         """
         self.log_queue = log_queue
         self.download_dir = usmtoolkit_path_parent_dir
         self.ffmpeg_path = self.download_dir / FFMPEG_EXE_NAME
-        self.version_marker_path = self.download_dir / FFMPEG_VERSION_FILENAME
+        self.version_marker_path = version_marker_path or FFMPEG_VERSION_MARKER_PATH
         self.get_lang_data = get_lang_data_func
         os.makedirs(self.download_dir, exist_ok=True)
+        os.makedirs(self.version_marker_path.parent, exist_ok=True)
 
     def _log_entry(self, log_key: str, **kwargs: Any) -> None:
         """로그 메시지를 통신 큐에 추가합니다."""

@@ -1,5 +1,7 @@
 from __future__ import annotations
+import json
 import os
+from pathlib import Path
 from typing import Final, Literal
 
 # === AV Converter Tab Type ===
@@ -28,6 +30,7 @@ SEPARATOR_MEDIUM: Final[str] = "-" * 60
 SEPARATOR_SHORT: Final[str] = "-" * 50
 SEPARATOR_MINI: Final[str] = "-" * 30
 
+
 # === File Processing Constants ===
 HASH_CHUNK_SIZE: Final[int] = 4096
 SHA1_LENGTH: Final[int] = 40
@@ -38,9 +41,31 @@ RENAMER_TARGET_FOLDERS: Final[tuple[str, ...]] = ('a', 'b', 'm', 'manifest', 's'
 # === AV Converter Tool ===
 AV_TEMP_EXTENSIONS: Final[tuple[str, ...]] = ('.adx', '.bin', '.m2v', '.wav')
 FFMPEG_TARGET_VERSION: Final[str] = "7.1.1"
+
+def _load_deps_config() -> dict[str, str]:
+    """src/av_converter/deps.json 또는 src/deps.json에서 도구 종속성 URL을 로드합니다."""
+    for cand in [
+        Path(__file__).resolve().parent / "av_converter" / "deps.json",
+        Path(__file__).resolve().parent / "deps.json",
+    ]:
+        if cand.exists():
+            try:
+                with open(cand, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+    return {}
+
+_DEPS_CONFIG = _load_deps_config()
+
+FFMPEG_DEFAULT_URL: Final[str] = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
 FFMPEG_URL: Final[str] = os.environ.get(
     'PRICONNE_FFMPEG_URL',
-    "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
+    _DEPS_CONFIG.get("FFmpeg", FFMPEG_DEFAULT_URL)
+)
+VGMSTREAM_URL: Final[str] = _DEPS_CONFIG.get(
+    "Vgmstream",
+    "https://github.com/vgmstream/vgmstream/releases/download/r2117/vgmstream-win.zip"
 )
 FFMPEG_EXPECTED_SHA256: Final[str] = os.environ.get(
     'PRICONNE_FFMPEG_SHA256',
@@ -49,6 +74,7 @@ FFMPEG_EXPECTED_SHA256: Final[str] = os.environ.get(
 FFMPEG_ZIP_FILENAME: Final[str] = "ffmpeg_temp.zip"
 FFMPEG_EXE_NAME: Final[str] = "ffmpeg.exe"
 FFMPEG_VERSION_FILENAME: Final[str] = ".ffmpeg_version"
+FFMPEG_VERSION_MARKER_PATH: Final[Path] = Path(__file__).resolve().parent / "av_converter" / FFMPEG_VERSION_FILENAME
 SENTINEL_VIDEO_DONE: Final[str] = "__VIDEO_DONE__"
 SENTINEL_AUDIO_DONE: Final[str] = "__AUDIO_DONE__"
 
