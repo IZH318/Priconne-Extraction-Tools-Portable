@@ -14,6 +14,7 @@ Note:
 """
 
 
+
 class AVConverterLangDict(TypedDict, total=False):
     """'av_converter' 모듈의 다국어 키 정의."""
     about_header: str
@@ -73,10 +74,12 @@ class AVConverterLangDict(TypedDict, total=False):
     ffmpeg_exe_not_found_in_zip: str
     ffmpeg_extract_complete: str
     ffmpeg_extract_start: str
+    ffmpeg_hash_mismatch: str
     ffmpeg_no_usm_path: str
     ffmpeg_not_found: str
     ffmpeg_prepare_fail: str
     ffmpeg_preparing: str
+    ffmpeg_version_mismatch: str
     ffmpeg_zip_structure_error: str
     file_list_section: str
     input_section: str
@@ -88,6 +91,8 @@ class AVConverterLangDict(TypedDict, total=False):
     max_worker_log: str
     menu_info: str
     menu_language: str
+    msgbox_error_log_saved_msg: str
+    msgbox_error_log_saved_title: str
     output_section: str
     overwrite_option: str
     preview_converting: str
@@ -148,6 +153,8 @@ class RenamerLangDict(TypedDict, total=False):
     job_start_log: str
     menu_about: str
     menu_language: str
+    msgbox_error_log_saved_msg: str
+    msgbox_error_log_saved_title: str
     program_started: str
     start_button: str
     status_complete: str
@@ -173,7 +180,6 @@ class ResourceRemoverLangDict(TypedDict, total=False):
     confirm_title: str
     desc: str
     dialog_select_folder: str
-
     error_delete_failed: str
     error_title: str
     fail_msg: str
@@ -207,7 +213,6 @@ class StoryViewerLangDict(TypedDict, total=False):
     about_label_version: str
     about_label_website: str
     background_label: str
-    basic_search_criteria_frame: str
     bgm_label: str
     btn_copy_script: str
     cancel_button_text: str
@@ -218,30 +223,46 @@ class StoryViewerLangDict(TypedDict, total=False):
     content_label: str
     db_checking_msg: str
     db_checking_title: str
-    db_download_cancel_msg: str
+    db_download_cancel_msg_outdated: str
+    db_download_cancel_msg_unavailable: str
+    db_download_error_msg: str
     db_download_error_title: str
-    db_download_offline_msg: str
+    db_download_offline_msg_outdated: str
+    db_download_offline_msg_unavailable: str
     db_download_prompt_msg: str
     db_download_prompt_title: str
     db_download_success_msg: str
+    db_downloading_msg: str
     db_error_msg: str
     db_error_title: str
+    db_mixed_msg_outdated: str
+    db_mixed_msg_unavailable: str
+    db_mixed_title: str
     db_not_found_msg: str
     db_not_found_title: str
+    db_outdated_msg: str
+    db_outdated_title: str
+    db_parsing_table: str
+    db_prompt_restriction_outdated: str
+    db_prompt_restriction_unavailable: str
     detail_group_title: str
     detail_options_group: str
     dialog_title_open_files: str
     dialog_title_open_folder: str
+    display_id_and_title: str
     display_mode_label: str
     display_original_filename: str
     display_title: str
-    display_id_and_title: str
     event_list_label: str
-    event_search_frame: str
     exit: str
     export: str
     export_button_text: str
     export_db_not_found_tooltip: str
+    export_empty_list_content: str
+    export_err_detail_format: str
+    export_err_file_not_found: str
+    export_err_no_data: str
+    export_err_parse_error: str
     export_format_label: str
     export_format_md: str
     export_format_txt: str
@@ -254,10 +275,10 @@ class StoryViewerLangDict(TypedDict, total=False):
     export_scope_current_list: str
     export_scope_frame: str
     export_story_group_frame: str
+    export_this_item: str
     export_type_background_names: str
     export_type_bgm_names: str
     export_type_character_names: str
-    export_type_event_list_frame: str
     export_type_event_list_jp: str
     export_type_event_list_kr: str
     export_type_event_list_master: str
@@ -270,33 +291,26 @@ class StoryViewerLangDict(TypedDict, total=False):
     export_view_mode_script: str
     export_view_mode_simple: str
     export_window_title: str
-    export_this_item: str
-    single_export_target_frame: str
-    single_export_window_title_fmt: str
-    single_export_target_title: str
-    single_export_target_file: str
-    remove_selected: str
-    remove_all: str
-    removed_selected_files: str
-    removed_all_files: str
     file_open: str
-    file_options_group: str
     filename_label: str
-    filter_clear_btn: str
-    filter_placeholder: str
     filetype_all: str
     filetype_json: str
+    filter_clear_btn: str
+    filter_placeholder: str
     folder_open: str
+    game_server_label: str
     jp_server_radio: str
     kr_server_radio: str
     lang_en: str
     lang_ja: str
     lang_ko: str
     list_group_title: str
-    log_file_label: str
-    log_header: str
-    log_reason_label: str
-    log_total_failed: str
+    log_reason_empty: str
+    log_reason_json_error: str
+    log_reason_not_storydata: str
+    log_reason_os_error: str
+    log_reason_unexpected_error: str
+    log_remote_version_fail: str
     menu_about: str
     menu_file: str
     menu_lang: str
@@ -317,8 +331,6 @@ class StoryViewerLangDict(TypedDict, total=False):
     msgbox_loading_title: str
     msgbox_log_save_error_msg: str
     msgbox_log_save_error_title: str
-    msgbox_log_saved_msg: str
-    msgbox_log_saved_title: str
     msgbox_no_export_files_msg: str
     msgbox_no_export_files_title: str
     msgbox_no_export_types_selected: str
@@ -326,23 +338,39 @@ class StoryViewerLangDict(TypedDict, total=False):
     msgbox_no_valid_files_title: str
     msgbox_search_before_load_msg: str
     msgbox_search_before_load_title: str
+    msgbox_story_loop_limit_msg: str
+    msgbox_story_loop_limit_title: str
     open_frame_title: str
-    options_group: str
     outline_label: str
+    remove_all: str
+    remove_selected: str
+    removed_all_files: str
+    removed_selected_files: str
     reset_button: str
+    script_branch: str
+    script_branch_dialogue: str
+    script_branch_end: str
+    script_branch_label_fmt: str
+    script_branch_leads_to: str
+    script_branch_point: str
+    script_choice_item: str
+    script_no_dialogue: str
+    script_outline_title: str
+    script_place_prefix: str
     search_button: str
     search_button_text: str
     search_error_msg: str
     search_error_title: str
     search_window_title: str
+    single_export_target_file: str
+    single_export_target_frame: str
+    single_export_target_title: str
+    single_export_window_title_fmt: str
     status_bar_analyzing: str
     status_bar_cache_error: str
     status_bar_displaying: str
-    status_bar_export_all_failed: str
-    status_bar_export_done: str
     status_bar_export_prep: str
     status_bar_export_summary: str
-    status_bar_exporting: str
     status_bar_exporting_type: str
     status_bar_initial: str
     status_bar_list_updated: str
@@ -351,20 +379,13 @@ class StoryViewerLangDict(TypedDict, total=False):
     status_bar_loading_start: str
     status_bar_ready: str
     status_searching: str
+    tag_missing: str
+    tag_update: str
     title_label: str
-    script_branch: str
-    script_branch_point: str
-    script_branch_dialogue: str
-    script_choice_item: str
-    script_choice_title: str
-    script_outline_title: str
-    script_no_dialogue: str
-    script_place_prefix: str
     view_detailed: str
     view_script: str
     view_simple: str
     window_title: str
-
 
 class UnityConverterLangDict(TypedDict, total=False):
     """'unity_converter' 모듈의 다국어 키 정의."""
@@ -414,6 +435,8 @@ class UnityConverterLangDict(TypedDict, total=False):
     menu_lang: str
     mesh_fallback_info: str
     movietexture_export_success: str
+    msgbox_error_log_saved_msg: str
+    msgbox_error_log_saved_title: str
     no_assets_to_process: str
     no_files_to_process: str
     open_frame_title: str

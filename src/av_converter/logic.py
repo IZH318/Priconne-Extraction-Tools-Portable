@@ -5,6 +5,7 @@ import subprocess
 import urllib.request
 import urllib.error
 import zipfile
+import hashlib
 import concurrent.futures
 import queue
 from pathlib import Path
@@ -18,6 +19,7 @@ from src.exceptions import DownloadError, FileIntegrityError
 from src.constants import (
     SEPARATOR_SHORT, AV_TEMP_EXTENSIONS, FFMPEG_URL, 
     FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
+    FFMPEG_TARGET_VERSION, FFMPEG_EXPECTED_SHA256, FFMPEG_VERSION_FILENAME,
     SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE, TabType,
 )
 from src.subprocess_runner import SubprocessRunner
@@ -376,12 +378,54 @@ class FFmpegDownloader:
         self.log_queue = log_queue
         self.download_dir = usmtoolkit_path_parent_dir
         self.ffmpeg_path = self.download_dir / FFMPEG_EXE_NAME
+        self.version_marker_path = self.download_dir / FFMPEG_VERSION_FILENAME
         self.get_lang_data = get_lang_data_func
         os.makedirs(self.download_dir, exist_ok=True)
 
     def _log_entry(self, log_key: str, **kwargs: Any) -> None:
         """로그 메시지를 통신 큐에 추가합니다."""
         self.log_queue.put(LogEvent(target='video', key=log_key, kwargs=kwargs))
+
+    def _is_target_version_installed(self) -> tuple[bool, str]:
+        """설치된 ffmpeg.exe가 목표 안정화 버전과 일치하는지 확인합니다."""
+        if not self.ffmpeg_path.exists():
+            return False, "not_found"
+
+        # 1. 빠른 경로: 버전 마커 파일 확인
+        if self.version_marker_path.exists():
+            try:
+                installed_ver = self.version_marker_path.read_text(encoding="utf-8").strip()
+                if installed_ver == FFMPEG_TARGET_VERSION:
+                    return True, installed_ver
+            except OSError:
+                pass
+
+        # 2. 실행 파일 바이너리 버전 직접 확인
+        try:
+            res = SubprocessRunner.run([str(self.ffmpeg_path), "-version"])
+            first_line = (res.stdout or "").splitlines()[0] if res.stdout else ""
+            if f"version {FFMPEG_TARGET_VERSION}" in first_line:
+                try:
+                    self.version_marker_path.write_text(FFMPEG_TARGET_VERSION, encoding="utf-8")
+                except OSError:
+                    pass
+                return True, FFMPEG_TARGET_VERSION
+
+            parts = first_line.split()
+            current_ver = parts[2] if len(parts) > 2 else "unknown"
+            return False, current_ver
+        except Exception:
+            return False, "unknown"
+
+    def _verify_sha256(self, file_path: Path, expected_hash: str) -> bool:
+        """파일의 SHA-256 해시를 계산하여 기대값과 일치하는지 검증합니다."""
+        if not expected_hash:
+            return True
+        sha256 = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            while chunk := f.read(65536):
+                sha256.update(chunk)
+        return sha256.hexdigest().lower() == expected_hash.lower()
 
     def ensure_ffmpeg_ready(self) -> concurrent.futures.Future:
         """
@@ -415,13 +459,18 @@ class FFmpegDownloader:
         """실제 다운로드 및 압축 해제 로직을 수행합니다."""
         local_zip_path = self.download_dir / FFMPEG_ZIP_FILENAME
         temp_extract_dir = None
-        
-        # FFmpeg가 이미 존재하면 작업 생략
-        if self.ffmpeg_path.exists():
+
+        # FFmpeg 버전 확인 및 존재 여부 검사
+        is_ready, current_ver = self._is_target_version_installed()
+        if is_ready:
             self._log_entry('ffmpeg_already_exists', path=self.download_dir)
             return True
 
-        self._log_entry('ffmpeg_not_found', path=self.download_dir)
+        if current_ver != "not_found":
+            self._log_entry('ffmpeg_version_mismatch', current=current_ver, target=FFMPEG_TARGET_VERSION)
+        else:
+            self._log_entry('ffmpeg_not_found', path=self.download_dir)
+
         try:
             # 1. 다운로드
             self._log_entry('ffmpeg_download_start', url=FFMPEG_URL)
@@ -429,10 +478,13 @@ class FFmpegDownloader:
                 if response.status != 200:
                     raise DownloadError(f"HTTP Error: {response.status} {response.reason}")
                 shutil.copyfileobj(response, out_file)
-            
-            # 1-1. 다운로드된 파일 무결성 검증 (ZIP magic bytes + 아카이브 테스트)
-            # NOTE: URL이 'latest' 롤링 릴리스를 가리키므로 고정 SHA-256 해시 비교는 불가합니다.
-            #       대신 파일 형식 검증으로 손상 및 기본적인 변조를 탐지합니다.
+
+            # 1-1. 다운로드된 파일 무결성 검증 (SHA-256 해시 검증)
+            if FFMPEG_EXPECTED_SHA256 and not self._verify_sha256(local_zip_path, FFMPEG_EXPECTED_SHA256):
+                self._log_entry('ffmpeg_hash_mismatch')
+                raise FileIntegrityError(str(local_zip_path), "SHA-256 checksum mismatch")
+
+            # 1-2. ZIP magic bytes + 아카이브 테스트
             with open(local_zip_path, 'rb') as f:
                 magic = f.read(4)
             if magic[:2] != b'PK':
@@ -441,7 +493,7 @@ class FFmpegDownloader:
                 bad_file = zip_test.testzip()
                 if bad_file is not None:
                     raise zipfile.BadZipFile(f"ZIP archive integrity check failed: corrupted entry '{bad_file}'.")
-            
+
             self._log_entry('ffmpeg_download_complete')
 
             # 2. 압축 해제 및 설치
@@ -455,7 +507,20 @@ class FFmpegDownloader:
                     raise FileIntegrityError(str(local_zip_path), "expected folder structure not found in ZIP")
                 # 필요한 파일만 추출 후 이동
                 zip_ref.extract(ffmpeg_internal_path, temp_extract_dir)
-                shutil.move(str(temp_extract_dir / ffmpeg_internal_path), str(self.ffmpeg_path))
+                extracted_file = temp_extract_dir / ffmpeg_internal_path
+                if self.ffmpeg_path.exists():
+                    try:
+                        os.remove(self.ffmpeg_path)
+                    except OSError:
+                        pass
+                shutil.move(str(extracted_file), str(self.ffmpeg_path))
+
+            # 버전 마커 파일 기록
+            try:
+                self.version_marker_path.write_text(FFMPEG_TARGET_VERSION, encoding="utf-8")
+            except OSError:
+                pass
+
             self._log_entry('ffmpeg_extract_complete', path=self.ffmpeg_path)
             return True
         except (urllib.error.URLError, OSError, zipfile.BadZipFile, DownloadError, FileIntegrityError) as e:
@@ -464,6 +529,12 @@ class FFmpegDownloader:
         finally:
             # 3. 임시 파일 정리
             if local_zip_path.exists():
-                os.remove(local_zip_path)
+                try:
+                    os.remove(local_zip_path)
+                except OSError:
+                    pass
             if temp_extract_dir and temp_extract_dir.exists():
-                shutil.rmtree(temp_extract_dir)
+                try:
+                    shutil.rmtree(temp_extract_dir)
+                except OSError:
+                    pass

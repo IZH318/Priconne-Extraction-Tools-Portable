@@ -264,31 +264,3 @@ class StoryDataDeserializer:
                     block[command_id.name.lower()].append(args[0] if len(args) == 1 else args)
 
         return story
-
-    @staticmethod
-    def show_corrupted_error_dialog(parent: Any = None, lang: str = 'ko') -> None:
-        """스토리 데이터 손상 및 무한 반복(루프) 감지 시 다국어 메시지 박스를 표시합니다."""
-        import json
-        from pathlib import Path
-        from tkinter import messagebox
-
-        title = "Story File Analysis Failed"
-        msg = (
-            "The selected story file is corrupted or in an invalid format.\n\n"
-            "An abnormal infinite loop was detected due to corrupted internal data. "
-            "Processing has been safely aborted to prevent application freezing.\n\n"
-            "Please verify that the original game file is not corrupted."
-        )
-
-        lang_path = Path(__file__).resolve().parent.parent / "languages.json"
-        if lang_path.is_file():
-            try:
-                with open(lang_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                sv = data.get('story_viewer', {}).get(lang, {})
-                title = sv.get('msgbox_story_loop_limit_title', title)
-                msg = sv.get('msgbox_story_loop_limit_msg', msg)
-            except Exception:
-                pass
-
-        messagebox.showerror(title, msg, parent=parent)

@@ -37,12 +37,18 @@ RENAMER_TARGET_FOLDERS: Final[tuple[str, ...]] = ('a', 'b', 'm', 'manifest', 's'
 
 # === AV Converter Tool ===
 AV_TEMP_EXTENSIONS: Final[tuple[str, ...]] = ('.adx', '.bin', '.m2v', '.wav')
+FFMPEG_TARGET_VERSION: Final[str] = "7.1.1"
 FFMPEG_URL: Final[str] = os.environ.get(
     'PRICONNE_FFMPEG_URL',
-    "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip"
+    "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
+)
+FFMPEG_EXPECTED_SHA256: Final[str] = os.environ.get(
+    'PRICONNE_FFMPEG_SHA256',
+    "04861d3339c5ebe38b56c19a15cf2c0cc97f5de4fa8910e4d47e5e6404e4a2d4"
 )
 FFMPEG_ZIP_FILENAME: Final[str] = "ffmpeg_temp.zip"
 FFMPEG_EXE_NAME: Final[str] = "ffmpeg.exe"
+FFMPEG_VERSION_FILENAME: Final[str] = ".ffmpeg_version"
 SENTINEL_VIDEO_DONE: Final[str] = "__VIDEO_DONE__"
 SENTINEL_AUDIO_DONE: Final[str] = "__AUDIO_DONE__"
 

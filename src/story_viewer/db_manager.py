@@ -465,6 +465,8 @@ class StoryDBManager:
                 top.destroy()
         except (tk.TclError, Exception):
             pass
-        messagebox.showerror(self._get_lang_dict().get('db_download_error_title', 'Download Error'), str(err), parent=self._master)
+        lang_dict = self._get_lang_dict()
+        err_msg = lang_dict.get('db_download_error_msg', 'An error occurred while downloading the database:\n{err}').format(err=err)
+        messagebox.showerror(lang_dict.get('db_download_error_title', 'Download Error'), err_msg, parent=self._master)
         self.db_check_done = True
         self._view.set_action_buttons_state("normal" if self._get_all_files() else "disabled")

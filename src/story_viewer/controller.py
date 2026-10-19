@@ -243,6 +243,7 @@ class StoryViewerController(QueuePollingMixin):
         self._init_queue_polling(self.view)
         self.view.update_ui_text()
         self.view.update_status_bar('status_bar_initial')
+        self.view.show_filter_placeholder()
 
     def get_lang_dict(self) -> dict[str, str]:
         """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
@@ -257,6 +258,7 @@ class StoryViewerController(QueuePollingMixin):
         try:
             self.view.update_ui_text()
             self.on_view_mode_change(force_update=True)
+            self.view.update_status_bar('status_bar_initial')
         except tk.TclError:
             pass
 
@@ -690,55 +692,55 @@ class StoryViewerController(QueuePollingMixin):
             self._handle_invalid_files_log(invalid_files)
 
     def _handle_invalid_files_log(self, invalid_files: list[tuple[str, str]]) -> None:
-        """손상되거나 유효하지 않은 파일들에 대한 오류 로그 저장을 묻고 처리합니다."""
+        """손상되거나 유효하지 않은 파일들에 대한 오류 로그를 자동 저장하고 알립니다."""
         lang_dict = self.get_lang_dict()
-        msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files))
-        if messagebox.askyesno(lang_dict['msgbox_load_fail_title'], msg, parent=self.view):
-            try:
-                import platform
-                import multiprocessing
-                import sys
-                from pathlib import Path
-                from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+        try:
+            import platform
+            import multiprocessing
+            import sys
+            from pathlib import Path
+            from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+            
+            python_ver = platform.python_version()
+            os_ver = platform.platform()
+            cpu_cores = multiprocessing.cpu_count()
+            
+            if sys.argv and sys.argv[0]:
+                exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+            else:
+                exec_path = os.path.abspath(os.getcwd())
                 
-                python_ver = platform.python_version()
-                os_ver = platform.platform()
-                cpu_cores = multiprocessing.cpu_count()
-                
-                if sys.argv and sys.argv[0]:
-                    exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
-                else:
-                    exec_path = os.path.abspath(os.getcwd())
-                    
-                now = datetime.now()
-                
-                log_dir = Path(exec_path) / "logs"
-                log_dir.mkdir(parents=True, exist_ok=True)
-                log_filename = log_dir / f"StoryViewerLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+            now = datetime.now()
+            
+            log_dir = Path(exec_path) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            log_filename = log_dir / f"StoryViewerLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
 
-                with open(log_filename, 'w', encoding='utf-8') as f:
-                    f.write(f"{SEPARATOR_LONG}\n")
-                    f.write(f"[SESSION] Invalid Storydata Load Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                    f.write(f"{SEPARATOR_LONG}\n")
-                    f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
-                    f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
-                    f.write(f"[ENGINE]  Python Version:  {python_ver}\n")
-                    f.write(f"[SYSTEM]  OS Version:      {os_ver}\n")
-                    f.write(f"[SYSTEM]  Processor Count: {cpu_cores} Cores\n")
-                    f.write(f"[PATH]    Exec Path:       {exec_path}\n")
-                    f.write(f"[REPORT]  Total Failed:    {len(invalid_files)}\n")
+            with open(log_filename, 'w', encoding='utf-8') as f:
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[SESSION] Invalid Storydata Load Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                f.write(f"{SEPARATOR_LONG}\n")
+                f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
+                f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
+                f.write(f"[ENGINE]  Python Version:  {python_ver}\n")
+                f.write(f"[SYSTEM]  OS Version:      {os_ver}\n")
+                f.write(f"[SYSTEM]  Processor Count: {cpu_cores} Cores\n")
+                f.write(f"[PATH]    Exec Path:       {exec_path}\n")
+                f.write(f"[REPORT]  Total Failed:    {len(invalid_files)}\n")
+                f.write(f"{SEPARATOR_LONG}\n\n")
+
+                for idx, (path, reason) in enumerate(invalid_files, 1):
+                    f.write(f"[ERROR ITEM #{idx}]\n")
+                    f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+                    f.write(f"Context   : Storydata Validation\n")
+                    f.write(f"File      : {path}\n")
+                    f.write(f"Reason    : {reason}\n")
                     f.write(f"{SEPARATOR_LONG}\n\n")
 
-                    for idx, (path, reason) in enumerate(invalid_files, 1):
-                        f.write(f"[ERROR ITEM #{idx}]\n")
-                        f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                        f.write(f"Context   : Storydata Validation\n")
-                        f.write(f"File      : {path}\n")
-                        f.write(f"Reason    : {reason}\n")
-                        f.write(f"{SEPARATOR_LONG}\n\n")
-                messagebox.showinfo(lang_dict['msgbox_log_saved_title'], lang_dict['msgbox_log_saved_msg'].format(filename=log_filename), parent=self.view)
-            except OSError as e:
-                messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e), parent=self.view)
+            msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files), filename=str(log_filename))
+            messagebox.showwarning(lang_dict['msgbox_load_fail_title'], msg, parent=self.view)
+        except OSError as e:
+            messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e), parent=self.view)
 
 
 
@@ -855,7 +857,12 @@ class StoryViewerController(QueuePollingMixin):
             self.all_files.pop(fn, None)
 
         if self.current_filenames_in_list:
-            self.update_file_list(self.current_filenames_in_list)
+            self.update_file_list(
+                self.current_filenames_in_list,
+                status_key='removed_selected_files',
+                count=len(to_remove),
+                total=len(self.current_filenames_in_list)
+            )
         else:
             self._populate_generation += 1
             self.display_name_to_filename.clear()
@@ -864,7 +871,7 @@ class StoryViewerController(QueuePollingMixin):
             self.view.update_story_text([])
             self.view.btn_export.config(state=tk.DISABLED)
             self.view.btn_copy.config(state=tk.DISABLED)
-            self.view.update_status_bar('status_bar_ready')
+            self.view.update_status_bar('removed_selected_files', count=len(to_remove), total=0)
 
     def remove_all_files(self, event: Any = None) -> None:
         """모든 파일을 파일 목록에서 제거합니다."""
@@ -873,6 +880,7 @@ class StoryViewerController(QueuePollingMixin):
         if not self.current_filenames_in_list and not self.all_files:
             return
 
+        total_removed = len(self.all_files) or len(self.current_filenames_in_list)
         self._populate_generation += 1
         self.all_files.clear()
         self.loaded_filenames.clear()
@@ -884,9 +892,9 @@ class StoryViewerController(QueuePollingMixin):
         self.view.update_story_text([])
         self.view.btn_export.config(state=tk.DISABLED)
         self.view.btn_copy.config(state=tk.DISABLED)
-        self.view.update_status_bar('status_bar_ready')
+        self.view.update_status_bar('removed_all_files', count=total_removed)
 
-    def update_file_list(self, filenames: list[str]) -> None:
+    def update_file_list(self, filenames: list[str], status_key: str | None = None, **status_kwargs: Any) -> None:
         """파일 목록 뷰를 업데이트합니다."""
         self._populate_generation += 1
         current_gen = self._populate_generation
@@ -902,7 +910,10 @@ class StoryViewerController(QueuePollingMixin):
             if current_gen != self._populate_generation:
                 return
             if index >= total:
-                self.view.update_status_bar('status_bar_list_updated', count=total)
+                if status_key:
+                    self.view.update_status_bar(status_key, **status_kwargs)
+                else:
+                    self.view.update_status_bar('status_bar_list_updated', count=total)
                 if total > 0:
                     self.view.file_listbox.selection_set(0)
                     self.view.file_listbox.event_generate("<<ListboxSelect>>")
@@ -950,9 +961,10 @@ class StoryViewerController(QueuePollingMixin):
     def _apply_filter(self) -> None:
         """현재 filter_var 값에 따라 base_search_files를 필터링하여 목록을 업데이트합니다."""
         query = self.filter_var.get().strip().lower()
+        placeholder = self.get_lang_dict().get('filter_placeholder', '').strip().lower()
         source_files = self.base_search_files if self.base_search_files else list(self.loaded_filenames)
         
-        if not query:
+        if not query or query == placeholder:
             self.update_file_list(source_files)
             return
         
@@ -975,6 +987,11 @@ class StoryViewerController(QueuePollingMixin):
     def clear_filter(self) -> None:
         """빠른 필터 입력값을 초기화합니다."""
         self.filter_var.set("")
+        try:
+            if self.view.focus_get() != self.view.filter_entry:
+                self.view.show_filter_placeholder()
+        except tk.TclError:
+            pass
 
     def on_file_select(self, event: Any = None) -> None:
         """파일 목록에서 항목을 선택했을 때 스토리 내용을 표시합니다."""

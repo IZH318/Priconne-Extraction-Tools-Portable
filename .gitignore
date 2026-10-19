@@ -81,3 +81,4 @@ $RECYCLE.BIN/
 /master_jp.db
 /master_kr.db
 /version.json
+.ffmpeg_version

@@ -3,6 +3,8 @@ import tkinter as tk
 from tkinter import ttk, font
 from typing import TYPE_CHECKING
 
+from src.utils.tooltip import ToolTip
+
 if TYPE_CHECKING:
     from .controller import StoryViewerController
 
@@ -72,6 +74,22 @@ class StoryViewerView(ttk.Frame):
         self.filter_entry = ttk.Entry(self.filter_frame, textvariable=self.controller.filter_var)
         self.filter_entry.pack(fill=tk.X, expand=True)
         self.filter_entry.bind("<Escape>", lambda e: self.controller.clear_filter())
+        self.filter_tooltip = ToolTip(self.filter_entry, "")
+
+        self._placeholder_active = False
+
+        def _on_focus_in(event=None):
+            if self._placeholder_active:
+                self._placeholder_active = False
+                self.controller.filter_var.set("")
+                self.filter_entry.config(foreground="")
+
+        def _on_focus_out(event=None):
+            if not self.controller.filter_var.get():
+                self.show_filter_placeholder()
+
+        self.filter_entry.bind("<FocusIn>", _on_focus_in)
+        self.filter_entry.bind("<FocusOut>", _on_focus_out)
         
         list_scrollbar = ttk.Scrollbar(self.left_group, orient=tk.VERTICAL)
         list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=(0, 5))
@@ -208,6 +226,19 @@ class StoryViewerView(ttk.Frame):
         self.listbox_menu.entryconfig(0, label=lang_dict.get('remove_selected', '선택 항목 제거'))
         self.listbox_menu.entryconfig(1, label=lang_dict.get('remove_all', '전체 항목 제거'))
         self.listbox_menu.entryconfig(3, label=lang_dict.get('export_this_item', '이 항목 내보내기'))
+
+        # 빠른 필터 플레이스홀더 및 툴팁 갱신
+        self.filter_tooltip.text = lang_dict.get('filter_placeholder', '')
+        if self._placeholder_active:
+            self.show_filter_placeholder()
+
+    def show_filter_placeholder(self) -> None:
+        """필터 입력창에 다국어 플레이스홀더를 표시합니다."""
+        self._placeholder_active = True
+        lang_dict = self.controller.get_lang_dict()
+        ph = lang_dict.get('filter_placeholder', '')
+        self.controller.filter_var.set(ph)
+        self.filter_entry.config(foreground="#888888")
 
     def update_status_bar(self, key, **kwargs) -> None:
         """상태바 메시지를 다국어 키 기반으로 업데이트합니다."""

@@ -219,6 +219,7 @@ class SearchWindow(tk.Toplevel):
         server = self.selected_server
         # destroy() 전에 모든 공유 참조 및 Tk 변수 값을 메인 스레드에서 미리 캡처
         char_type_value = self.search_vars['char_type'].get()
+        is_speaker = (self.char_type_combobox.current() == 0)
         captured_refs = {
             'all_files_dict': self.all_files_dict,
             'search_callback': self._search_callback,
@@ -233,18 +234,19 @@ class SearchWindow(tk.Toplevel):
         
         self.destroy()
         
-        thread = threading.Thread(target=self._search_thread, args=(criteria, server, char_type_value, captured_refs))
+        thread = threading.Thread(target=self._search_thread, args=(criteria, server, char_type_value, is_speaker, captured_refs))
         thread.daemon = True
         thread.start()
 
     @staticmethod
-    def _search_thread(criteria: dict[str, str], server: str, char_type_value: str, refs: dict[str, Any]) -> None:
+    def _search_thread(criteria: dict[str, str], server: str, char_type_value: str, is_speaker: bool, refs: dict[str, Any]) -> None:
         """실제 검색 로직을 백그라운드 스레드에서 수행합니다.
 
         Args:
             criteria: 사용자가 입력한 검색 조건 딕셔너리.
             server: 선택된 서버 ('JP' 또는 'KR').
             char_type_value: 캐릭터 이름 검색 옵션 ('화자' 또는 '지문 포함').
+            is_speaker: 화자 검색 여부 (인덱스 기반 bool).
             refs: 메인 스레드에서 캡처한 참조 객체 딕셔너리.
         """
         from . import db_helper
@@ -278,11 +280,9 @@ class SearchWindow(tk.Toplevel):
             if not content_criteria:
                 final_matched_files = list(initial_matched_files)
             else:
-                char_type_search = char_type_value
-                char_type_speaker = lang_dict['char_type_speaker']
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future_to_filename = {
-                        executor.submit(SearchEngine.check_file_for_search, filename, content_criteria, char_type_search, char_type_speaker, all_files_dict): filename 
+                        executor.submit(SearchEngine.check_file_for_search, filename, content_criteria, all_files=all_files_dict, is_speaker=is_speaker): filename 
                         for filename in initial_matched_files
                     }
                     for future in concurrent.futures.as_completed(future_to_filename):

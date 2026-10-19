@@ -35,7 +35,7 @@ class StoryDataLoader:
         except OSError as e:
             return False, None, lang_dict.get('log_reason_os_error', "File read/other error: {e}").format(e=e)
         except Exception as e:
-            return False, None, f"Unexpected fatal error: {e}"
+            return False, None, lang_dict.get('log_reason_unexpected_error', "Unexpected fatal error: {e}").format(e=e)
 
     @staticmethod
     def extract_asset_name(value: Any) -> str | None:
@@ -54,14 +54,21 @@ class StoryDataLoader:
 class SearchEngine:
     """스토리 데이터에 대한 다중 조건 검색 기능을 제공합니다."""
     @staticmethod
-    def check_scene(scene: dict[str, Any], criteria: dict[str, str], char_type_search: str, char_type_speaker: str) -> bool:
+    def check_scene(
+        scene: dict[str, Any],
+        criteria: dict[str, str],
+        char_type_search: str | None = None,
+        char_type_speaker: str | None = None,
+        is_speaker: bool | None = None,
+    ) -> bool:
         """단일 씬(Scene) 데이터가 주어진 검색 조건과 일치하는지 확인합니다.
 
         Args:
             scene: 씬 데이터 딕셔너리.
             criteria: 소문자로 변환된 검색 조건 딕셔너리.
-            char_type_search: 검색할 캐릭터 타입.
-            char_type_speaker: '화자'에 해당하는 문자열.
+            char_type_search: 검색할 캐릭터 타입 문자열 (하위 호환).
+            char_type_speaker: '화자'에 해당하는 문자열 (하위 호환).
+            is_speaker: 화자 검색 여부 (직접 지정 시 우선).
 
         Returns:
             조건 일치 여부 (bool).
@@ -74,18 +81,25 @@ class SearchEngine:
             return False
         if 'char_name' in criteria:
             char_name_crit = criteria['char_name']
+            speaker_mode = is_speaker if is_speaker is not None else (char_type_search == char_type_speaker)
             char_found = False
             if 'print' in scene:
-                if char_type_search == char_type_speaker and char_name_crit in str(scene['print'].get('name', '')).lower():
+                if speaker_mode and char_name_crit in str(scene['print'].get('name', '')).lower():
                     char_found = True
-                elif char_type_search != char_type_speaker and char_name_crit in scene['print'].get('text', '').lower():
+                elif not speaker_mode and char_name_crit in scene['print'].get('text', '').lower():
                     char_found = True
             if not char_found:
                 return False
         return True
 
     @staticmethod
-    def check_file_content(data: dict[str, Any], criteria: dict[str, str], char_type_search: str, char_type_speaker: str) -> bool:
+    def check_file_content(
+        data: dict[str, Any],
+        criteria: dict[str, str],
+        char_type_search: str | None = None,
+        char_type_speaker: str | None = None,
+        is_speaker: bool | None = None,
+    ) -> bool:
         """파일 전체 내용이 주어진 검색 조건과 일치하는지 확인합니다.
 
         Args:
@@ -93,6 +107,7 @@ class SearchEngine:
             criteria: 검색 조건 딕셔너리.
             char_type_search: 검색할 캐릭터 타입.
             char_type_speaker: '화자'에 해당하는 문자열.
+            is_speaker: 화자 검색 여부.
 
         Returns:
             조건 일치 여부 (bool).
@@ -122,12 +137,19 @@ class SearchEngine:
             return True
 
         for scene in data.values():
-            if SearchEngine.check_scene(scene, dialogue_criteria, char_type_search, char_type_speaker):
+            if SearchEngine.check_scene(scene, dialogue_criteria, char_type_search, char_type_speaker, is_speaker):
                 return True
         return False
 
     @staticmethod
-    def check_file_for_search(filename: str, criteria: dict[str, str], char_type_search: str, char_type_speaker: str, all_files: dict[str, str]) -> bool:
+    def check_file_for_search(
+        filename: str,
+        criteria: dict[str, str],
+        char_type_search: str | None = None,
+        char_type_speaker: str | None = None,
+        all_files: dict[str, str] | None = None,
+        is_speaker: bool | None = None,
+    ) -> bool:
         """파일 이름과 내용을 모두 포함하여 검색 조건과 일치하는지 확인합니다.
 
         Args:
@@ -136,6 +158,7 @@ class SearchEngine:
             char_type_search: 검색할 캐릭터 타입.
             char_type_speaker: '화자'에 해당하는 문자열.
             all_files: 전체 파일 경로 딕셔너리.
+            is_speaker: 화자 검색 여부.
 
         Returns:
             조건 일치 여부 (bool).
@@ -143,18 +166,20 @@ class SearchEngine:
         if 'filename' in criteria and criteria['filename'].lower() not in filename.lower():
             return False
         
+        if all_files is None:
+            return False
         filepath = all_files.get(filename)
         if not filepath:
             return False
         is_valid, data, _ = StoryDataLoader.is_valid_storydata(filepath)
-        if not is_valid:
+        if not is_valid or not isinstance(data, dict):
             return False
 
         content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
         if not content_criteria:
             return True
             
-        return SearchEngine.check_file_content(data, content_criteria, char_type_search, char_type_speaker)
+        return SearchEngine.check_file_content(data, content_criteria, char_type_search, char_type_speaker, is_speaker)
 
 class StoryFormatter:
     """스토리 데이터를 UI에 표시하기 쉬운 텍스트 및 태그 포맷으로 변환하는 유틸리티 클래스입니다.
@@ -381,7 +406,8 @@ class StoryFormatter:
             # 분기 씬 헤더
             if is_branch_scene:
                 from_sc, ch_idx, ch_text = tag_to_choice_info[branch_tag]
-                branch_label_str = f"{choice_item_label} {ch_idx}번 {branch_dialogue_label}" if branch_dialogue_label == "분기 대사" else f"{choice_item_label} {ch_idx} {branch_dialogue_label}"
+                branch_fmt = lang_dict.get('script_branch_label_fmt', "{choice_label} {idx} {dialogue_label}") if lang_dict else "{choice_label} {idx} {dialogue_label}"
+                branch_label_str = branch_fmt.format(choice_label=choice_item_label, idx=ch_idx, dialogue_label=branch_dialogue_label)
                 content_list.append((f"┌─ [ Scene {key} | {branch_label_str} (Tag {branch_tag}) ] ─┐\n", 'script_branch'))
                 has_dialogue = True
 
