@@ -18,7 +18,7 @@ from src.breadcrumbs import add_breadcrumb
 from src.queue_events import (
     QueueEvent, LogEvent, LogBlockEvent, ProgressEvent, CompletionEvent
 )
-from src.utils.about_dialog import show_about_dialog
+from src.subprocess_runner import SubprocessRunner
 from .logic import ConversionLogic, FFmpegDownloader
 from .log_renderer import AVLogRenderer
 from .preview_handler import AVPreviewHandler
@@ -163,10 +163,15 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
                 except OSError:
                     pass
 
-    def show_about_info(self) -> None:
-        """프로그램 정보 대화상자를 표시합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
-        show_about_dialog(lang_dict, self.about_info, self.view)
+    def _is_dotnet_runtime_available(self) -> bool:
+        """UsmToolkit.exe를 실행할 수 있는 .NET Runtime이 시스템에 존재하는지 사전 검증합니다."""
+        if not self.usmtoolkit_path or not self.usmtoolkit_path.exists():
+            return False
+        try:
+            res = SubprocessRunner.run([str(self.usmtoolkit_path), '--version'], timeout=3)
+            return res.returncode == 0
+        except Exception:
+            return False
 
 
     def add_files_cmd(self, tab_type: TabType) -> None:
@@ -335,6 +340,14 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             return
         if not output_dir:
             self._add_log_entry('video', 'error_no_output_video')
+            return
+        if not self._is_dotnet_runtime_available():
+            lang_dict = self.get_lang_dict()
+            messagebox.showwarning(
+                lang_dict.get('dotnet_runtime_missing_title', '.NET Runtime Required'),
+                lang_dict.get('dotnet_runtime_missing_msg', 'A .NET Runtime is required to convert video (.usm) files.'),
+                parent=self.view
+            )
             return
         add_breadcrumb("conv", "Started video conversion", {"files": len(self.video_full_paths), "output": output_dir})
         self._start_ffmpeg_preparation(output_dir)

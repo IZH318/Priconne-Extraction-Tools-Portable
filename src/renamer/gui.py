@@ -17,8 +17,4 @@ class FileRenamerGUI(ttk.Frame):
         # MVC 패턴 핵심: 화면과 로직을 조율할 Controller 인스턴스화
         # frame(self)에는 View가 배치되고, master는 다이얼로그 위치 기준으로 사용됩니다.
         self.controller = RenamerController(self, master, app_lang_var, about_info)
-        
-    def show_about_info(self) -> None:
-        """메인 런처(About 메뉴 등) 외부에서 호출될 수 있는 API"""
-        self.controller.show_about_info()
 

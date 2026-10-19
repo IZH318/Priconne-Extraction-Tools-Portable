@@ -179,6 +179,16 @@ class AVLogRenderer:
             self._log_queue.put(LogEvent(target=tab, key='raw', un_timestamped=True, kwargs={'text': ""}))
 
         self._add_log_entry('video', 'env_check_header')
+
+        dotnet_versions = self._logic.get_installed_dotnet_runtimes()
+        if dotnet_versions:
+            self._add_log_entry('video', 'env_success', tool_name=".NET Runtime")
+            for ver in dotnet_versions:
+                self._add_log_entry('video', 'env_dotnet_version', version=ver)
+        else:
+            self._add_log_entry('video', 'env_error', tool_name=".NET Runtime")
+            self._add_log_entry('video', 'env_error_desc_dotnet')
+
         self.log_tool_status('video', usmtoolkit_path, "UsmToolkit.exe", 'env_error_desc_video')
         if usmtoolkit_path:
             ffmpeg_downloader = self._get_ffmpeg_downloader()

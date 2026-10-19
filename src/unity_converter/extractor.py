@@ -557,7 +557,7 @@ def process_single_file(file_path: str, output_path: str, base_input_path: str |
     except Exception as e:
         # 심각한 오류 발생 시 로그 전송
         base_name = os.path.basename(file_path)
-        log_queue.put(LogEvent(target=base_name, key='worker_process_error', level='ERROR', kwargs={'error': e}))
+        log_queue.put(LogEvent(target=base_name, key='worker_process_error', level='ERROR', kwargs={'error': str(e)}))
     finally:
         # 작업 완료 신호 전송
         completion_queue.put(CompletionEvent(success=True, result=extracted_count))

@@ -58,6 +58,32 @@ class ConversionLogic:
         """외부 프로세스를 실행하고 출력을 캡처하는 헬퍼 함수입니다."""
         return SubprocessRunner.run(command)
 
+    @staticmethod
+    def get_installed_dotnet_runtimes() -> list[str]:
+        """시스템에 설치된 .NET Runtime (Microsoft.NETCore.App) 버전 목록을 반환합니다."""
+        versions: list[str] = []
+        try:
+            res = SubprocessRunner.run(['dotnet', '--list-runtimes'], timeout=2)
+            if res.returncode == 0:
+                for line in res.stdout.splitlines():
+                    parts = line.strip().split()
+                    if len(parts) >= 2 and parts[0] == 'Microsoft.NETCore.App':
+                        versions.append(f"{parts[0]} {parts[1]}")
+        except Exception:
+            pass
+        if not versions:
+            for base in [Path(r'C:\Program Files\dotnet\shared\Microsoft.NETCore.App'),
+                         Path(r'C:\Program Files (x86)\dotnet\shared\Microsoft.NETCore.App')]:
+                if base.is_dir():
+                    try:
+                        for p in sorted(base.iterdir()):
+                            if p.is_dir():
+                                versions.append(f"Microsoft.NETCore.App {p.name}")
+                    except Exception:
+                        pass
+        seen = set()
+        return [v for v in versions if not (v in seen or seen.add(v))]
+
     def _convert_single_video_task(self, usm_file_str: str, output_dir: str, usmtoolkit_path: Path) -> tuple[str, list[tuple[str, dict]]]:
         """
         단일 비디오(.usm) 파일을 변환하는 작업자(worker) 태스크.
@@ -497,7 +523,8 @@ class FFmpegDownloader:
         try:
             # 1. 다운로드
             self._log_entry('ffmpeg_download_start', url=FFMPEG_URL)
-            with urllib.request.urlopen(FFMPEG_URL) as response, open(local_zip_path, 'wb') as out_file:
+            req = urllib.request.Request(FFMPEG_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as response, open(local_zip_path, 'wb') as out_file:
                 if response.status != 200:
                     raise DownloadError(f"HTTP Error: {response.status} {response.reason}")
                 shutil.copyfileobj(response, out_file)

@@ -12,7 +12,6 @@ from tkinter import filedialog, messagebox, ttk
 from src.languages import UNITY_CONVERTER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
 from src.queue_events import LogEvent, CompletionEvent
-from src.utils.about_dialog import show_about_dialog
 from .extractor import process_single_file, AssetProcessor
 from .asset_browser import AssetBrowserWindow
 from src.constants import UNITY_SUPPORTED_EXTENSIONS as SUPPORTED_EXTENSIONS
@@ -245,11 +244,6 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self.log_events.append(event)
         self._render_log_event(event)
         self.view.log_text.see(tk.END)
-
-    def show_about_info(self) -> None:
-        """프로그램 정보 대화상자를 표시합니다."""
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
-        show_about_dialog(lang_dict, self.about_info, self.view)
 
     def _on_poll_cycle(self) -> None:
         """멀티프로세싱 큐에서 로그 및 진행 상황 이벤트를 가져와 UI를 업데이트합니다."""

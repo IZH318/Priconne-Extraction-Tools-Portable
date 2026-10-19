@@ -141,6 +141,7 @@ class AVPreviewHandler:
             stream_name: 생성될 임시 파일에 사용할 스트림 이름 (옵션).
         """
         d = self._get_lang_data()
+        self._cleanup_old_audio_previews()
         filename = f"{stream_name}.wav" if stream_name else f"preview_{os.path.basename(file_path)}_{stream_num}.wav"
         temp_wav = os.path.join(self._preview_temp_dir, filename)
         if os.path.exists(temp_wav):
@@ -157,6 +158,19 @@ class AVPreviewHandler:
             lambda: self._logic.preview_single_audio(file_path, stream_num, temp_wav, vgmstream_path),
             on_done
         )
+
+    def _cleanup_old_audio_previews(self) -> None:
+        """기존에 생성된 오디오 미리보기 임시 WAV 파일들을 안전하게 정리합니다."""
+        if not os.path.exists(self._preview_temp_dir):
+            return
+        for item in os.listdir(self._preview_temp_dir):
+            if item.endswith(".wav"):
+                item_path = os.path.join(self._preview_temp_dir, item)
+                if os.path.isfile(item_path):
+                    try:
+                        os.remove(item_path)
+                    except OSError:
+                        pass
 
     def _cleanup_old_video_previews(self) -> None:
         """기존에 생성된 비디오 미리보기 임시 디렉터리들을 안전하게 정리합니다."""

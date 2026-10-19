@@ -13,10 +13,6 @@ class ModuleController(Protocol):
         """앱 종료 시 리소스를 해제합니다."""
         ...
 
-    def show_about_info(self) -> None:
-        """프로그램 정보 대화상자를 표시합니다."""
-        ...
-
     def get_lang_dict(self) -> dict[str, str]:
         """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
         ...

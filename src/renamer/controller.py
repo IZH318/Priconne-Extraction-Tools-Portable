@@ -113,15 +113,6 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         
         self.redraw_all_logs()
 
-    def show_about_info(self) -> None:
-        """
-        Main.py에서 상단 About 메뉴 클릭 시 호출될 수 있도록 유지명세화
-        """
-        self._add_raw_text("")
-        self._add_log_event('SHOW_ABOUT_INFO')
-        self._add_raw_text("")
-        self.redraw_all_logs()
-
     def show_initial_message(self) -> None:
         self._add_log_event('program_started')
         self._add_raw_text("")
@@ -160,15 +151,6 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
             is_same_group = i > 0 and self.log_data[i-1][0] == timestamp
             line_prefix = f"[{timestamp}] " if not is_same_group else ' ' * 13
 
-            if key == 'SHOW_ABOUT_INFO':
-                about_lines = [self.get_string('about_header')]
-                for info_key, value in self.about_info.items():
-                    label_key = f'about_label_{info_key}'
-                    label_text = self.get_string(label_key)
-                    about_lines.append(f"  - {label_text}\t: {value}")
-                output_buffer.append("\n".join(about_lines) + "\n")
-                continue
-                
             if key == 'backend_job_summary':
                 logging.info("[Renamer] %s", message)
                 output_buffer.append(f"\n[{timestamp}] {message}")

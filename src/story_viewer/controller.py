@@ -12,7 +12,6 @@ from typing import Any
 
 from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
-from src.utils.about_dialog import show_about_dialog
 from .windows_search import SearchWindow
 from .windows_export import ExportWindow, SingleExportWindow
 from .logic import StoryDataLoader, StoryFormatter
@@ -398,11 +397,6 @@ class StoryViewerController(QueuePollingMixin):
 
         if not skip_filter:
             self._apply_filter()
-
-    def show_about_info(self) -> None:
-        """프로그램 정보 대화상자를 표시합니다."""
-        lang_dict = self.get_lang_dict()
-        show_about_dialog(lang_dict, self.about_info, self.master)
 
     def _on_poll_cycle(self) -> None:
         """태스크 큐에 쌓인 액션 이벤트들을 메인 스레드에서 처리합니다."""

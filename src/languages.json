@@ -99,7 +99,11 @@
             "preview_no_tool_video": "UsmToolkit.exe를 찾을 수 없어 비디오 미리보기를 실행할 수 없습니다.",
             "preview_no_tool_audio": "vgmstream(vgmstream-cli.exe)을 찾을 수 없어 오디오 미리보기를 실행할 수 없습니다.",
             "msgbox_error_log_saved_title": "오류 로그 생성 안내",
-            "msgbox_error_log_saved_msg": "작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다."
+            "msgbox_error_log_saved_msg": "작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다.",
+            "env_dotnet_version": "    > 버전: {version}",
+            "env_error_desc_dotnet": "    > 최소 .NET Core 3.1 이상 또는 .NET 8.0 이상 설치 필요",
+            "dotnet_runtime_missing_title": ".NET Runtime 설치 필요",
+            "dotnet_runtime_missing_msg": "비디오(.usm) 변환을 수행하려면 'Microsoft .NET Runtime'이 필요합니다.\n\n시스템에 최소 .NET Core 3.1 이상 또는 .NET 8.0 이상 버전을 설치한 후 다시 시도해 주세요.\n(※ .NET Framework와는 다른 프로그램입니다)"
         },
         "en": {
             "program_started": "Program started.",
@@ -200,7 +204,11 @@
             "preview_no_tool_video": "Cannot preview video: UsmToolkit.exe not found.",
             "preview_no_tool_audio": "Cannot preview audio: vgmstream (vgmstream-cli.exe) not found.",
             "msgbox_error_log_saved_title": "Error Log Created",
-            "msgbox_error_log_saved_msg": "An error occurred during the operation. An error log has been saved in the logs folder."
+            "msgbox_error_log_saved_msg": "An error occurred during the operation. An error log has been saved in the logs folder.",
+            "env_dotnet_version": "    > Version: {version}",
+            "env_error_desc_dotnet": "    > Requires .NET Core 3.1 or higher, or .NET 8.0 or higher",
+            "dotnet_runtime_missing_title": ".NET Runtime Required",
+            "dotnet_runtime_missing_msg": "A 'Microsoft .NET Runtime' is required to convert video (.usm) files.\n\nPlease install .NET Core 3.1 or higher, or .NET 8.0 or higher, and try again.\n(※ Note: This is different from .NET Framework)"
         },
         "ja": {
             "program_started": "プログラムが起動しました。",
@@ -301,7 +309,11 @@
             "progress_done": "完了",
             "status_cancelled": "操作がキャンセルされました",
             "msgbox_error_log_saved_title": "エラーログ生成の案内",
-            "msgbox_error_log_saved_msg": "処理中にエラーが発生したため、logsフォルダにエラーログが保存されました。"
+            "msgbox_error_log_saved_msg": "処理中にエラーが発生したため、logsフォルダにエラーログが保存されました。",
+            "env_dotnet_version": "    > バージョン: {version}",
+            "env_error_desc_dotnet": "    > 最低.NET Core 3.1以上、または.NET 8.0以上のインストールが必要",
+            "dotnet_runtime_missing_title": ".NET Runtimeのインストールが必要",
+            "dotnet_runtime_missing_msg": "動画（.usm）変換を実行するには「Microsoft .NET Runtime」が必要です。\n\nシステムに最低.NET Core 3.1以上、または.NET 8.0以上をインストールしてから再試行してください。\n（※ .NET Frameworkとは異なるプログラムです）"
         }
     },
     "renamer": {

@@ -11,6 +11,7 @@ from tkinter import ttk, messagebox, filedialog
 from typing import Any, Callable
 import queue
 
+from src.exceptions import AppBaseError
 from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 from src.queue_events import ActionEvent
 from .logic import SearchEngine
@@ -206,7 +207,7 @@ class SearchWindow(tk.Toplevel):
                 from . import db_helper
                 event_names = db_helper.fetch_event_names(db_info)
                 self.event_combobox['values'] = [''] + event_names
-            except sqlite3.Error as e:
+            except (sqlite3.Error, AppBaseError) as e:
                 messagebox.showerror(lang_dict['db_error_title'], lang_dict['db_error_msg'].format(e=e), parent=self)
                 self.event_combobox.config(state=tk.DISABLED)
                 

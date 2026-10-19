@@ -57,9 +57,13 @@ class AVConverterLangDict(TypedDict, total=False):
     dialog_select_files: str
     dialog_select_folder: str
     dialog_select_output: str
+    dotnet_runtime_missing_msg: str
+    dotnet_runtime_missing_title: str
     env_check_header: str
+    env_dotnet_version: str
     env_error: str
     env_error_desc_audio: str
+    env_error_desc_dotnet: str
     env_error_desc_ffmpeg_auto_download: str
     env_error_desc_video: str
     env_path: str
