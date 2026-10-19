@@ -26,25 +26,26 @@ class ExportProgressDialog(tk.Toplevel):
 
         lang_dict = self._get_lang_dict()
         self.title(lang_dict.get('export_progress_title', '데이터 추출 진행 중'))
-        self.geometry("380x150")
+        self.geometry("360x105")
         self.resizable(False, False)
         self.transient(master)
         self.grab_set()
 
-        self._center_window(380, 150)
+        self._center_window(360, 105)
 
-        main_frame = ttk.Frame(self, padding="15")
+        main_frame = ttk.Frame(self, padding="10")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
         self.lbl_status = ttk.Label(
             main_frame,
             text=lang_dict.get('status_bar_export_prep', '내보내기 준비 중...'),
-            anchor="center"
+            anchor="center",
+            justify="center"
         )
-        self.lbl_status.pack(fill=tk.X, pady=(0, 10))
+        self.lbl_status.pack(fill=tk.X, pady=(0, 8))
 
         self.pb = ttk.Progressbar(main_frame, mode='determinate', maximum=100)
-        self.pb.pack(fill=tk.X, padx=10, pady=(0, 15))
+        self.pb.pack(fill=tk.X, padx=10, pady=(0, 10))
         self.pb['value'] = 0
 
         btn_frame = ttk.Frame(main_frame)

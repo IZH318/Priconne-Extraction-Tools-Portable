@@ -158,7 +158,7 @@ class AssetBrowserWindow(tk.Toplevel):
         popup = tk.Toplevel(self)
         popup.withdraw()
         popup.title(self.lang_dict.get('preview_converting', 'Processing...'))
-        win_w, win_h = 300, 80
+        win_w, win_h = 360, 105
         sx = popup.winfo_screenwidth()
         sy = popup.winfo_screenheight()
         popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
@@ -166,9 +166,12 @@ class AssetBrowserWindow(tk.Toplevel):
         popup.grab_set()
         popup.resizable(False, False)
 
-        ttk.Label(popup, text=self.lang_dict.get('preview_converting', 'Processing...')).pack(pady=(15, 5))
-        progress = ttk.Progressbar(popup, mode='indeterminate')
-        progress.pack(fill=tk.X, padx=20, pady=(0, 10))
+        main_frame = ttk.Frame(popup, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        ttk.Label(main_frame, text=self.lang_dict.get('preview_converting', 'Processing...'), anchor="center", justify="center").pack(fill=tk.X, pady=(10, 12))
+        progress = ttk.Progressbar(main_frame, mode='indeterminate')
+        progress.pack(fill=tk.X, padx=15, pady=(0, 10))
         progress.start(15)
         popup.deiconify()
 

@@ -358,6 +358,37 @@ def fetch_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str])
                     result_map[story_id] = formatted
     except (sqlite3.Error, KeyError, UnsafeIdentifierError):
         pass
+
+    rem_ids = [aid for aid in adv_ids if aid not in result_map]
+    if rem_ids:
+        p_base = _get_baseline_db_path(db_info, 'default')
+        if p_base and os.path.exists(p_base):
+            norm_base = p_base.replace('\\', '/')
+            try:
+                with sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True) as conn_b:
+                    cursor_b = conn_b.cursor()
+                    for i in range(0, len(rem_ids), 500):
+                        chunk = rem_ids[i:i + 500]
+                        placeholders = ', '.join(['?'] * len(chunk))
+                        cursor_b.execute(
+                            f'SELECT story_id, title, sub_title FROM story_detail WHERE story_id IN ({placeholders})',
+                            chunk
+                        )
+                        for row in cursor_b.fetchall():
+                            story_id = str(row[0]) if row[0] is not None else ''
+                            t = str(row[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip() if row[1] is not None else ''
+                            sub = str(row[2]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip() if row[2] is not None else ''
+                            if t and sub:
+                                formatted = f"{t} - {sub}"
+                            elif t:
+                                formatted = t
+                            elif sub:
+                                formatted = sub
+                            else:
+                                continue
+                            result_map[story_id] = formatted
+            except Exception:
+                pass
         
     return result_map
 
@@ -1023,16 +1054,18 @@ def fetch_event_minigame_and_sub_scenes_batch(
     db_info: dict[str, Any], 
     adv_ids: list[str],
     speaker_map: dict[str, str] | None = None,
-    raw_titles_map: dict[str, str] | None = None
+    raw_titles_map: dict[str, str] | None = None,
+    situation_map: dict[str, str] | None = None
 ) -> dict[str, str]:
-    """adv_id 목록을 기반으로 이벤트 미니게임 스토리, 신규 보스/SP/EX 배틀 연출,
-    요리 리액션 및 이벤트 가이드 타이틀을 일괄 조회합니다.
+    """adv_id 목록을 기반으로 이벤트 미니게임 스토리, 아케이드 미니게임,
+    신규 보스/SP/EX 배틀 연출, 요리 리액션 및 이벤트 가이드 타이틀을 일괄 조회합니다.
 
     Args:
         db_info (dict): 서버별 DB 정보 딕셔너리.
         adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
         speaker_map (dict, optional): adv_id->화자명 매핑 딕셔너리.
         raw_titles_map (dict, optional): adv_id->JSON Frame 0 원본 타이틀 매핑 딕셔너리.
+        situation_map (dict, optional): adv_id->situation 매핑 딕셔너리.
 
     Returns:
         dict[str, str]: adv_id를 키로, 공식 이벤트명과 결합된 타이틀을 값으로 갖는 딕셔너리.
@@ -1062,7 +1095,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                         cursor.execute(f'SELECT "{col_event_grp}", "{col_event_title}" FROM "{tbl_event}" WHERE "{col_event_grp}" IN ({placeholders})', chunk)
                         for r in cursor.fetchall():
                             if r[0] is not None and r[1] is not None:
-                                event_map[r[0]] = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
+                                t_val = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ')
+                                event_map[r[0]] = re.sub(r'\s+', ' ', t_val).strip()
             except (sqlite3.Error, UnsafeIdentifierError):
                 pass
 
@@ -1076,7 +1110,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                         cur_b.execute('SELECT story_group_id, title FROM event_story_data')
                         for r in cur_b.fetchall():
                             if r[0] is not None and r[1] is not None and r[0] not in event_map:
-                                event_map[r[0]] = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip()
+                                t_val = str(r[1]).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ')
+                                event_map[r[0]] = re.sub(r'\s+', ' ', t_val).strip()
                 except Exception:
                     pass
 
@@ -1087,7 +1122,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
             story_to_mypage = {}
 
             p_676 = _get_baseline_db_path(db_info, '10067600')
-            v2_table = db_info.get('event_story_v2_table', 'v1_5dc6443a480cd7e8a680f6904c9125ceba8a8b571beaf0f7c6c8b2788f4dc2eb')
+            v2_table = 'v1_5dc6443a480cd7e8a680f6904c9125ceba8a8b571beaf0f7c6c8b2788f4dc2eb'
             if p_676 and os.path.exists(p_676):
                 norm_676 = p_676.replace('\\', '/')
                 try:
@@ -1097,9 +1132,12 @@ def fetch_event_minigame_and_sub_scenes_batch(
                         for ev_id, full_t in cur_676.fetchall():
                             grp = ev_id % 10000 if ev_id > 10000 else ev_id
                             if grp not in event_map:
-                                clean_t = str(full_t).split(' ')[0].split('\u3000')[0].replace('\\n', ' ').strip()
+                                t_str = str(full_t).replace(' オープニング', '').replace('オープニング', '').replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ')
+                                clean_t = re.sub(r'\s+', ' ', t_str).strip()
                                 event_map[grp] = clean_t
                                 event_map[ev_id] = clean_t
+                                if grp < 1000:
+                                    event_map[5000 + grp] = clean_t
 
                         cur_676.execute('''
                             SELECT f.[dc74953d7740483e43b6386653875c77e21540cc26cd8a3f0e802b57e7268baa], s.[f12d807789adeed6bccdb807e76bac3d299582a4a1ebed1caa5fdb045499a84d]
@@ -1129,6 +1167,41 @@ def fetch_event_minigame_and_sub_scenes_batch(
             def get_ev_prefix(aid_int: int) -> str:
                 ev = event_map.get(aid_int // 1000, "")
                 return f"[{ev}] " if ev else ""
+
+            # 1-1. 아케이드 미니게임 스토리 (arcade_story_list & arcade_list, baseline default)
+            p_base_arc = _get_baseline_db_path(db_info, 'default')
+            if p_base_arc and os.path.exists(p_base_arc):
+                norm_base_arc = p_base_arc.replace('\\', '/')
+                try:
+                    with sqlite3.connect(f"file:{norm_base_arc}?mode=ro", uri=True) as conn_arc:
+                        cur_arc = conn_arc.cursor()
+                        arc_map = {}
+                        cur_arc.execute('PRAGMA table_info("arcade_list")')
+                        cols_arc = [c[1] for c in cur_arc.fetchall()]
+                        t_col = "clan_chat_title" if "clan_chat_title" in cols_arc else "title"
+                        cur_arc.execute(f'SELECT arcade_id, "{t_col}" FROM arcade_list')
+                        for aid_arc, raw_t in cur_arc.fetchall():
+                            t_str = str(raw_t or '').replace('\\n', ' ').strip()
+                            clean_t = re.sub(r'^Happy\s+Anniv\.\s*(?:스페셜|スペシャル)?\s*', '', t_str, flags=re.IGNORECASE)
+                            clean_t = re.sub(r'\s+', ' ', clean_t).strip()
+                            if clean_t:
+                                arc_map[aid_arc] = clean_t
+
+                        cur_arc.execute("SELECT story_id, arcade_id, sub_title FROM arcade_story_list")
+                        for sid, aid_arc, sub_t in cur_arc.fetchall():
+                            sid_str = str(sid)
+                            if sid_str in adv_set and sid_str not in result_map:
+                                sub_clean = str(sub_t).replace('\\n', ' ').strip() if sub_t else ""
+                                arc_name = arc_map.get(aid_arc, "")
+                                if sid_str.startswith('5') and len(sid_str) == 7:
+                                    ev_p = get_ev_prefix(int(sid))
+                                    prefix = ev_p if ev_p else (f"[{arc_name}] " if arc_name else "")
+                                    result_map[sid_str] = f"{prefix}{sub_clean}" if sub_clean else prefix.strip()
+                                else:
+                                    prefix = f"[{arc_name}] " if arc_name else ""
+                                    result_map[sid_str] = f"{prefix}{sub_clean}" if sub_clean else prefix.strip()
+                except Exception:
+                    pass
 
             # 2. 최신 이벤트 스토리 v2 (10201+)
             tbl_ev2 = db_info.get('event_story_v2_table')
@@ -1372,7 +1445,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                 'event_nebia_minigame', 'event_taiso_minigame', 'event_alces_minigame',
                 'event_trip_minigame', 'event_house_minigame', 'event_diary_minigame',
                 'event_opening_adv', 'event_boss_battle_v3',
-                'event_remember_story', 'hatsune_present', 'hatsune_quest'
+                'event_remember_story', 'hatsune_present', 'hatsune_quest',
+                'arcade_story'
             ]
 
             for t_prefix in generic_minigame_tables:
@@ -1421,7 +1495,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
                 except (sqlite3.Error, UnsafeIdentifierError):
                     continue
 
-            # 11. 요리 미니게임 리액션, JSON 원본 타이틀 및 이벤트 가이드 매핑
+            # 11. 요리 미니게임 리액션, JSON 원본 타이틀 및 이벤트 서브씬 매핑
             for aid in adv_ids:
                 if aid in result_map:
                     continue
@@ -1438,12 +1512,48 @@ def fetch_event_minigame_and_sub_scenes_batch(
                         result_map[aid] = dish_title
                     continue
 
-                # B. JSON 원본 Frame 0 / 메타데이터 타이틀 보존 (128개 등)
-                if raw_titles_map and aid in raw_titles_map:
-                    raw_t = raw_titles_map[aid].strip()
+                # B. 이벤트 / 비이벤트 통합 캐스케이드 (줄거리 원천 배제 및 raw_t 최우선 복원)
+                ev_name = ""
+                if aid.isdigit() and len(aid) == 7 and aid.startswith('5'):
+                    ev_name = event_map.get(int(aid) // 1000, "")
+                    if ev_name:
+                        ev_name = re.sub(r'\s+', ' ', str(ev_name)).strip()
+
+                sit = (situation_map.get(aid, "") if situation_map else "") or ""
+                spk = (speaker_map.get(aid, "") if speaker_map else "") or ""
+                raw_t = (raw_titles_map.get(aid, "") if raw_titles_map else "") or ""
+
+                if sit:
+                    sit = re.sub(r'\s+', ' ', str(sit)).strip()
+                if spk:
+                    spk = re.sub(r'\s+', ' ', str(spk)).strip()
+                if raw_t:
+                    raw_t = re.sub(r'\s+', ' ', str(raw_t)).strip()
+
+                if ev_name:
+                    # 5xxxxxx 이벤트 서브씬/예고편: raw_t -> sit -> spk -> [ev_name]
+                    if raw_t and not raw_t.startswith("storydata_") and not raw_t.isdigit():
+                        preview_suffixes = ('次回予告', '다음 화 예고', '다음 회 예고', '다음화 예고', '다음회 예고')
+                        matched_suffix = next((s for s in preview_suffixes if raw_t.endswith(s)), None)
+                        if matched_suffix:
+                            result_map[aid] = f"[{ev_name}] {matched_suffix}"
+                        elif ev_name in raw_t:
+                            rest = raw_t.replace(ev_name, '').strip()
+                            result_map[aid] = f"[{ev_name}] {rest}" if rest else f"[{ev_name}]"
+                        else:
+                            result_map[aid] = f"[{ev_name}] {raw_t}"
+                    elif sit:
+                        result_map[aid] = f"[{ev_name}] {sit}"
+                    elif spk:
+                        result_map[aid] = f"[{ev_name}] {spk}"
+                    else:
+                        result_map[aid] = f"[{ev_name}]"
+                else:
+                    # 비이벤트: raw_t -> sit -> 원본 유지 (줄거리 배제)
                     if raw_t and not raw_t.startswith("storydata_") and not raw_t.isdigit():
                         result_map[aid] = raw_t
-                        continue
+                    elif sit:
+                        result_map[aid] = sit
 
     except (sqlite3.Error, KeyError, UnsafeIdentifierError):
         pass
@@ -1519,6 +1629,44 @@ def fetch_legion_and_byway_battle_titles_batch(db_info: dict[str, Any], adv_ids:
                         result_map[ws_str] = f"{q_clean} (wavestart)"
                     if we_str != '0' and we_str in adv_set:
                         result_map[we_str] = f"{q_clean} (waveend)"
+
+            # 3. 왕도종말결전 보스 (sre_boss_data) 및 우회로 서브스토리 (byway_story_detail) - baseline fallback
+            rem_ids = [aid for aid in adv_ids if aid not in result_map]
+            if rem_ids:
+                p_base = _get_baseline_db_path(db_info, 'default')
+                if p_base and os.path.exists(p_base):
+                    norm_base = p_base.replace('\\', '/')
+                    try:
+                        with sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True) as conn_b:
+                            cur_b = conn_b.cursor()
+                            # byway_story_detail
+                            for i in range(0, len(rem_ids), 500):
+                                chunk = rem_ids[i:i + 500]
+                                placeholders = ', '.join(['?'] * len(chunk))
+                                cur_b.execute(f'SELECT story_id, title, sub_title FROM byway_story_detail WHERE story_id IN ({placeholders})', chunk)
+                                for sid, t, sub in cur_b.fetchall():
+                                    sid_str = str(sid)
+                                    t_c = str(t).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip() if t else ""
+                                    s_c = str(sub).replace('\r\n', ' ').replace('\n', ' ').replace('\\n', ' ').strip() if sub else ""
+                                    if t_c and s_c:
+                                        result_map[sid_str] = f"{t_c} - {s_c}"
+                                    elif t_c:
+                                        result_map[sid_str] = t_c
+                                    elif s_c:
+                                        result_map[sid_str] = s_c
+
+                            # sre_boss_data
+                            cur_b.execute('SELECT battle_start_story_id, battle_finish_story_id, disappearance_story_id, name FROM sre_boss_data')
+                            for r in cur_b.fetchall():
+                                nm = str(r[3]).strip() if r[3] else ""
+                                if not nm:
+                                    continue
+                                for sid in [r[0], r[1], r[2]]:
+                                    sid_str = str(sid) if sid else ""
+                                    if sid_str and sid_str in adv_set and sid_str not in result_map:
+                                        result_map[sid_str] = nm
+                    except Exception:
+                        pass
 
     except (sqlite3.Error, KeyError, UnsafeIdentifierError):
         pass

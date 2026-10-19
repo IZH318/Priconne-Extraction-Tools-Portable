@@ -202,7 +202,7 @@ class AVConverterView(ttk.Frame):
         listbox.bind("<Button-3>", show_menu)
         listbox.bind("<Delete>", lambda e: self.controller.remove_selected_from_list(listbox, tab_type))
 
-    def create_progress_popup(self, width: int = 300, height: int = 80) -> tk.Toplevel:
+    def create_progress_popup(self, width: int = 360, height: int = 105) -> tk.Toplevel:
         d = self.controller.get_lang_dict()
         popup = tk.Toplevel(self)
         popup.withdraw()
@@ -212,9 +212,11 @@ class AVConverterView(ttk.Frame):
         popup.transient(self.winfo_toplevel())
         popup.grab_set()
         popup.resizable(False, False)
-        ttk.Label(popup, text=d.get('preview_converting', 'Converting...')).pack(pady=(15, 5))
-        progress = ttk.Progressbar(popup, mode='indeterminate')
-        progress.pack(fill=tk.X, padx=20, pady=(0, 10))
+        main_frame = ttk.Frame(popup, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        ttk.Label(main_frame, text=d.get('preview_converting', 'Converting...'), anchor="center", justify="center").pack(fill=tk.X, pady=(10, 12))
+        progress = ttk.Progressbar(main_frame, mode='indeterminate')
+        progress.pack(fill=tk.X, padx=15, pady=(0, 10))
         progress.start(15)
         popup.deiconify()
         return popup

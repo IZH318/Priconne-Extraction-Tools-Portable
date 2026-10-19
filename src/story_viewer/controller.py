@@ -45,7 +45,16 @@ def _load_db_config() -> dict[str, dict[str, str]]:
     # 신규 계층 구조(common, servers, tables)인 경우 정규화
     if "servers" in raw_cfg and "tables" in raw_cfg:
         common = raw_cfg.get("common", raw_cfg.get("Common", {}))
-        tables = raw_cfg.get("tables", {})
+        raw_tables = raw_cfg.get("tables", {})
+        
+        tables = {}
+        for k, v in raw_tables.items():
+            if isinstance(v, dict) and "table" not in v and not any(k2.endswith("_col") or k2.endswith("_table") for k2 in v):
+                for sub_k, sub_v in v.items():
+                    if isinstance(sub_v, dict):
+                        tables[sub_k] = sub_v
+            else:
+                tables[k] = v
         
         flat_tables = {}
         if "event_story" in tables:
@@ -120,6 +129,8 @@ def _load_db_config() -> dict[str, dict[str, str]]:
                     req_base = entry.get("baseline")
                     if req_base and req_base not in s_baseline_dbs:
                         for col_k in entry:
+                            if col_k.startswith("_"):
+                                continue
                             if col_k == "table":
                                 s_dict[f"{key}_table"] = ""
                             elif col_k == "baseline":
@@ -128,6 +139,8 @@ def _load_db_config() -> dict[str, dict[str, str]]:
                                 s_dict[f"{key}_{col_k}"] = ""
                     else:
                         for col_k, col_v in entry.items():
+                            if col_k.startswith("_"):
+                                continue
                             if col_k == "table":
                                 s_dict[f"{key}_table"] = col_v
                             elif col_k == "baseline":
@@ -165,6 +178,7 @@ class StoryViewerController(QueuePollingMixin):
         self.file_titles = {}
         self.raw_file_titles = {}
         self.file_situations = {}
+        self.file_outlines = {}
         self.file_voice_adv_ids = {}
         self.file_speakers = {}
         self.display_name_to_filename = {}
@@ -347,7 +361,7 @@ class StoryViewerController(QueuePollingMixin):
             if ('hatsune_boss_table' in db_info or 'hatsune_special_battle_table' in db_info or 'event_list_table' in db_info) and remaining_ids:
                 fetched_titles.update(db_helper.fetch_event_boss_battle_titles_batch(db_info, remaining_ids))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if ('legion_special_battle_table' in db_info or 'byway_battle_quest_data_table' in db_info) and remaining_ids:
+            if ('legion_special_battle_table' in db_info or 'byway_battle_quest_data_table' in db_info or 'baseline_dbs' in db_info or 'baseline_db_path' in db_info) and remaining_ids:
                 fetched_titles.update(db_helper.fetch_legion_and_byway_battle_titles_batch(db_info, remaining_ids))
             remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
             if remaining_ids:
@@ -359,7 +373,13 @@ class StoryViewerController(QueuePollingMixin):
                     aid: self.raw_file_titles.get(fn, "")
                     for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
                 }
-                fetched_titles.update(db_helper.fetch_event_minigame_and_sub_scenes_batch(db_info, remaining_ids, speaker_meta, raw_titles_meta))
+                situation_meta = {
+                    aid: self.file_situations.get(fn)
+                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
+                }
+                fetched_titles.update(db_helper.fetch_event_minigame_and_sub_scenes_batch(
+                    db_info, remaining_ids, speaker_meta, raw_titles_meta, situation_meta
+                ))
             
         # 4. 타이틀 갱신: DB 결과 우선, 미존재 시 JSON 원본 타이틀(또는 파일명) 유지
         for filename in self.all_files:
@@ -398,7 +418,9 @@ class StoryViewerController(QueuePollingMixin):
         self.file_titles.clear()
         self.raw_file_titles.clear()
         self.file_situations.clear()
+        self.file_outlines.clear()
         self.file_voice_adv_ids.clear()
+        self.file_speakers.clear()
         self.display_name_to_filename.clear()
         self.current_filenames_in_list = []
         self.loaded_filenames = []
@@ -516,7 +538,8 @@ class StoryViewerController(QueuePollingMixin):
         total_files = len(file_list_to_process)
         unique_char_names, unique_bgms, unique_bgs, unique_voices = set(), set(), set(), set()
         temp_file_titles, temp_raw_titles = {}, {}
-        temp_file_situations, temp_file_voice_adv_ids = {}, {}
+        temp_file_situations, temp_file_outlines = {}, {}
+        temp_file_voice_adv_ids = {}
         temp_file_speakers = {}
         temp_empty_titles = set()
 
@@ -529,17 +552,26 @@ class StoryViewerController(QueuePollingMixin):
             if is_valid:
                 filename = os.path.basename(path)
                 temp_all_files[filename] = path
-                json_title = str(data.get('0', {}).get('title', '') or '').strip()
-                situation = str(data.get('0', {}).get('situation', '') or '').strip()
-                if situation:
-                    temp_file_situations[filename] = situation
-                base_title = json_title if json_title else (situation if situation else filename)
-                temp_raw_titles[filename] = base_title
-                temp_file_titles[filename] = base_title
-                if not json_title:
-                    temp_empty_titles.add(filename)
+
+                # 1. Frame 0 우선 확인
+                frame0 = data.get('0', {}) if isinstance(data, dict) else {}
+                json_title = str(frame0.get('title', '') or '').strip()
+                situation = str(frame0.get('situation', '') or '').strip()
+                outline = str(frame0.get('outline', '') or '').strip()
+
+                # 2. 씬 루프: 화자, 보이스, BGM/BG 및 프레임 0 누락 메타데이터 보강
                 for scene in data.values():
                     if isinstance(scene, dict):
+                        if not situation and (s := str(scene.get('situation', '') or '').strip()):
+                            if s != 'null':
+                                situation = s
+                        if not outline and (o := str(scene.get('outline', '') or '').strip()):
+                            if o != 'null':
+                                outline = o
+                        if not json_title and (t := str(scene.get('title', '') or '').strip()):
+                            if not t.isdigit() and not t.startswith('storydata_'):
+                                json_title = t
+
                         if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()):
                             unique_char_names.add(name)
                             if filename not in temp_file_speakers and name not in ['主人公', '{player_name}', '{0}', '???', '？？？', 'ナレーション', ''] and not (name.startswith('{') and name.endswith('}')):
@@ -552,6 +584,16 @@ class StoryViewerController(QueuePollingMixin):
                                 m = re.search(r'vo_adv_(\d+)_', vo_name)
                                 if m:
                                     temp_file_voice_adv_ids[filename] = m.group(1)
+
+                if situation:
+                    temp_file_situations[filename] = situation
+                if outline:
+                    temp_file_outlines[filename] = outline
+                base_title = json_title if json_title else (situation if situation else filename)
+                temp_raw_titles[filename] = base_title
+                temp_file_titles[filename] = base_title
+                if not json_title:
+                    temp_empty_titles.add(filename)
             else:
                 invalid_files.append((path, error_reason))
         
@@ -571,6 +613,7 @@ class StoryViewerController(QueuePollingMixin):
             "titles": temp_file_titles,
             "raw_titles": temp_raw_titles,
             "file_situations": temp_file_situations,
+            "file_outlines": temp_file_outlines,
             "file_voice_adv_ids": temp_file_voice_adv_ids,
             "file_speakers": temp_file_speakers,
             "empty_titles": temp_empty_titles,
@@ -620,6 +663,7 @@ class StoryViewerController(QueuePollingMixin):
         self.file_titles = results['titles']
         self.raw_file_titles = results.get('raw_titles', {})
         self.file_situations = results.get('file_situations', {})
+        self.file_outlines = results.get('file_outlines', {})
         self.file_voice_adv_ids = results.get('file_voice_adv_ids', {})
         self.file_speakers = results.get('file_speakers', {})
         self.empty_title_files = results['empty_titles']

@@ -152,8 +152,55 @@ COLUMN_MAPPINGS: Dict[str, List[str]] = {
     ],
     "hatsune_quest_table": [
         "hatsune_quest_id_col", "hatsune_quest_title_col"
+    ],
+    "hatsune_quiz_table": [
+        "hatsune_quiz_point_name_col", "hatsune_quiz_title_col",
+        "hatsune_quiz_start_id_col", "hatsune_quiz_end_id_col"
     ]
 }
+
+BASELINE_TABLES_LIST: List[str] = [
+    "alchemy_story_detail",
+    "hatsune_scenario_boss",
+    "hatsune_boss_v2",
+    "hatsune_sp_battle_v2",
+    "hatsune_ex_battle",
+    "event_cooking_minigame",
+    "event_cooking_reaction",
+    "event_museum_minigame",
+    "event_story_v2",
+    "event_secret_minigame",
+    "event_collab_minigame",
+    "event_vampire_minigame",
+    "event_crybaby_minigame",
+    "event_summer_minigame",
+    "event_liberate_minigame",
+    "event_hatsune_dream_minigame",
+    "event_christmas_minigame",
+    "event_coaster_minigame",
+    "event_nebia_minigame",
+    "event_taiso_minigame",
+    "event_alces_minigame",
+    "event_trip_minigame",
+    "event_house_minigame",
+    "event_diary_minigame",
+    "event_opening_adv",
+    "event_boss_battle_v3",
+    "event_remember_story",
+    "hatsune_present",
+    "hatsune_quest",
+    "hatsune_quiz"
+]
+
+
+def _get_default_baseline_path(info: dict, src_dir: str) -> str:
+    """서버 설정에서 기본 베이스라인 DB 파일의 절대 경로를 반환합니다."""
+    b_dbs = info.get("baseline_dbs", {})
+    if isinstance(b_dbs, dict) and "default" in b_dbs:
+        b_fname = b_dbs["default"].get("db_path", "")
+        if b_fname:
+            return os.path.join(src_dir, b_fname)
+    return os.path.join(src_dir, info.get("baseline_db_path", ""))
 
 
 def escape_identifier(identifier: str) -> str:
@@ -552,8 +599,12 @@ def resolve_single_table_worker(args: tuple) -> tuple:
         with sqlite3.connect(f"file:{base_db_path}?mode=ro", uri=True) as base_conn, \
              sqlite3.connect(f"file:{target_db_path}?mode=ro", uri=True) as target_conn:
 
-            base_col_count, base_sigs, is_small = extract_signature_samples(base_conn, base_table_name)
             base_cur = base_conn.cursor()
+            base_cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (base_table_name,))
+            if not base_cur.fetchone():
+                return server_key, table_key, base_table_name, None, {}
+
+            base_col_count, base_sigs, is_small = extract_signature_samples(base_conn, base_table_name)
             base_cur.execute(f"PRAGMA table_info({escape_identifier(base_table_name)});")
             orig_base_types = {r[1]: (r[2].upper().strip() if r[2] else "NONE") for r in base_cur.fetchall()}
 
@@ -629,7 +680,7 @@ def resolve_all_servers_parallel(
             continue
 
         db_path = os.path.join(root_dir, info['db_path'])
-        baseline_path = os.path.join(src_dir, info.get('baseline_db_path', ''))
+        baseline_path = _get_default_baseline_path(info, src_dir)
         
         if not os.path.exists(baseline_path) or not os.path.exists(db_path):
             continue
@@ -668,45 +719,13 @@ def resolve_all_servers_parallel(
             ("byway_quest_data_table", info.get("byway_quest_data_table", ""), baseline_path),
         ]
         
-        # baseline_dbs가 지정된 테이블들 (alchemy_story_detail 및 신규 9개 테이블)
+        # baseline_dbs가 지정된 테이블들 (alchemy_story_detail 및 미니게임/연출 테이블)
         baseline_dbs = info.get("baseline_dbs", {})
-        baseline_tables = [
-            "alchemy_story_detail",
-            "hatsune_scenario_boss",
-            "hatsune_boss_v2",
-            "hatsune_sp_battle_v2",
-            "hatsune_ex_battle",
-            "event_cooking_minigame",
-            "event_cooking_reaction",
-            "event_museum_minigame",
-            "event_riddle_minigame",
-            "event_story_v2",
-            "event_secret_minigame",
-            "event_collab_minigame",
-            "event_vampire_minigame",
-            "event_crybaby_minigame",
-            "event_summer_minigame",
-            "event_liberate_minigame",
-            "event_hatsune_dream_minigame",
-            "event_christmas_minigame",
-            "event_coaster_minigame",
-            "event_nebia_minigame",
-            "event_taiso_minigame",
-            "event_alces_minigame",
-            "event_trip_minigame",
-            "event_house_minigame",
-            "event_diary_minigame",
-            "event_opening_adv",
-            "event_boss_battle_v3",
-            "event_remember_story",
-            "hatsune_present",
-            "hatsune_quest"
-        ]
-        for tbl_prefix in baseline_tables:
+        for tbl_prefix in BASELINE_TABLES_LIST:
             tbl_k = f"{tbl_prefix}_table"
             tbl_v = info.get(tbl_k, "")
             if tbl_v:
-                b_key = info.get(f"{tbl_prefix}_baseline", "10067600")
+                b_key = info.get(f"{tbl_prefix}_baseline") or "default"
                 b_info = baseline_dbs.get(b_key, {})
                 b_filename = b_info.get("db_path", f"master_{server_key.lower()}_{b_key}.db")
                 b_tbl_path = os.path.join(src_dir, b_filename)
@@ -745,7 +764,7 @@ def resolve_all_servers_parallel(
         for server_key, info in server_db_info.items():
             if isinstance(info, dict) and 'db_path' in info:
                 db_path = os.path.join(root_dir, info['db_path'])
-                baseline_path = os.path.join(src_dir, info.get('baseline_db_path', ''))
+                baseline_path = _get_default_baseline_path(info, src_dir)
                 if os.path.exists(baseline_path) and os.path.exists(db_path):
                     resolve_server_config(baseline_path, db_path, info, progress_callback=progress_callback)
 
@@ -952,44 +971,15 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
             if tower_sub_title_col and tower_sub_title_col in tower_col_map:
                 server_info["tower_story_detail_sub_title_col"] = tower_col_map[tower_sub_title_col]
 
-        # 8. baseline_dbs 기반 추가 테이블(알케스 및 신규 9개 테이블) 역난독화 매핑
-        baseline_tables = [
-            "alchemy_story_detail",
-            "hatsune_scenario_boss",
-            "hatsune_boss_v2",
-            "hatsune_sp_battle_v2",
-            "hatsune_ex_battle",
-            "event_cooking_minigame",
-            "event_cooking_reaction",
-            "event_museum_minigame",
-            "event_riddle_minigame",
-            "event_story_v2",
-            "event_secret_minigame",
-            "event_collab_minigame",
-            "event_vampire_minigame",
-            "event_crybaby_minigame",
-            "event_summer_minigame",
-            "event_liberate_minigame",
-            "event_hatsune_dream_minigame",
-            "event_christmas_minigame",
-            "event_coaster_minigame",
-            "event_nebia_minigame",
-            "event_taiso_minigame",
-            "event_alces_minigame",
-            "event_trip_minigame",
-            "event_house_minigame",
-            "event_diary_minigame",
-            "event_opening_adv",
-            "event_boss_battle_v3"
-        ]
+        # 8. baseline_dbs 기반 추가 테이블(알케스 및 신규 테이블) 역난독화 매핑
         baseline_dbs = server_info.get("baseline_dbs", {})
-        for tbl_prefix in baseline_tables:
+        for tbl_prefix in BASELINE_TABLES_LIST:
             tbl_k = f"{tbl_prefix}_table"
             tbl_v = server_info.get(tbl_k, "")
             if tbl_v:
                 if progress_callback:
                     progress_callback(server_key, tbl_k)
-                b_key = server_info.get(f"{tbl_prefix}_baseline", "10067600")
+                b_key = server_info.get(f"{tbl_prefix}_baseline") or "default"
                 b_info = baseline_dbs.get(b_key, {})
                 b_filename = b_info.get("db_path", f"master_{server_key.lower()}_{b_key}.db")
                 b_tbl_path = os.path.join(os.path.dirname(baseline_path), b_filename)
