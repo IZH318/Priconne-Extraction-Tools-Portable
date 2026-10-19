@@ -5,7 +5,7 @@ from tkinter import ttk, messagebox
 import tempfile
 import shutil
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from src.constants import DEFAULT_UNITY_VERSION
 from src.utils.platform_open import open_with_default_app
@@ -47,12 +47,21 @@ class AssetBrowserWindow(tk.Toplevel):
             return f"{size / 1024:.1f} KB"
         return f"{size} B"
 
-    def __init__(self, master: tk.Tk | tk.Toplevel, file_path: str, lang_dict: dict[str, str], unity_version: str | None = None, app_temp_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        master: tk.Tk | tk.Toplevel,
+        file_path: str,
+        lang_dict: dict[str, str],
+        unity_version: str | None = None,
+        app_temp_dir: str | None = None,
+        generate_error_log: Callable[[list[tuple[str, str]], str], None] | None = None,
+    ) -> None:
         super().__init__(master)
         self.withdraw()
         self.file_path = file_path
         self.lang_dict = lang_dict
         self.unity_version = unity_version or DEFAULT_UNITY_VERSION
+        self._generate_error_log = generate_error_log
         self._asset_map = {}  # tree item id → (obj, type_name)
         
         if app_temp_dir:
@@ -110,7 +119,11 @@ class AssetBrowserWindow(tk.Toplevel):
             config.FALLBACK_UNITY_VERSION = self.unity_version
             env = UnityPy.load(self.file_path)
         except (OSError, ValueError, RuntimeError) as e:
-            messagebox.showerror(self.lang_dict.get('asset_error_title', 'Error'), str(e), parent=self)
+            if self._generate_error_log:
+                self._generate_error_log([(self.file_path, str(e))], context="Asset Browser Load")
+            title = self.lang_dict.get('asset_error_title', 'Error')
+            notice = self.lang_dict.get('msgbox_error_log_saved_msg', 'An error log has been saved in the logs folder.')
+            messagebox.showerror(title, f"{str(e)}\n\n{notice}", parent=self)
             return
 
         group_nodes = {}
@@ -151,7 +164,12 @@ class AssetBrowserWindow(tk.Toplevel):
             data = obj.parse_as_object()
             name = getattr(data, 'm_Name', '') or f"PathID_{obj.path_id}"
         except (AttributeError, ValueError) as e:
-            messagebox.showerror(self.lang_dict.get('asset_error_title', 'Error'), str(e), parent=self)
+            if self._generate_error_log:
+                target_info = f"{self.file_path} > PathID_{obj.path_id} ({type_name})"
+                self._generate_error_log([(target_info, str(e))], context="Asset Preview")
+            title = self.lang_dict.get('asset_error_title', 'Error')
+            notice = self.lang_dict.get('msgbox_error_log_saved_msg', 'An error log has been saved in the logs folder.')
+            messagebox.showerror(title, f"{str(e)}\n\n{notice}", parent=self)
             return
 
         # 진행 상태 팝업
@@ -196,7 +214,12 @@ class AssetBrowserWindow(tk.Toplevel):
             except tk.TclError:
                 pass
             if error:
-                messagebox.showerror(self.lang_dict.get('asset_error_title', 'Error'), str(error), parent=self)
+                if self._generate_error_log:
+                    target_info = f"{self.file_path} > {name} ({type_name})"
+                    self._generate_error_log([(target_info, str(error))], context="Asset Preview")
+                title = self.lang_dict.get('asset_error_title', 'Error')
+                notice = self.lang_dict.get('msgbox_error_log_saved_msg', 'An error log has been saved in the logs folder.')
+                messagebox.showerror(title, f"{str(error)}\n\n{notice}", parent=self)
 
         threading.Thread(target=export_worker, daemon=True).start()
 

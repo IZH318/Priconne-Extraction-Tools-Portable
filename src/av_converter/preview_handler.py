@@ -32,6 +32,7 @@ class AVPreviewHandler:
         view: Any,
         preview_temp_dir: str,
         get_tool_paths: Callable[[], dict[str, Path | None]],
+        generate_error_log: Callable[[str, list[tuple[str, str]]], None] | None = None,
     ) -> None:
         """AVPreviewHandler를 초기화합니다.
 
@@ -42,6 +43,7 @@ class AVPreviewHandler:
             view: AVConverterView 인스턴스 (UI 조작용).
             preview_temp_dir: 미리보기 임시 파일 디렉터리 경로.
             get_tool_paths: 도구 경로 딕셔너리를 반환하는 콜백.
+            generate_error_log: 에러 로그 파일 생성 콜백.
         """
         self._get_lang_data = get_lang_data
         self._get_paths = get_paths
@@ -49,6 +51,7 @@ class AVPreviewHandler:
         self._view = view
         self._preview_temp_dir = preview_temp_dir
         self._get_tool_paths = get_tool_paths
+        self._generate_error_log = generate_error_log
 
     def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
         """리스트박스에서 선택된 파일의 미리보기를 실행합니다.
@@ -102,7 +105,12 @@ class AVPreviewHandler:
         
         def on_analyze_done(streams_info: list[tuple[int, str]]) -> None:
             if not streams_info:
-                messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_error', 'Preview failed: {error}').format(error='No streams'), parent=self._view)
+                if self._generate_error_log:
+                    self._generate_error_log('audio', [(file_path, 'No audio streams found or vgmstream stream analysis failed.')])
+                title = d.get('preview_menu', 'Preview')
+                fail_msg = d.get('preview_error', 'Preview failed: {error}').format(error=os.path.basename(file_path))
+                notice_msg = d.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
+                messagebox.showwarning(title, f"{fail_msg}\n\n{notice_msg}", parent=self._view)
                 return
             
             if len(streams_info) == 1:
@@ -148,11 +156,17 @@ class AVPreviewHandler:
             try: os.remove(temp_wav)
             except OSError: pass
         
-        def on_done(success):
+        def on_done(result):
+            success, error_reason = result if isinstance(result, tuple) else (result, None)
             if success:
                 open_with_default_app(temp_wav)
             else:
-                messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_error', 'Preview failed: {error}').format(error='Conversion failed'), parent=self._view)
+                if self._generate_error_log:
+                    self._generate_error_log('audio', [(file_path, error_reason or 'Audio preview failed')])
+                title = d.get('preview_menu', 'Preview')
+                fail_msg = d.get('preview_error', 'Preview failed: {error}').format(error=os.path.basename(file_path))
+                notice_msg = d.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
+                messagebox.showwarning(title, f"{fail_msg}\n\n{notice_msg}", parent=self._view)
         
         self._run_preview_task(
             lambda: self._logic.preview_single_audio(file_path, stream_num, temp_wav, vgmstream_path),
@@ -199,11 +213,17 @@ class AVPreviewHandler:
         temp_dir = os.path.join(self._preview_temp_dir, f"video_{os.path.basename(file_path)}_{int(time.time() * 1000)}")
         os.makedirs(temp_dir, exist_ok=True)
         
-        def on_convert_done(result_path):
+        def on_convert_done(result):
+            result_path, error_reason = result if isinstance(result, tuple) else (result, None)
             if result_path:
                 open_with_default_app(str(result_path))
             else:
-                messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_error', 'Preview failed: {error}').format(error='Conversion failed'), parent=self._view)
+                if self._generate_error_log:
+                    self._generate_error_log('video', [(file_path, error_reason or 'Video preview failed')])
+                title = d.get('preview_menu', 'Preview')
+                fail_msg = d.get('preview_error', 'Preview failed: {error}').format(error=os.path.basename(file_path))
+                notice_msg = d.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
+                messagebox.showwarning(title, f"{fail_msg}\n\n{notice_msg}", parent=self._view)
         
         self._run_preview_task(
             lambda: self._logic.preview_single_video(file_path, temp_dir, usmtoolkit_path),

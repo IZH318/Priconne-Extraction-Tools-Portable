@@ -50,6 +50,7 @@ class AVConverterLangDict(TypedDict, total=False):
     conv_log_source: str
     conv_log_success: str
     conv_log_worker_exception: str
+    conv_preview_fail: str
     conv_start_audio: str
     conv_start_video: str
     conv_summary_video: str

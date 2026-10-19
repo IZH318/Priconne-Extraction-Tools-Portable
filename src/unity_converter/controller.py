@@ -41,6 +41,8 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self.frame = frame
         self.master = master
         self.app_temp_dir = app_temp_dir
+        from src.utils.base_path import get_application_base_path
+        self.base_path = get_application_base_path()
         self.file_paths = []
         self.output_path = ""
         self.is_running = False
@@ -383,7 +385,14 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         file_path = str(self.file_paths[selection[0]])
         d = self.get_lang_dict()
         unity_version = self.unity_version_var.get().strip() or DEFAULT_UNITY_VERSION
-        AssetBrowserWindow(self.view.winfo_toplevel(), file_path, d, unity_version, self.app_temp_dir)
+        AssetBrowserWindow(
+            self.view.winfo_toplevel(),
+            file_path,
+            d,
+            unity_version,
+            self.app_temp_dir,
+            generate_error_log=self._generate_error_log,
+        )
 
     def select_output_dir(self) -> None:
         """출력 폴더 선택 대화상자를 엽니다."""
@@ -465,14 +474,18 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self.is_running = False
         self.frame.after(0, lambda: self.view.toggle_controls(True))
 
-    def _generate_error_log(self, failed_files: list[tuple[str, str]]) -> None:
+    def _generate_error_log(self, failed_files: list[tuple[str, str]], context: str = "Asset Extraction") -> None:
         import platform, multiprocessing, sys, os
         from datetime import datetime
         from pathlib import Path
         from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
+        from src.utils.base_path import get_application_base_path
         
         try:
-            exec_path = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
+            if hasattr(self, 'base_path') and self.base_path:
+                exec_path = str(self.base_path)
+            else:
+                exec_path = str(get_application_base_path())
             log_dir = Path(exec_path) / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             
@@ -489,17 +502,22 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
                 f.write(f"[SYSTEM]  OS Version:      {platform.platform()}\n")
                 f.write(f"[SYSTEM]  Processor Count: {multiprocessing.cpu_count()} Cores\n")
                 f.write(f"[PATH]    Exec Path:       {exec_path}\n")
+                f.write(f"[REPORT]  Context:         {context}\n")
                 f.write(f"[REPORT]  Base Input:      {self.base_input_path if self.base_input_path else 'Files'}\n")
-                f.write(f"[REPORT]  Output Path:     {self.output_path}\n")
+                f.write(f"[REPORT]  Output Path:     {self.output_path if self.output_path else 'Temp/Preview'}\n")
                 f.write(f"[REPORT]  Total Failed:    {len(failed_files)}\n")
                 f.write(f"{SEPARATOR_LONG}\n\n")
 
                 for idx, (path, reason) in enumerate(failed_files, 1):
                     f.write(f"[ERROR ITEM #{idx}]\n")
                     f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                    f.write(f"Context   : Asset Extraction\n")
+                    f.write(f"Context   : {context}\n")
                     f.write(f"File      : {path}\n")
-                    f.write(f"Reason    : {reason}\n")
+                    clean_reason = (reason or "").strip()
+                    if "\n" in clean_reason:
+                        f.write(f"Reason    :\n{clean_reason}\n")
+                    else:
+                        f.write(f"Reason    : {clean_reason}\n")
                     f.write(f"{SEPARATOR_LONG}\n\n")
         except Exception as e:
             import logging

@@ -97,6 +97,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             view=self.view,
             preview_temp_dir=self._preview_temp_dir,
             get_tool_paths=lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path},
+            generate_error_log=self._generate_error_log,
         )
 
         # 참고: video_log_history, audio_log_history는 73-74행에서 이미 초기화됨
@@ -569,7 +570,12 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
         
         try:
-            exec_path = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
+            if hasattr(self, 'base_path') and self.base_path:
+                exec_path = str(self.base_path)
+            elif sys.argv and sys.argv[0]:
+                exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+            else:
+                exec_path = os.path.abspath(os.getcwd())
             log_dir = Path(exec_path) / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             
@@ -595,7 +601,11 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
                     f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
                     f.write(f"Context   : {tab_type.capitalize()} Conversion\n")
                     f.write(f"File      : {path}\n")
-                    f.write(f"Reason    : {reason}\n")
+                    clean_reason = (reason or "").strip()
+                    if "\n" in clean_reason:
+                        f.write(f"Reason    :\n{clean_reason}\n")
+                    else:
+                        f.write(f"Reason    : {clean_reason}\n")
                     f.write(f"{SEPARATOR_LONG}\n\n")
         except Exception as e:
             import logging

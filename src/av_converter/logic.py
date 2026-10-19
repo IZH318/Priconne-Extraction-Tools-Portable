@@ -102,6 +102,7 @@ class ConversionLogic:
         output_path = Path(output_dir)
         final_mp4_path = output_path / (usm_file.stem + ".mp4")
 
+        error_details = ""
         log_entries = [('spacing', {}),
                        ('conv_log_source', {'path': self.get_relative_path(usm_file)})]
         status = "unknown"
@@ -161,20 +162,20 @@ class ConversionLogic:
                     status = "error"
                     log_entries.append(('conv_log_error_fail', {'filename': usm_file.name}))
                     
-                    # 실패 시 오류 로그 추가
+                    # 실패 시 프로세스 오류 로그 추가
                     error_output = (result.stderr or result.stdout or "No process output.").strip()
+                    error_details = error_output
                     if error_output:
-                        log_entries.append(('spacing', {}))
-                        log_entries.append(('conv_log_details_error_header', {}))
                         log_entries.extend([('raw', {'text': f"    > {line}"}) for line in error_output.splitlines()])
 
             except Exception as e:
                 status = "error"
+                error_details = str(e)
                 log_entries.append(('conv_log_result_header', {}))
                 log_entries.append(('conv_log_error_exception', {'error': str(e)}))
 
         log_entries.append(('spacing', {}))
-        return status, log_entries
+        return status, log_entries, error_details
 
     def run_video_conversion(self, input_paths: list[str], output_dir: str, usmtoolkit_path: Path | None, cancel_token: CancellationToken | None) -> None:
         """비디오 변환 작업을 총괄하고 스레드 풀에 작업을 분배합니다."""
@@ -203,7 +204,7 @@ class ConversionLogic:
                     break
 
                 try:
-                    status, log_entries = future.result()
+                    status, log_entries, error_details = future.result()
                     self.log_queue.put(LogBlockEvent(target=target_tab, entries=log_entries))
                     if status == "success":
                         success_count += 1
@@ -211,9 +212,7 @@ class ConversionLogic:
                         skipped_count += 1
                     else:
                         error_count += 1
-                        # We don't have the exact error message from the worker here easily if it didn't throw,
-                        # but we can just say "Conversion failed" since detailed logs are in the GUI.
-                        failed_files.append((future_to_path[future], "Conversion process failed"))
+                        failed_files.append((future_to_path[future], error_details or "Conversion failed"))
                 except Exception as e:
                     path = future_to_path[future]
                     self._log_entry(target_tab, 'conv_log_worker_exception', filename=Path(path).name, error=e)
@@ -253,11 +252,11 @@ class ConversionLogic:
                     break
 
                 try:
-                    converted_count, log_entries = future.result()
+                    converted_count, log_entries, error_details = future.result()
                     self.log_queue.put(LogBlockEvent(target=target_tab, entries=log_entries))
                     total_converted_tracks += converted_count
                     if any(k in ('conv_audio_stream_fail', 'conv_audio_stream_error', 'conv_log_details_error_header') for k, _ in log_entries):
-                        failed_files.append((future_to_path[future], "Audio conversion failed"))
+                        failed_files.append((future_to_path[future], error_details or "Audio conversion failed"))
                 except Exception as e:
                     path = future_to_path[future]
                     self._log_entry(target_tab, 'conv_log_worker_exception', filename=Path(path).name, error=e)
@@ -339,12 +338,12 @@ class ConversionLogic:
             streams.append((i, name))
         return streams
 
-    def _convert_audio_container(self, item_path_str: str, output_dir: str, vgmstream_path: Path | str, overwrite: bool) -> tuple[int, list[tuple[str, dict]]]:
+    def _convert_audio_container(self, item_path_str: str, output_dir: str, vgmstream_path: Path | str, overwrite: bool) -> tuple[int, list[tuple[str, dict]], str]:
         """
         단일 오디오 컨테이너(.awb) 파일 내의 모든 스트림을 변환하는 작업자 태스크.
 
         Returns:
-            tuple: (변환된 트랙 수, 로그 항목 리스트)
+            tuple: (변환된 트랙 수, 로그 항목 리스트, 에러 상세)
         """
         item_path = Path(item_path_str)
         log_entries = [('spacing', {}),
@@ -352,6 +351,7 @@ class ConversionLogic:
                        ('spacing', {}),
                        ('conv_log_result_header', {})]
         total_converted = 0
+        error_details_list: list[str] = []
         
         # AWB 파일 이름으로 하위 폴더 생성
         item_output_folder = Path(output_dir) / item_path.stem
@@ -360,7 +360,7 @@ class ConversionLogic:
         streams = self.get_audio_streams_info(item_path, vgmstream_path)
         if not streams:
             log_entries.append(('conv_audio_stream_error', {}))
-            return 0, log_entries
+            return 0, log_entries, "Could not read stream info from the file"
 
         # 각 스트림을 개별 .wav 파일로 변환
         for stream_idx, stream_name in streams:
@@ -380,19 +380,35 @@ class ConversionLogic:
                 log_entries.append(('conv_audio_stream_fail', {'index': stream_idx, 'name': stream_name}))
                 error_output = (result.stderr or result.stdout or "No error output.").strip()
                 if error_output:
-                    log_entries.append(('conv_log_details_error_header', {}))
-                    log_entries.extend([('raw', {'text': f"      > {line}"}) for line in error_output.splitlines()])
+                    error_details_list.append(f"Stream #{stream_idx} ({stream_name}):\n{error_output}")
+                    log_entries.extend([('raw', {'text': f"    > {line}"}) for line in error_output.splitlines()])
 
         log_entries.append(('spacing', {}))
-        return total_converted, log_entries
+        return total_converted, log_entries, "\n\n".join(error_details_list)
 
-    def preview_single_audio(self, file_path: str, stream_num: int, output_path: str, vgmstream_path: Path) -> bool:
+    def preview_single_audio(self, file_path: str, stream_num: int, output_path: str, vgmstream_path: Path) -> tuple[bool, str | None]:
         """단일 오디오 스트림을 지정된 임시 경로로 변환합니다 (미리보기용)."""
+        item_path = Path(file_path)
         command = [str(vgmstream_path), "-s", str(stream_num), "-o", str(output_path), str(file_path)]
-        result = self._run_subprocess(command)
-        return result.returncode == 0 and Path(output_path).exists()
+        try:
+            result = self._run_subprocess(command)
+            success = result.returncode == 0 and Path(output_path).exists()
+            if not success:
+                self._log_entry('audio', 'conv_preview_fail', filename=item_path.name)
+                error_output = (result.stderr or result.stdout or "No error output.").strip()
+                if error_output:
+                    for line in error_output.splitlines():
+                        self.log_queue.put(LogEvent(target='audio', key='raw', kwargs={'text': f"    > {line}"}))
+                self._log_entry('audio', 'spacing')
+                return False, error_output
+            return True, None
+        except Exception as e:
+            self._log_entry('audio', 'conv_preview_fail', filename=item_path.name)
+            self._log_entry('audio', 'conv_log_error_exception', error=str(e))
+            self._log_entry('audio', 'spacing')
+            return False, str(e)
 
-    def preview_single_video(self, usm_file_str: str, output_dir: str, usmtoolkit_path: Path) -> Path | None:
+    def preview_single_video(self, usm_file_str: str, output_dir: str, usmtoolkit_path: Path) -> tuple[Path | None, str | None]:
         """단일 비디오를 지정된 임시 경로로 변환합니다 (미리보기용)."""
         usm_file = Path(usm_file_str)
         usmtoolkit_dir = usmtoolkit_path.parent
@@ -401,7 +417,7 @@ class ConversionLogic:
 
         command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(output_path.resolve())]
         try:
-            SubprocessRunner.run(command, cwd=str(usmtoolkit_dir))
+            result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir))
             # 변환 후 임시 중간 파일 정리
             for ext in AV_TEMP_EXTENSIONS:
                 temp_file = usm_file.parent / (usm_file.stem + ext)
@@ -410,9 +426,21 @@ class ConversionLogic:
                         os.remove(temp_file)
                     except OSError:
                         pass
-            return final_mp4_path if final_mp4_path.exists() else None
-        except (OSError, subprocess.SubprocessError):
-            return None
+            if final_mp4_path.exists():
+                return final_mp4_path, None
+            else:
+                self._log_entry('video', 'conv_preview_fail', filename=usm_file.name)
+                error_output = (result.stderr or result.stdout or "No process output.").strip()
+                if error_output:
+                    for line in error_output.splitlines():
+                        self.log_queue.put(LogEvent(target='video', key='raw', kwargs={'text': f"    > {line}"}))
+                self._log_entry('video', 'spacing')
+                return None, error_output
+        except Exception as e:
+            self._log_entry('video', 'conv_preview_fail', filename=usm_file.name)
+            self._log_entry('video', 'conv_log_error_exception', error=str(e))
+            self._log_entry('video', 'spacing')
+            return None, str(e)
 
 
 class FFmpegDownloader:
