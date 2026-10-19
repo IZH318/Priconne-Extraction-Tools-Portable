@@ -1376,7 +1376,10 @@
             "about_label_updated": "최종 업데이트",
             "about_label_license": "라이선스",
             "about_label_developer": "개발자",
-            "about_label_website": "웹 사이트"
+            "about_label_website": "웹 사이트",
+            "error_title": "오류",
+            "error_msg_success": "오류가 발생했습니다.\n자세한 내용은 로그 파일을 확인하세요:\n{log_path}",
+            "error_msg_fail": "오류가 발생했으나 로그 파일 생성에 실패했습니다.\n{e}"
         },
         "en": {
             "window_title": "Priconne Extraction Tools (Portable)",
@@ -1394,7 +1397,10 @@
             "about_label_updated": "Last Updated",
             "about_label_license": "License",
             "about_label_developer": "Developer",
-            "about_label_website": "Website"
+            "about_label_website": "Website",
+            "error_title": "Error",
+            "error_msg_success": "An error occurred.\nDetails are in the log file:\n{log_path}",
+            "error_msg_fail": "An error occurred, log file creation failed.\n{e}"
         },
         "ja": {
             "window_title": "Priconne Extraction Tools (Portable)",
@@ -1412,7 +1418,10 @@
             "about_label_updated": "最終更新日",
             "about_label_license": "ライセンス",
             "about_label_developer": "開発者",
-            "about_label_website": "ウェブサイト"
+            "about_label_website": "ウェブサイト",
+            "error_title": "エラー",
+            "error_msg_success": "エラーが発生しました。\n詳細はログファイルを確認してください:\n{log_path}",
+            "error_msg_fail": "エラーが発生しましたが、ログファイルの作成に失敗しました。\n{e}"
         }
     }
 }

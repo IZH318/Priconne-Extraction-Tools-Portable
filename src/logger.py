@@ -133,10 +133,12 @@ def setup_global_logging(tk_root: Any = None, app_info: dict[str, Any] | None = 
             
             # 언어 설정 가져오기 (기본값 'en')
             lang_code = lang_var.get() if lang_var else 'en'
-            if lang_data_map and lang_code in lang_data_map:
-                lang_data = lang_data_map[lang_code]
+            if lang_data_map and 'main_menu' in lang_data_map:
+                menu_data = lang_data_map['main_menu']
             else:
-                lang_data = lang_data_map.get('en', {}) if lang_data_map else {}
+                menu_data = lang_data_map or {}
+
+            lang_data = menu_data.get(lang_code, menu_data.get('en', {}))
                 
             title = lang_data.get('error_title', 'Error')
             msg_success = lang_data.get('error_msg_success', 'An error occurred.\nDetails are in the log file:\n{log_path}')

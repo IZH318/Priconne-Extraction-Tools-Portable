@@ -484,6 +484,9 @@ class MainMenuLangDict(TypedDict, total=False):
     about_label_version: str
     about_label_website: str
     about_title: str
+    error_msg_fail: str
+    error_msg_success: str
+    error_title: str
     menu_exit: str
     menu_file: str
     menu_info: str

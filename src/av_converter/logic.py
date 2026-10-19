@@ -282,6 +282,30 @@ class ConversionLogic:
         if stream_count <= 0:
             return []
         
+        # 1. 일괄 메타데이터 파싱 시도 (-s 1 -S 0)
+        streams: list[tuple[int, str]] = []
+        try:
+            result = self._run_subprocess([str(vgmstream_path), "-m", "-s", "1", "-S", "0", str(file_path)])
+            if result.returncode == 0:
+                current_subsong = 0
+                for line in result.stdout.splitlines():
+                    if line.startswith("subsong "):
+                        try:
+                            token = line.split()[1]
+                            current_subsong = int(token.split("/")[0].split(":")[0])
+                        except (IndexError, ValueError):
+                            current_subsong += 1
+                    elif line.startswith("stream name:") and current_subsong > 0:
+                        name = line.split(":", 1)[1].strip().split(';')[0].strip()
+                        if name:
+                            streams.append((current_subsong, name))
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+        if len(streams) == stream_count:
+            return streams
+        
+        # 2. 폴백: 개별 쿼리
         streams = []
         for i in range(1, stream_count + 1):
             name = self.get_stream_name(file_path, i, vgmstream_path)
@@ -306,28 +330,27 @@ class ConversionLogic:
         item_output_folder = Path(output_dir) / item_path.stem
         item_output_folder.mkdir(parents=True, exist_ok=True)
 
-        num_streams = self.get_stream_count(item_path, vgmstream_path)
-        if num_streams == 0:
+        streams = self.get_audio_streams_info(item_path, vgmstream_path)
+        if not streams:
             log_entries.append(('conv_audio_stream_error', {}))
             return 0, log_entries
 
         # 각 스트림을 개별 .wav 파일로 변환
-        for i in range(1, num_streams + 1):
-            stream_name = self.get_stream_name(item_path, i, vgmstream_path)
+        for stream_idx, stream_name in streams:
             output_file = item_output_folder / f"{stream_name}.wav"
 
             if not overwrite and output_file.exists():
                 log_entries.append(('conv_audio_stream_skipped', {'filename': output_file.name}))
                 continue
 
-            command = [str(vgmstream_path), "-s", str(i), "-o", str(output_file), str(item_path)]
+            command = [str(vgmstream_path), "-s", str(stream_idx), "-o", str(output_file), str(item_path)]
             result = self._run_subprocess(command)
 
             if result.returncode == 0 and output_file.exists():
                 log_entries.append(('conv_audio_stream_success', {'path': self.get_relative_path(output_file)}))
                 total_converted += 1
             else:
-                log_entries.append(('conv_audio_stream_fail', {'index': i, 'name': stream_name}))
+                log_entries.append(('conv_audio_stream_fail', {'index': stream_idx, 'name': stream_name}))
                 error_output = (result.stderr or result.stdout or "No error output.").strip()
                 if error_output:
                     log_entries.append(('conv_log_details_error_header', {}))

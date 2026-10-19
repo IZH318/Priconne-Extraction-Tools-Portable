@@ -1,6 +1,7 @@
 import os
 import re
 import sqlite3
+import contextlib
 import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Any, Optional
@@ -522,8 +523,8 @@ class StoryDataExtractor:
 
         raise FileNotFoundError(f"Not a valid DB file or directory: {path}")
 
-    def _get_ro_connection(self, db_path: str) -> sqlite3.Connection:
-        return sqlite3.connect(f"file:{db_path}{SQLITE_READONLY_URI_MODE}", uri=True)
+    def _get_ro_connection(self, db_path: str) -> Any:
+        return contextlib.closing(sqlite3.connect(f"file:{db_path}{SQLITE_READONLY_URI_MODE}", uri=True))
 
     def _find_and_deobfuscate_table(self, base_table_name: str) -> Tuple[str, Dict[str, str]]:
         if base_table_name in self._table_cache:
@@ -596,8 +597,8 @@ def resolve_single_table_worker(args: tuple) -> tuple:
         return server_key, table_key, base_table_name, None, {}
 
     try:
-        with sqlite3.connect(f"file:{base_db_path}?mode=ro", uri=True) as base_conn, \
-             sqlite3.connect(f"file:{target_db_path}?mode=ro", uri=True) as target_conn:
+        with contextlib.closing(sqlite3.connect(f"file:{base_db_path}?mode=ro", uri=True)) as base_conn, \
+             contextlib.closing(sqlite3.connect(f"file:{target_db_path}?mode=ro", uri=True)) as target_conn:
 
             base_cur = base_conn.cursor()
             base_cur.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (base_table_name,))
@@ -688,7 +689,7 @@ def resolve_all_servers_parallel(
         # 타겟 DB의 모든 테이블 및 컬럼 수 1회 일괄 인덱싱 (PRAGMA 중복 호출 방지)
         target_tables_with_col = []
         try:
-            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+            with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
                 cur = conn.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
                 all_tables = [r[0] for r in cur.fetchall()]

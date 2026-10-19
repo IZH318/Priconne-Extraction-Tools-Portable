@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os
 import sqlite3
+import contextlib
 import hashlib
 import concurrent.futures
 import threading
@@ -117,7 +118,7 @@ class RenameHashedFile:
         # 2. manifest.db 파일 로드 (최신 권한 데이터로 덮어쓰기/보강)
         manifest_db_path = self.base_path / "manifest.db"
         if manifest_db_path.exists():
-            with sqlite3.connect(manifest_db_path) as connection:
+            with contextlib.closing(sqlite3.connect(manifest_db_path)) as connection:
                 cursor = connection.cursor()
                 cursor.execute("PRAGMA table_info(t)")
                 cols = [row[1].lower() for row in cursor.fetchall()]

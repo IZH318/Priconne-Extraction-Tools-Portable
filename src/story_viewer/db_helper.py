@@ -10,6 +10,7 @@ SQL 조립은 _build_query() / _build_select_all_query()로 집중 관리됩니�
 import os
 import re
 import sqlite3
+import contextlib
 from typing import Any
 
 from src.exceptions import UnsafeIdentifierError
@@ -139,7 +140,7 @@ def fetch_event_names(db_info: dict[str, Any]) -> list[str]:
         sqlite3.Error: DB 접근 중 오류 발생 시.
     """
     db_path = _get_db_path(db_info).replace('\\', '/')
-    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+    with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
         cursor = conn.cursor()
         query = _build_query(
             table=db_info['event_list_table'],
@@ -180,7 +181,7 @@ def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
         f'WHERE trim(replace(replace(replace("{name_col}", char(13), \'\'), char(10), \' \'), \'\\n\', \' \')) = ? '
         f'OR "{name_col}" = ?)'
     )
-    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+    with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
         cursor = conn.cursor()
         cursor.execute(query, (cleaned_name, event_name))
         return {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
@@ -204,7 +205,7 @@ def fetch_event_list_for_export(db_info: dict[str, Any]) -> tuple[list[str], lis
         sqlite3.Error: DB 접근 중 오류 발생 시.
     """
     db_path = _get_db_path(db_info).replace('\\', '/')
-    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+    with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
         cursor = conn.cursor()
         pragma_query, select_suffix = _build_select_all_query(db_info['event_list_table'])
         
@@ -237,7 +238,7 @@ def fetch_birthday_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> 
         
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
             
             chunk_size = 500
@@ -279,7 +280,7 @@ def fetch_quest_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dic
         
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
             
             chunk_size = 500
@@ -328,7 +329,7 @@ def fetch_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str])
         
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
             
             chunk_size = 500
@@ -365,7 +366,7 @@ def fetch_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str])
         if p_base and os.path.exists(p_base):
             norm_base = p_base.replace('\\', '/')
             try:
-                with sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True) as conn_b:
+                with contextlib.closing(sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True)) as conn_b:
                     cursor_b = conn_b.cursor()
                     for i in range(0, len(rem_ids), 500):
                         chunk = rem_ids[i:i + 500]
@@ -411,7 +412,7 @@ def fetch_dear_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[
         
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
             
             chunk_size = 500
@@ -463,7 +464,7 @@ def _get_jp_situation_to_canonical_id() -> dict[str, str]:
         norm_p = os.path.abspath(p).replace('\\', '/')
         if os.path.exists(norm_p):
             try:
-                with sqlite3.connect(f"file:{norm_p}?mode=ro", uri=True) as conn:
+                with contextlib.closing(sqlite3.connect(f"file:{norm_p}?mode=ro", uri=True)) as conn:
                     cursor = conn.cursor()
                     cursor.execute('SELECT story_id, sub_title FROM dear_story_detail')
                     for r in cursor.fetchall():
@@ -498,7 +499,7 @@ def fetch_dear_story_detail_fallback_titles_batch(
 
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
             tbl = _validate_identifier(db_info['dear_story_detail_table'])
             col_id = _validate_identifier(db_info['dear_story_detail_id_col'])
@@ -565,7 +566,7 @@ def fetch_tower_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list
         
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
             
             chunk_size = 500
@@ -620,7 +621,7 @@ def fetch_alchemy_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: li
         
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
             
             chunk_size = 500
@@ -699,7 +700,7 @@ def fetch_sekai_story_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) 
     default_event_name = ""
 
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
 
             tbl_top = _validate_identifier(top_tbl_name)
@@ -804,7 +805,7 @@ def fetch_event_top_adv_titles_batch(
 
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
 
             tbl_top = _validate_identifier(tbl_name)
@@ -975,7 +976,7 @@ def fetch_event_boss_battle_titles_batch(db_info: dict[str, Any], adv_ids: list[
 
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
 
             # 이벤트 타이틀 캐시 로드
@@ -1077,7 +1078,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
     adv_set = set(adv_ids)
     result_map = {}
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
 
             # 1. 이벤트 타이틀 캐시 로드
@@ -1105,7 +1106,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
             if p_base and os.path.exists(p_base):
                 norm_base = p_base.replace('\\', '/')
                 try:
-                    with sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True) as conn_b:
+                    with contextlib.closing(sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True)) as conn_b:
                         cur_b = conn_b.cursor()
                         cur_b.execute('SELECT story_group_id, title FROM event_story_data')
                         for r in cur_b.fetchall():
@@ -1126,7 +1127,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
             if p_676 and os.path.exists(p_676):
                 norm_676 = p_676.replace('\\', '/')
                 try:
-                    with sqlite3.connect(f"file:{norm_676}?mode=ro", uri=True) as conn_676:
+                    with contextlib.closing(sqlite3.connect(f"file:{norm_676}?mode=ro", uri=True)) as conn_676:
                         cur_676 = conn_676.cursor()
                         cur_676.execute(f'SELECT [bc69627001b433fade0a20e641d68ecd7f8b1e8b66370f29099c48ecc3c65afc], [c6064be3e0ab536646b7ce09315a0bda7958e82c6da3194472c2431345a34c35] FROM "{v2_table}"')
                         for ev_id, full_t in cur_676.fetchall():
@@ -1173,7 +1174,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
             if p_base_arc and os.path.exists(p_base_arc):
                 norm_base_arc = p_base_arc.replace('\\', '/')
                 try:
-                    with sqlite3.connect(f"file:{norm_base_arc}?mode=ro", uri=True) as conn_arc:
+                    with contextlib.closing(sqlite3.connect(f"file:{norm_base_arc}?mode=ro", uri=True)) as conn_arc:
                         cur_arc = conn_arc.cursor()
                         arc_map = {}
                         cur_arc.execute('PRAGMA table_info("arcade_list")')
@@ -1580,7 +1581,7 @@ def fetch_legion_and_byway_battle_titles_batch(db_info: dict[str, Any], adv_ids:
     result_map = {}
 
     try:
-        with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as conn:
+        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
             cursor = conn.cursor()
 
             # 1. 왕도종말결전 (legion_special_battle)
@@ -1637,7 +1638,7 @@ def fetch_legion_and_byway_battle_titles_batch(db_info: dict[str, Any], adv_ids:
                 if p_base and os.path.exists(p_base):
                     norm_base = p_base.replace('\\', '/')
                     try:
-                        with sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True) as conn_b:
+                        with contextlib.closing(sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True)) as conn_b:
                             cur_b = conn_b.cursor()
                             # byway_story_detail
                             for i in range(0, len(rem_ids), 500):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import shutil
 import threading
 import time
 import tkinter as tk
@@ -157,6 +158,16 @@ class AVPreviewHandler:
             on_done
         )
 
+    def _cleanup_old_video_previews(self) -> None:
+        """기존에 생성된 비디오 미리보기 임시 디렉터리들을 안전하게 정리합니다."""
+        if not os.path.exists(self._preview_temp_dir):
+            return
+        for item in os.listdir(self._preview_temp_dir):
+            if item.startswith("video_"):
+                item_path = os.path.join(self._preview_temp_dir, item)
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path, ignore_errors=True)
+
     def _preview_video(self, file_path: str) -> None:
         """선택된 비디오 파일을 임시 폴더에 추출하여 기본 플레이어로 재생합니다.
 
@@ -170,6 +181,7 @@ class AVPreviewHandler:
             messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_video', 'UsmToolkit not found.'), parent=self._view)
             return
         
+        self._cleanup_old_video_previews()
         temp_dir = os.path.join(self._preview_temp_dir, f"video_{os.path.basename(file_path)}_{int(time.time() * 1000)}")
         os.makedirs(temp_dir, exist_ok=True)
         
