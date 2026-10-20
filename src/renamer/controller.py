@@ -15,6 +15,7 @@ from src.constants import APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSI
 from src.queue_events import LogEvent, ProgressEvent
 from src.queue_polling import QueuePollingMixin
 from src.log_history import LogHistoryMixin
+from src.utils.base_path import get_application_base_path
 
 class RenamerController(QueuePollingMixin, LogHistoryMixin):
     """
@@ -331,8 +332,9 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
         
         try:
-            exec_path = os.path.dirname(os.path.abspath(sys.argv[0])) if sys.argv and sys.argv[0] else os.path.abspath(os.getcwd())
-            log_dir = Path(exec_path) / "logs"
+            app_base = get_application_base_path()
+            exec_path = str(app_base)
+            log_dir = app_base / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             
             now = datetime.now()
