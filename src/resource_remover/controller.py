@@ -206,7 +206,6 @@ class ResourceRemoverController(QueuePollingMixin):
             result: 삭제 결과 딕셔너리 (deleted_count, errors, log_path).
         """
         lang_dict = self.get_lang_dict()
-        deleted_count = result['deleted_count']
         errors = result['errors']
         log_filename = result['log_path']
 

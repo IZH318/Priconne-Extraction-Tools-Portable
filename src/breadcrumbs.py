@@ -90,9 +90,3 @@ def format_breadcrumbs() -> str:
     for crumb in crumbs:
         lines.append(crumb.format())
     return "\n".join(lines)
-
-
-def clear_breadcrumbs() -> None:
-    """버퍼를 초기화합니다. 테스트 또는 세션 리셋 시 사용합니다."""
-    with _lock:
-        _buffer.clear()

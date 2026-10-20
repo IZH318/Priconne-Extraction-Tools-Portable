@@ -2,7 +2,6 @@ from __future__ import annotations
 # src/story_viewer/logic.py
 from dataclasses import dataclass, field
 import json
-import re
 from typing import Any, Callable
 
 from src.constants import SEPARATOR_MEDIUM
@@ -286,7 +285,7 @@ class StoryFormatter:
                     branch_groups[k] = branches
 
         # 각 분기 그룹의 씬 범위, 목적지(goto) 및 합류 씬 계산
-        for ch_scene, branches in branch_groups.items():
+        for branches in branch_groups.values():
             branches.sort(key=lambda b: int(b.start_scene))
 
             merge_candidate: str | None = None
@@ -399,7 +398,7 @@ class StoryFormatter:
         has_dialogue = False
         last_place = None
 
-        for i, key in enumerate(scene_keys):
+        for key in scene_keys:
             scene = data[key]
             if not isinstance(scene, dict):
                 continue

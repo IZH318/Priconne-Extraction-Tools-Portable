@@ -6,10 +6,10 @@ from __future__ import annotations
 모든 커스텀 예외는 AppBaseError를 상속하므로, 최상위에서 한 번에 잡을 수 있습니다.
 
 사용 예:
-    from src.exceptions import UnsafeIdentifierError, ToolNotFoundError
+    from src.exceptions import UnsafeIdentifierError, AssetProcessingError
 
     raise UnsafeIdentifierError("v1_table; DROP TABLE --")
-    raise ToolNotFoundError("ffmpeg.exe")
+    raise AssetProcessingError("storydata_1001", "corrupted")
 """
 
 
@@ -57,17 +57,6 @@ class ConversionError(AppBaseError):
     """파일 변환(AV, Unity 등) 처리 중 발생하는 기본 예외입니다."""
 
 
-class ToolNotFoundError(ConversionError):
-    """외부 변환 도구(FFmpeg, UsmToolkit 등)를 찾을 수 없는 경우 발생합니다.
-
-    Args:
-        tool_name: 찾을 수 없는 도구의 이름.
-    """
-    def __init__(self, tool_name: str) -> None:
-        self.tool_name = tool_name
-        super().__init__(f"Required tool not found: {tool_name}")
-
-
 class AssetProcessingError(ConversionError):
     """Unity 애셋 처리 또는 역직렬화 중 오류가 발생한 경우입니다.
 
@@ -101,11 +90,3 @@ class FileIntegrityError(DownloadError):
         self.filename = filename
         self.reason = reason
         super().__init__(f"File integrity check failed for '{filename}': {reason}")
-
-
-# ---- Operation 도메인 ----
-
-class OperationCancelledError(AppBaseError):
-    """사용자가 진행 중인 작업을 취소한 경우 발생합니다."""
-    def __init__(self, message: str = "Operation was cancelled by the user.") -> None:
-        super().__init__(message)

@@ -6,7 +6,6 @@ from datetime import datetime
 from collections.abc import Sequence
 from send2trash import send2trash
 
-from src.constants import SEPARATOR_SHORT
 from src.utils.base_path import get_application_base_path
 
 # 삭제 대상에서 제외할 보호 디렉터리 목록 (개발 환경 안전장치)
@@ -80,7 +79,6 @@ class ResourceRemoverLogic:
             try:
                 import platform
                 import multiprocessing
-                import sys
                 from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
                 
                 python_ver = platform.python_version()

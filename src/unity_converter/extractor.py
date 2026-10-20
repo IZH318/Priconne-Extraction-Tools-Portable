@@ -2,11 +2,10 @@ from __future__ import annotations
 import os
 import re
 import json
-from struct import error as struct_error
 from typing import Any
 
 from src.queue_events import LogEvent, CompletionEvent
-from src.parsers.story_deserializer import StoryDataDeserializer, StoryDataCorruptedError
+from src.parsers.story_deserializer import StoryDataDeserializer
 from src.exceptions import AssetProcessingError
 
 

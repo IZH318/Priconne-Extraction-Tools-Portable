@@ -7,12 +7,6 @@ from typing import Final, Literal
 # === AV Converter Tab Type ===
 TabType = Literal['video', 'audio']
 
-# === External URLs (환경 변수로 오버라이드 가능) ===
-DB_DOWNLOAD_BASE_URL: Final[str] = os.environ.get(
-    'PRICONNE_DB_URL',
-    "https://raw.githubusercontent.com/Expugn/priconne-database/master/"
-)
-
 # === Application Metadata ===
 APP_VERSION: Final[str] = "3.0.0"
 APP_LAST_UPDATE: Final[str] = "2026-10-10"
@@ -27,8 +21,6 @@ GUI_UPDATE_INTERVAL_MS: Final[int] = 10
 # === Log Separators ===
 SEPARATOR_LONG: Final[str] = "-" * 100
 SEPARATOR_MEDIUM: Final[str] = "-" * 60
-SEPARATOR_SHORT: Final[str] = "-" * 50
-SEPARATOR_MINI: Final[str] = "-" * 30
 
 
 # === File Processing Constants ===

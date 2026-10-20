@@ -496,7 +496,7 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self.frame.after(0, lambda: self.view.toggle_controls(True))
 
     def _generate_error_log(self, failed_files: list[tuple[str, str]], context: str = "Asset Extraction") -> None:
-        import platform, multiprocessing, sys, os
+        import platform, multiprocessing
         from datetime import datetime
         from pathlib import Path
         from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER

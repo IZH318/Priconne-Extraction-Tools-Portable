@@ -7,12 +7,12 @@ import hashlib
 import concurrent.futures
 import threading
 import xxhash
-from typing import Callable, Any
+from typing import Callable
 from collections.abc import Sequence
 from queue import Queue
 from pathlib import Path
 
-from src.constants import SEPARATOR_LONG, RENAMER_TARGET_FOLDERS, HASH_CHUNK_SIZE, SHA1_LENGTH
+from src.constants import RENAMER_TARGET_FOLDERS, HASH_CHUNK_SIZE, SHA1_LENGTH
 from src.queue_events import LogEvent, ProgressEvent
 from src.utils.base_path import get_application_base_path
 
@@ -46,7 +46,6 @@ class RenameHashedFile:
         self.total_files: int = 0
         self.processed_count_rename: int = 0
         self.processed_count_check: int = 0
-        self.is_completed: bool = False
         self.has_error: bool = False
         self.error_message: str | None = None
 
@@ -57,10 +56,6 @@ class RenameHashedFile:
     def set_base_path(self, new_base_path: Path) -> None:
         """사용자가 GUI에서 새 대상 폴더를 선택했을 때 기준 경로를 업데이트합니다."""
         self.base_path = new_base_path
-
-    def set_target_folders(self, folders: Sequence[str]) -> None:
-        """대상 폴더 목록을 설정합니다. 테스트나 사용자 설정 변경 시 사용됩니다."""
-        self.target_folders = folders
 
     # --- GUI로의 정보 전달 메서드 ---
     def _add_log_event(self, key: str, **kwargs) -> None:
@@ -150,7 +145,6 @@ class RenameHashedFile:
     # --- 메인 파일 처리 로직 ---
     def process_files(self) -> None:
         """파일 이름 변경 작업의 전체 과정을 순차적으로 실행합니다."""
-        self.is_completed = False
         self.has_error = False
         self.error_message = None
         self.processed_count_rename = 0
@@ -165,7 +159,6 @@ class RenameHashedFile:
             if not manifest_db_path.exists() and not manifest_dir.exists():
                 self.log('backend_warning_db_not_found')
                 self.has_error = True
-                self.is_completed = True
                 return
                 
             # 2. 작업 시작 안내 로그 전송
@@ -181,7 +174,6 @@ class RenameHashedFile:
 
             if not files:  # 처리할 파일이 없으면 작업 종료
                 self.log('backend_no_files_found')
-                self.is_completed = True
                 return
                 
             self.log('backend_found_files', count=self.total_files)
@@ -253,13 +245,11 @@ class RenameHashedFile:
             if final_unprocessed_files:
                 self.log('backend_unprocessed_summary', count=len(final_unprocessed_files))
 
-            self.is_completed = True
 
         except Exception as exc:
             self.has_error = True
             self.error_message = str(exc)
             self.log('backend_file_process_fail', path='manifest', exc=str(exc))
-            self.is_completed = True
 
     # --- 개별 파일 처리 ---
     def process(self, file_path: str) -> tuple[bool, str]:
@@ -337,22 +327,6 @@ class RenameHashedFile:
                 xxhash64_hash.update(chunk)
                 md5_hash.update(chunk)
         return xxhash64_hash.hexdigest().lower(), md5_hash.hexdigest().lower()
-
-    def calculate_md5(self, file_path: str) -> str:
-        """파일을 청크 단위로 읽어 메모리 효율적으로 MD5 해시 문자열을 계산합니다."""
-        md5_hash = hashlib.md5()
-        with open(file_path, "rb") as file:
-            for chunk in iter(lambda: file.read(HASH_CHUNK_SIZE), b""):
-                md5_hash.update(chunk)
-        return md5_hash.hexdigest().lower()
-
-    def calculate_xxhash64(self, file_path: str) -> str:
-        """파일을 청크 단위로 읽어 메모리 효율적으로 xxHash64 해시 문자열을 계산합니다."""
-        xxhash64_hash = xxhash.xxh64()
-        with open(file_path, "rb") as file:
-            for chunk in iter(lambda: file.read(HASH_CHUNK_SIZE), b""):
-                xxhash64_hash.update(chunk)
-        return xxhash64_hash.hexdigest().lower()
 
     def get_all_files_in_folders(self, target_folders: Sequence[str]) -> list[str]:
         """지정된 모든 폴더와 그 하위 폴더를 재귀적으로 탐색하여 SHA1 형식의 파일 목록을 반환합니다."""

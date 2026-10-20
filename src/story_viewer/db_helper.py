@@ -4,7 +4,7 @@ from __future__ import annotations
 Story Viewer의 DB 접근 로직을 집중 관리하는 모듈.
 이벤트 목록 조회, 이벤트 ID 검색 등 sqlite3 관련 작업을 캡슐화합니다.
 
-SQL 조립은 _build_query() / _build_select_all_query()로 집중 관리됩니다.
+SQL 조립은 _build_query()로 집중 관리됩니다.
 식별자 검증은 _validate_identifier()를 통해 화이트리스트 방식으로 처리합니다.
 """
 import os
@@ -71,22 +71,6 @@ def _build_query(
         query += f' WHERE "{w_col}" {where_op} ?'
 
     return query
-
-
-def _build_select_all_query(table: str) -> tuple[str, str]:
-    """테이블의 전체 컬럼을 동적으로 조회하기 위한 PRAGMA + SELECT 쿼리 쌍을 반환합니다.
-
-    Args:
-        table: 조회 대상 테이블명 (검증됨).
-
-    Returns:
-        (PRAGMA 쿼리, SELECT 쿼리 템플릿 접두사) 튜플.
-        SELECT 쿼리는 PRAGMA 결과로 컬럼 목록을 채워야 합니다.
-    """
-    tbl = _validate_identifier(table)
-    pragma_query = f'PRAGMA table_info("{tbl}")'
-    select_prefix = f'FROM "{tbl}"'
-    return pragma_query, select_prefix
 
 
 def _get_db_path(db_info: dict[str, Any]) -> str:
@@ -185,40 +169,6 @@ def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
         cursor = conn.cursor()
         cursor.execute(query, (cleaned_name, event_name))
         return {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
-
-
-def fetch_event_list_for_export(db_info: dict[str, Any]) -> tuple[list[str], list[tuple]]:
-    """
-    내보내기용 이벤트 목록 데이터를 반환합니다.
-    
-    이 함수는 의도적으로 테이블의 **모든 컬럼**을 조회합니다.
-    PRAGMA table_info로 먼저 컬럼 목록을 확보한 뒤, 해당 컬럼들을 명시적으로
-    SELECT 절에 나열하여 스키마 변경에 안전한 방식으로 전체 데이터를 반환합니다.
-    
-    Args:
-        db_info (dict): 서버별 DB 정보 딕셔너리 (export_table, export_cols 포함).
-        
-    Returns:
-        tuple[list[str], list[tuple]]: (컬럼 헤더 리스트, 데이터 행 리스트).
-        
-    Raises:
-        sqlite3.Error: DB 접근 중 오류 발생 시.
-    """
-    db_path = _get_db_path(db_info).replace('\\', '/')
-    with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
-        cursor = conn.cursor()
-        pragma_query, select_suffix = _build_select_all_query(db_info['event_list_table'])
-        
-        # 테이블의 모든 컬럼 이름 가져오기
-        cursor.execute(pragma_query)
-        columns = [col_info[1] for col_info in cursor.fetchall()]
-        
-        # 컬럼 목록을 명시적으로 나열하여 조회 (SELECT * 대신 안전한 방식)
-        validated_cols = ', '.join(f'"{_validate_identifier(c)}"' for c in columns)
-        cursor.execute(f'SELECT {validated_cols} {select_suffix}')
-        rows = cursor.fetchall()
-        
-        return columns, rows
 
 
 def fetch_birthday_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:

@@ -65,9 +65,6 @@ class RenamerView(ttk.Frame):
     def set_progress_value(self, value: float) -> None:
         self.progress_bar['value'] = value
         
-    def get_progress_value(self) -> float:
-        return self.progress_bar['value']
-
     def set_start_button_state(self, state: str) -> None:
         self.start_button.config(state=state)
 

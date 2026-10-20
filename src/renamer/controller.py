@@ -12,7 +12,7 @@ from src.breadcrumbs import add_breadcrumb
 from .logic import RenameHashedFile
 from .view import RenamerView
 from src.constants import APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSITE, GUI_UPDATE_INTERVAL_MS
-from src.queue_events import LogEvent, ProgressEvent
+from src.queue_events import LogEvent
 from src.queue_polling import QueuePollingMixin
 from src.log_history import LogHistoryMixin
 from src.utils.base_path import get_application_base_path
@@ -326,9 +326,8 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         self._stop_polling()
 
     def _generate_error_log(self, unprocessed_files: list[str], error_message: str | None) -> None:
-        import platform, multiprocessing, sys, os
+        import platform, multiprocessing
         from datetime import datetime
-        from pathlib import Path
         from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
         
         try:

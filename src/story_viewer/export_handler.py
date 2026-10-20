@@ -412,7 +412,7 @@ class StoryExportHandler:
                     used_filenames: set[str] = set()
 
                     all_files = self._get_all_files()
-                    for i, filename in enumerate(filenames_to_export):
+                    for filename in filenames_to_export:
                         if check_cancelled and check_cancelled():
                             was_cancelled = True
                             break

@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 from src.cancellation_token import CancellationToken
 from src.constants import (
-    SEPARATOR_LONG as SEPARATOR, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER,
+    APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER,
     APP_WEBSITE, GUI_POLLING_INTERVAL_MS, SENTINEL_VIDEO_DONE, TabType,
     AV_VIDEO_SUPPORTED_EXTENSIONS, AV_AUDIO_SUPPORTED_EXTENSIONS,
 )
@@ -23,7 +23,7 @@ from src.queue_events import (
     QueueEvent, LogEvent, LogBlockEvent, ProgressEvent, CompletionEvent
 )
 from src.subprocess_runner import SubprocessRunner
-from .logic import ConversionLogic, FFmpegDownloader, ToolPipelineManager
+from .logic import ConversionLogic, ToolPipelineManager
 from .log_renderer import AVLogRenderer
 from .preview_handler import AVPreviewHandler
 from .view import AVConverterView
@@ -75,8 +75,6 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self.vgmstream_path = None
         self.video_full_paths = []
         self.audio_full_paths = []
-        self.video_total_files = 0
-        self.audio_total_files = 0
         self.video_log_history = []
         self.audio_log_history = []
 
@@ -84,7 +82,6 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self.tool_pipeline = ToolPipelineManager(
             log_queue=self.log_queue,
             base_path=self.base_path,
-            get_lang_data_func=self.get_lang_dict,
             on_tools_updated_callback=self._find_tools,
         )
         self.ffmpeg_downloader = self.tool_pipeline.ffmpeg_downloader
@@ -202,7 +199,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         file_types = [("CRIWARE Audio", "*.awb")] if is_audio else [("USM Video files", "*.usm")]
         full_paths = self.audio_full_paths if is_audio else self.video_full_paths
         filenames_var = self.view.audio_filenames_var if is_audio else self.view.video_filenames_var
-        self._add_paths_to_list(self._select_files(file_types), file_types, full_paths, filenames_var, tab_type)
+        self._add_paths_to_list(self._select_files(file_types), full_paths, filenames_var, tab_type)
 
     def add_folder_cmd(self, tab_type: TabType) -> None:
         """폴더 선택 대화상자를 열어 폴더 내 변환 대상 파일을 목록에 추가합니다.
@@ -214,7 +211,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         file_types = [("CRIWARE Audio", "*.awb")] if is_audio else [("USM Video files", "*.usm")]
         full_paths = self.audio_full_paths if is_audio else self.video_full_paths
         filenames_var = self.view.audio_filenames_var if is_audio else self.view.video_filenames_var
-        self._add_paths_to_list(self._select_folder_and_search(file_types), file_types, full_paths, filenames_var, tab_type)
+        self._add_paths_to_list(self._select_folder_and_search(file_types), full_paths, filenames_var, tab_type)
 
     def on_dnd_drop(self, event: Any, listbox: tk.Listbox, tab_type: TabType) -> None:
         """드래그 앤 드롭 이벤트를 처리하여 파일을 목록에 추가합니다.
@@ -229,12 +226,10 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         if tab_type == 'audio':
             full_paths = self.audio_full_paths
             filenames_var = self.view.audio_filenames_var
-            file_types = [("CRIWARE Audio", "*.awb")]
             supported_exts = AV_AUDIO_SUPPORTED_EXTENSIONS
         else:
             full_paths = self.video_full_paths
             filenames_var = self.view.video_filenames_var
-            file_types = [("USM Video files", "*.usm")]
             supported_exts = AV_VIDEO_SUPPORTED_EXTENSIONS
 
         paths = self._parse_dnd_paths(self.view.winfo_toplevel(), event.data)
@@ -243,7 +238,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         found_paths = self._collect_files_from_paths(paths, supported_exts)
         if not found_paths:
             return
-        self._add_paths_to_list(found_paths, file_types, full_paths, filenames_var, tab_type)
+        self._add_paths_to_list(found_paths, full_paths, filenames_var, tab_type)
 
 
 
@@ -287,12 +282,11 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         """
         fv.set([os.path.basename(p) for p in fp])
         
-    def _add_paths_to_list(self, new_paths: list[str], file_types: list[tuple[str, str]], full_paths: list[str], filenames_var: tk.Variable, tab_type: TabType) -> None:
+    def _add_paths_to_list(self, new_paths: list[str], full_paths: list[str], filenames_var: tk.Variable, tab_type: TabType) -> None:
         """선택된 파일 경로들을 중복 검사 후 목록에 추가하고 UI를 갱신합니다.
 
         Args:
             new_paths: 새로 추가할 파일 경로 리스트.
-            file_types: 현재 탭의 파일 필터 유형.
             full_paths: 현재 유지 중인 전체 파일 경로 리스트.
             filenames_var: 리스트박스와 연결된 StringVar 변수.
             tab_type: 탭 타입 ('video' 또는 'audio').

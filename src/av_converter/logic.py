@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 from src.exceptions import DownloadError, FileIntegrityError
 
 from src.constants import (
-    SEPARATOR_SHORT, AV_TEMP_EXTENSIONS,
+    AV_TEMP_EXTENSIONS,
     USMTOOLKIT_URL, USMTOOLKIT_ZIP_FILENAME, USMTOOLKIT_EXE_NAME,
     FFMPEG_URL, FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
-    FFMPEG_TARGET_VERSION, FFMPEG_EXPECTED_SHA256, FFMPEG_VERSION_FILENAME,
+    FFMPEG_TARGET_VERSION, FFMPEG_EXPECTED_SHA256,
     DOWNLOAD_SOCKET_TIMEOUT,
     FFMPEG_VERSION_MARKER_PATH,
     VGMSTREAM_URL, VGMSTREAM_ZIP_FILENAME, VGMSTREAM_EXE_NAME,
@@ -504,7 +504,6 @@ class FFmpegDownloader:
         self,
         log_queue: queue.Queue,
         usmtoolkit_path_parent_dir: Path,
-        get_lang_data_func: Callable[[], dict[str, str]],
         version_marker_path: Path | None = None,
     ) -> None:
         """
@@ -513,14 +512,12 @@ class FFmpegDownloader:
         Args:
             log_queue (queue.Queue): GUI와 통신하기 위한 큐.
             usmtoolkit_path_parent_dir (Path): FFmpeg를 설치할 기준 디렉터리.
-            get_lang_data_func (function): 현재 언어 데이터를 가져오는 함수.
             version_marker_path (Path, optional): 버전 캐시 마커 파일 경로.
         """
         self.log_queue = log_queue
         self.download_dir = usmtoolkit_path_parent_dir
         self.ffmpeg_path = self.download_dir / FFMPEG_EXE_NAME
         self.version_marker_path = version_marker_path or FFMPEG_VERSION_MARKER_PATH
-        self.get_lang_data = get_lang_data_func
         os.makedirs(self.download_dir, exist_ok=True)
         os.makedirs(self.version_marker_path.parent, exist_ok=True)
 
@@ -568,34 +565,6 @@ class FFmpegDownloader:
             while chunk := f.read(65536):
                 sha256.update(chunk)
         return sha256.hexdigest().lower() == expected_hash.lower()
-
-    def ensure_ffmpeg_ready(self) -> concurrent.futures.Future:
-        """
-        FFmpeg 준비 작업을 별도 스레드에서 시작하고 Future 객체를 반환합니다.
-
-        Note:
-            executor를 컨텍스트 매니저(with) 없이 사용합니다.
-            with 문은 __exit__ 시 shutdown(wait=True)를 호출하여
-            Future 반환 전에 블로킹되기 때문입니다.
-            done_callback에서 try/finally로 shutdown을 보장하여
-            콜백 예외 시에도 리소스 누수를 방지합니다.
-        
-        Returns:
-            Future: 작업의 완료 여부와 결과를 확인할 수 있는 Future 객체.
-        """
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(self._actual_download_and_extract)
-
-        def _shutdown_executor(_future: concurrent.futures.Future) -> None:
-            try:
-                _future.result()
-            except Exception:
-                pass
-            finally:
-                executor.shutdown(wait=False)
-
-        future.add_done_callback(_shutdown_executor)
-        return future
 
     def _actual_download_and_extract(self) -> bool:
         """실제 다운로드 및 압축 해제 로직을 수행합니다."""
@@ -690,12 +659,10 @@ class UsmToolkitDownloader:
         self,
         log_queue: queue.Queue,
         usmtoolkit_dir: Path,
-        get_lang_data_func: Callable[[], dict[str, str]],
     ) -> None:
         self.log_queue = log_queue
         self.download_dir = usmtoolkit_dir
         self.usm_exe_path = self.download_dir / USMTOOLKIT_EXE_NAME
-        self.get_lang_data = get_lang_data_func
         self.target_tab: TabType = 'video'
 
     def _log_entry(self, log_key: str, **kwargs: Any) -> None:
@@ -779,12 +746,10 @@ class VgmstreamDownloader:
         self,
         log_queue: queue.Queue,
         vgmstream_dir: Path,
-        get_lang_data_func: Callable[[], dict[str, str]],
     ) -> None:
         self.log_queue = log_queue
         self.download_dir = vgmstream_dir
         self.vgm_exe_path = self.download_dir / VGMSTREAM_EXE_NAME
-        self.get_lang_data = get_lang_data_func
         self.target_tab: TabType = 'audio'
 
     def _log_entry(self, log_key: str, **kwargs: Any) -> None:
@@ -859,12 +824,10 @@ class ToolPipelineManager:
         self,
         log_queue: queue.Queue,
         base_path: Path,
-        get_lang_data_func: Callable[[], dict[str, str]],
         on_tools_updated_callback: Callable[[], None] | None = None,
     ) -> None:
         self.log_queue = log_queue
         self.base_path = base_path
-        self.get_lang_data = get_lang_data_func
         self.on_tools_updated = on_tools_updated_callback
 
         self.usmtoolkit_dir = self.base_path / "usmtoolkit"
@@ -873,17 +836,14 @@ class ToolPipelineManager:
         self.usmtoolkit_downloader = UsmToolkitDownloader(
             log_queue=self.log_queue,
             usmtoolkit_dir=self.usmtoolkit_dir,
-            get_lang_data_func=self.get_lang_data,
         )
         self.vgmstream_downloader = VgmstreamDownloader(
             log_queue=self.log_queue,
             vgmstream_dir=self.vgmstream_dir,
-            get_lang_data_func=self.get_lang_data,
         )
         self.ffmpeg_downloader = FFmpegDownloader(
             log_queue=self.log_queue,
             usmtoolkit_path_parent_dir=self.usmtoolkit_dir,
-            get_lang_data_func=self.get_lang_data,
         )
 
     def _log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:

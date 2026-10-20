@@ -1,14 +1,11 @@
 from __future__ import annotations
 import os
-import shutil
 import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 from typing import Any, Callable, TYPE_CHECKING
-from urllib.parse import urlparse
 import queue
 
-from src.constants import DB_DOWNLOAD_BASE_URL
 from src.queue_events import ActionEvent
 from src.exceptions import DatabaseIntegrityError
 
@@ -179,16 +176,15 @@ class StoryDBManager:
                 missing_db_files = [] # 누락 메시지용 문자열 리스트
                 downloads_list = []   # (url, dest_path, dest_filename) 튜플 리스트
                 
-                from .schema_resolver import resolve_server_config, COLUMN_MAPPINGS
+                from .schema_resolver import COLUMN_MAPPINGS
                 
                 tag_missing = lang_dict.get('tag_missing', '[Missing] ')
                 tag_update = lang_dict.get('tag_update', '[Update] ')
                 is_feature_completely_unavailable = False
                 
-                servers = [s for s, i in self._server_db_info.items() if isinstance(i, dict) and 'db_path' in i]
                 # Calculate total tables across servers dynamically
                 total_steps = 0
-                for s, i in self._server_db_info.items():
+                for _, i in self._server_db_info.items():
                     if isinstance(i, dict) and 'db_path' in i:
                         total_steps += sum(1 for t in COLUMN_MAPPINGS if i.get(t))
                 total_steps = max(1, total_steps)
@@ -217,7 +213,7 @@ class StoryDBManager:
                     # Baseline 확인 (단일 및 다중 기준점 전수 검사)
                     baseline_dbs = info.get('baseline_dbs')
                     if isinstance(baseline_dbs, dict) and baseline_dbs:
-                        for b_key, b_item in baseline_dbs.items():
+                        for b_item in baseline_dbs.values():
                             b_fname = b_item.get('db_path', '')
                             b_url = b_item.get('db_url', '')
                             b_full_path = os.path.join(src_dir, b_fname)

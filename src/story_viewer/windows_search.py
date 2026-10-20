@@ -1,13 +1,12 @@
 from __future__ import annotations
 # src/story_viewer/windows_search.py
 import json
-import os
 import threading
 import concurrent.futures
 import sqlite3
 import tkinter as tk
 import logging
-from tkinter import ttk, messagebox, filedialog
+from tkinter import ttk, messagebox
 from typing import Any, Callable
 import queue
 
@@ -219,7 +218,6 @@ class SearchWindow(tk.Toplevel):
         criteria = {key: var.get().strip() for key, var in self.search_vars.items() if var.get().strip()}
         server = self.selected_server
         # destroy() 전에 모든 공유 참조 및 Tk 변수 값을 메인 스레드에서 미리 캡처
-        char_type_value = self.search_vars['char_type'].get()
         is_speaker = (self.char_type_combobox.current() == 0)
         captured_refs = {
             'all_files_dict': self.all_files_dict,
@@ -235,18 +233,17 @@ class SearchWindow(tk.Toplevel):
         
         self.destroy()
         
-        thread = threading.Thread(target=self._search_thread, args=(criteria, server, char_type_value, is_speaker, captured_refs))
+        thread = threading.Thread(target=self._search_thread, args=(criteria, server, is_speaker, captured_refs))
         thread.daemon = True
         thread.start()
 
     @staticmethod
-    def _search_thread(criteria: dict[str, str], server: str, char_type_value: str, is_speaker: bool, refs: dict[str, Any]) -> None:
+    def _search_thread(criteria: dict[str, str], server: str, is_speaker: bool, refs: dict[str, Any]) -> None:
         """실제 검색 로직을 백그라운드 스레드에서 수행합니다.
 
         Args:
             criteria: 사용자가 입력한 검색 조건 딕셔너리.
             server: 선택된 서버 ('JP' 또는 'KR').
-            char_type_value: 캐릭터 이름 검색 옵션 ('화자' 또는 '지문 포함').
             is_speaker: 화자 검색 여부 (인덱스 기반 bool).
             refs: 메인 스레드에서 캡처한 참조 객체 딕셔너리.
         """

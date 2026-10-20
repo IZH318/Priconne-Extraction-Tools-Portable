@@ -7,7 +7,6 @@ import platform
 import os
 import multiprocessing
 from datetime import datetime
-from pathlib import Path
 
 from typing import Any
 from types import TracebackType

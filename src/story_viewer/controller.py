@@ -170,7 +170,6 @@ class StoryViewerController(QueuePollingMixin):
             별도의 master(최상위 윈도우)가 필요하여 2개의 위젯 인자를 받습니다.
         """
         self.master = master
-        self.app_wrapper = app_wrapper
         self.about_info = about_info or {}
         self.base_path = get_application_base_path()
         
@@ -204,7 +203,6 @@ class StoryViewerController(QueuePollingMixin):
         self._populate_generation: int = 0
         
         self.db_analyzed = False
-        self.empty_title_files = set()
         self._server_titles_cache: dict[str, dict[str, str]] = {'JP': {}, 'KR': {}}
         self._pending_json_results: dict[str, Any] | None = None
         self._pending_invalid_files: list[tuple[str, str]] = []
@@ -540,7 +538,6 @@ class StoryViewerController(QueuePollingMixin):
         temp_file_situations, temp_file_outlines = {}, {}
         temp_file_voice_adv_ids = {}
         temp_file_speakers = {}
-        temp_empty_titles = set()
 
         for i, path in enumerate(file_list_to_process):
             def _update_status(idx=i, total=total_files):
@@ -591,8 +588,6 @@ class StoryViewerController(QueuePollingMixin):
                 base_title = json_title if json_title else (situation if situation else filename)
                 temp_raw_titles[filename] = base_title
                 temp_file_titles[filename] = base_title
-                if not json_title:
-                    temp_empty_titles.add(filename)
             else:
                 invalid_files.append((path, error_reason))
         
@@ -615,7 +610,6 @@ class StoryViewerController(QueuePollingMixin):
             "file_outlines": temp_file_outlines,
             "file_voice_adv_ids": temp_file_voice_adv_ids,
             "file_speakers": temp_file_speakers,
-            "empty_titles": temp_empty_titles,
             "search_data": temp_search_data
         }
         self.task_queue.put(ActionEvent(action=lambda: self._finish_loading(results, invalid_files)))
@@ -665,7 +659,6 @@ class StoryViewerController(QueuePollingMixin):
         self.file_outlines = results.get('file_outlines', {})
         self.file_voice_adv_ids = results.get('file_voice_adv_ids', {})
         self.file_speakers = results.get('file_speakers', {})
-        self.empty_title_files = results['empty_titles']
         self.search_data = results['search_data']
         self.loaded_filenames = sorted(list(self.all_files.keys()))
         self.base_search_files = list(self.loaded_filenames)
@@ -694,8 +687,6 @@ class StoryViewerController(QueuePollingMixin):
         try:
             import platform
             import multiprocessing
-            import sys
-            from pathlib import Path
             from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
             
             python_ver = platform.python_version()

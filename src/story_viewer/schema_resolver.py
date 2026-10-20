@@ -746,7 +746,7 @@ def resolve_all_servers_parallel(
         with ProcessPoolExecutor(max_workers=max_workers) as pool:
             futures = [pool.submit(resolve_single_table_worker, task) for task in all_tasks]
             for future in as_completed(futures):
-                s_key, t_key, base_tbl, best_tbl, col_map = future.result()
+                s_key, t_key, _, best_tbl, col_map = future.result()
                 if progress_callback:
                     progress_callback(s_key, t_key)
                 resolved_results.append((s_key, t_key, best_tbl, col_map))
