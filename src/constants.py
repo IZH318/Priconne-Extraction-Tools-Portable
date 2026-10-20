@@ -32,7 +32,7 @@ SEPARATOR_MINI: Final[str] = "-" * 30
 
 
 # === File Processing Constants ===
-HASH_CHUNK_SIZE: Final[int] = 4096
+HASH_CHUNK_SIZE: Final[int] = 65536
 SHA1_LENGTH: Final[int] = 40
 
 # === Renamer Tool ===

@@ -788,15 +788,20 @@ class StoryViewerController(QueuePollingMixin):
         if self.is_loading:
             messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
             return
-        if not self.view.file_listbox.curselection():
+        sel = self.view.file_listbox.curselection()
+        if not sel:
             return
+        sel_idx = sel[0]
+        filename = None
+        if 0 <= sel_idx < len(self.current_filenames_in_list):
+            filename = self.current_filenames_in_list[sel_idx]
+        else:
+            try:
+                display_name = self.view.file_listbox.get(sel_idx)
+                filename = self.display_name_to_filename.get(display_name)
+            except tk.TclError:
+                return
 
-        try:
-            display_name = self.view.file_listbox.get(self.view.file_listbox.curselection()[0])
-        except tk.TclError:
-            return
-
-        filename = self.display_name_to_filename.get(display_name)
         if not filename or filename not in self.all_files:
             return
 
@@ -835,12 +840,15 @@ class StoryViewerController(QueuePollingMixin):
 
         to_remove = set()
         for idx in selected_indices:
-            try:
-                display_name = self.view.file_listbox.get(idx)
-                if fn := self.display_name_to_filename.get(display_name):
-                    to_remove.add(fn)
-            except tk.TclError:
-                continue
+            if 0 <= idx < len(self.current_filenames_in_list):
+                to_remove.add(self.current_filenames_in_list[idx])
+            else:
+                try:
+                    display_name = self.view.file_listbox.get(idx)
+                    if fn := self.display_name_to_filename.get(display_name):
+                        to_remove.add(fn)
+                except tk.TclError:
+                    continue
 
         if not to_remove:
             return
@@ -899,6 +907,14 @@ class StoryViewerController(QueuePollingMixin):
         self.display_name_to_filename.clear()
         self.view.file_listbox.delete(0, tk.END)
         total, chunk_size = len(target_files), 200
+        display_mode = self.display_mode_var.get()
+        duplicate_titles: set[str] = set()
+        if display_mode == 'title':
+            title_counts: dict[str, int] = {}
+            for fn in target_files:
+                t = self.file_titles.get(fn, fn)
+                title_counts[t] = title_counts.get(t, 0) + 1
+            duplicate_titles = {t for t, count in title_counts.items() if count > 1}
         
         def _populate_list(index=0):
             if current_gen != self._populate_generation:
@@ -916,19 +932,23 @@ class StoryViewerController(QueuePollingMixin):
                 return
             self.view.update_status_bar('status_bar_list_updating', i=index + 1, t=total)
             end_index = min(index + chunk_size, total)
-            display_mode = self.display_mode_var.get()
             display_chunk = []
             for i in range(index, end_index):
                 filename = target_files[i]
                 display_name = filename
+                match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
+                adv_id = match.group(1) if match else ""
+
                 if display_mode == 'title':
-                    if title := self.file_titles.get(filename, filename):
-                        display_name = f"{title}"
-                elif display_mode == 'id_title':
-                    match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
-                    adv_id = match.group(1) if match else filename
                     title = self.file_titles.get(filename, filename)
-                    display_name = f"[{adv_id}] {title}"
+                    if title:
+                        if title in duplicate_titles and adv_id:
+                            display_name = f"{title} ({adv_id})"
+                        else:
+                            display_name = f"{title}"
+                elif display_mode == 'id_title':
+                    title = self.file_titles.get(filename, filename)
+                    display_name = f"[{adv_id}] {title}" if adv_id else f"{title}"
                 display_chunk.append(display_name)
                 self.display_name_to_filename[display_name] = filename
             self.view.file_listbox.insert(tk.END, *display_chunk)
@@ -989,14 +1009,21 @@ class StoryViewerController(QueuePollingMixin):
 
     def on_file_select(self, event: Any = None) -> None:
         """파일 목록에서 항목을 선택했을 때 스토리 내용을 표시합니다."""
-        if not self.view.file_listbox.curselection():
+        sel = self.view.file_listbox.curselection()
+        if not sel:
             return
-        try:
-            display_name = self.view.file_listbox.get(self.view.file_listbox.curselection()[0])
-        except tk.TclError:
-            return
+        sel_idx = sel[0]
+        filename = None
+        if 0 <= sel_idx < len(self.current_filenames_in_list):
+            filename = self.current_filenames_in_list[sel_idx]
+        else:
+            try:
+                display_name = self.view.file_listbox.get(sel_idx)
+                filename = self.display_name_to_filename.get(display_name)
+            except tk.TclError:
+                return
         
-        if filename := self.display_name_to_filename.get(display_name):
+        if filename:
             self.current_file_path = self.all_files.get(filename)
             if self.current_file_path:
                 is_valid, data, _ = StoryDataLoader.is_valid_storydata(self.current_file_path)

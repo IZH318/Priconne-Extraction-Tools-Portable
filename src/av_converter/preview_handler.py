@@ -11,6 +11,7 @@ from pathlib import Path
 from src.constants import TabType
 
 from src.utils.platform_open import open_with_default_app
+from .logic import sanitize_stream_filename
 
 
 class AVPreviewHandler:
@@ -156,7 +157,8 @@ class AVPreviewHandler:
         """
         d = self._get_lang_data()
         self._cleanup_old_audio_previews()
-        filename = f"{stream_name}.wav" if stream_name else f"preview_{os.path.basename(file_path)}_{stream_num}.wav"
+        clean_name = sanitize_stream_filename(stream_name) if stream_name else ""
+        filename = f"{clean_name}.wav" if clean_name else f"preview_{os.path.basename(file_path)}_{stream_num}.wav"
         temp_wav = os.path.join(self._preview_temp_dir, filename)
         if os.path.exists(temp_wav):
             try: os.remove(temp_wav)

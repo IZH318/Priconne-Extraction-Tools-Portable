@@ -440,18 +440,21 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         
         unity_version = self._current_unity_version
         enabled_types = self._current_enabled_types
-        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-            future_to_path = {
-                executor.submit(process_single_file, file_path, self.output_path, self.base_input_path, self.log_queue, self.completion_queue, unity_version, enabled_types): file_path 
-                for file_path in self.file_paths
-            }
-            for future in concurrent.futures.as_completed(future_to_path):
-                if self.cancel_token.is_cancelled:
-                    self.log_queue.put(LogEvent(target="", key='extraction_cancelled', level='ERROR'))
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-        
-        self.completion_queue.put(CompletionEvent(target='__EXTRACTION_DONE__'))
+        try:
+            with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+                future_to_path = {
+                    executor.submit(process_single_file, file_path, self.output_path, self.base_input_path, self.log_queue, self.completion_queue, unity_version, enabled_types): file_path 
+                    for file_path in self.file_paths
+                }
+                for future in concurrent.futures.as_completed(future_to_path):
+                    if self.cancel_token.is_cancelled:
+                        self.log_queue.put(LogEvent(target="", key='extraction_cancelled', level='ERROR'))
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        break
+        except Exception as e:
+            logging.error("ProcessPoolExecutor encountered an unexpected failure: %s", e)
+        finally:
+            self.completion_queue.put(CompletionEvent(target='__EXTRACTION_DONE__'))
 
     def _on_extraction_complete(self) -> None:
         """추출 작업이 모두 완료되었을 때 호출되는 콜백입니다."""

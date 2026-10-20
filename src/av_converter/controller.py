@@ -609,9 +609,14 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         d = self.get_lang_dict()
         tab_type = 'video' if msg.target == SENTINEL_VIDEO_DONE else 'audio'
         widgets = self.view.video_widgets if tab_type == 'video' else self.view.audio_widgets
+        cancel_token = self.video_cancel_token if tab_type == 'video' else self.audio_cancel_token
         total = getattr(self, f'{tab_type}_total_files')
         current = widgets['progress']['value']
-        widgets['status_label'].config(text=d['status_complete'].format(current=current, total=total))
+
+        if cancel_token and cancel_token.is_cancelled:
+            widgets['status_label'].config(text=d['status_cancelled'])
+        else:
+            widgets['status_label'].config(text=d['status_complete'].format(current=current, total=total))
         
         failed_files = msg.result if msg.result is not None else []
         if len(failed_files) > 0:
