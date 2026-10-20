@@ -90,6 +90,9 @@ FFMPEG_VERSION_FILENAME: Final[str] = ".ffmpeg_version"
 FFMPEG_VERSION_MARKER_PATH: Final[Path] = Path(__file__).resolve().parent / "av_converter" / FFMPEG_VERSION_FILENAME
 SENTINEL_VIDEO_DONE: Final[str] = "__VIDEO_DONE__"
 SENTINEL_AUDIO_DONE: Final[str] = "__AUDIO_DONE__"
+SUBPROCESS_VIDEO_CONVERT_TIMEOUT: Final[int] = int(os.environ.get('PRICONNE_VIDEO_TIMEOUT', 300))
+SUBPROCESS_AUDIO_CONVERT_TIMEOUT: Final[int] = int(os.environ.get('PRICONNE_AUDIO_TIMEOUT', 60))
+SUBPROCESS_PREVIEW_TIMEOUT: Final[int] = int(os.environ.get('PRICONNE_PREVIEW_TIMEOUT', 30))
 
 # === Unity Converter Tool ===
 UNITY_SUPPORTED_EXTENSIONS: Final[tuple[str, ...]] = ('.unity3d',)

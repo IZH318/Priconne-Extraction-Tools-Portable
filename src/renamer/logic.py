@@ -278,19 +278,13 @@ class RenameHashedFile:
         if file_stem in self.hash_list:
             return self.rename_file(file_path, self.hash_list[file_stem])
 
-        # 3. 파일 내용의 xxHash64로 대조 (폴백)
+        # 3. 파일 내용 해시 대조 (단일 스트림 순회로 xxHash64와 MD5 동시 계산)
         try:
-            hash_xxhash64_value = self.calculate_xxhash64(file_path).hexdigest().lower()
+            hash_xxhash64_value, hash_md5_value = self.calculate_dual_hashes(file_path)
             if hash_xxhash64_value in self.content_hash_map:
                 return self.rename_file(file_path, self.content_hash_map[hash_xxhash64_value])
             if hash_xxhash64_value in self.hash_list:
                 return self.rename_file(file_path, self.hash_list[hash_xxhash64_value])
-        except Exception:
-            pass
-
-        # 4. 파일 내용의 MD5로 대조 (폴백)
-        try:
-            hash_md5_value = self.calculate_md5(file_path).hexdigest().lower()
             if hash_md5_value in self.content_hash_map:
                 return self.rename_file(file_path, self.content_hash_map[hash_md5_value])
             if hash_md5_value in self.hash_list:
@@ -332,6 +326,16 @@ class RenameHashedFile:
                 return False, file_path
 
     # --- 유틸리티 메서드 ---
+    def calculate_dual_hashes(self, file_path: str) -> tuple[str, str]:
+        """단일 스트림 순회로 xxHash64와 MD5를 동시에 계산합니다."""
+        xxhash64_hash = xxhash.xxh64()
+        md5_hash = hashlib.md5()
+        with open(file_path, "rb") as file:
+            for chunk in iter(lambda: file.read(HASH_CHUNK_SIZE), b""):
+                xxhash64_hash.update(chunk)
+                md5_hash.update(chunk)
+        return xxhash64_hash.hexdigest().lower(), md5_hash.hexdigest().lower()
+
     def calculate_md5(self, file_path: str) -> hashlib._Hash:
         """파일을 4KB 청크 단위로 읽어 메모리 효율적으로 MD5 해시를 계산합니다."""
         md5_hash = hashlib.md5()

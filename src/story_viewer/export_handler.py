@@ -8,6 +8,7 @@ from typing import Any, Callable, TYPE_CHECKING
 import queue
 
 from src.queue_events import ActionEvent
+from src.utils.platform_open import open_with_default_app
 from .logic import StoryDataLoader, StoryFormatter
 from . import db_helper
 
@@ -553,7 +554,7 @@ class StoryExportHandler:
             self._view.update_status_bar('status_bar_export_summary', success_total=exported_count, failed_total=failed_count)
             if open_folder_after and output_folder and os.path.exists(output_folder):
                 try:
-                    os.startfile(output_folder)
+                    open_with_default_app(output_folder)
                 except Exception:
                     pass
         else:

@@ -27,6 +27,8 @@ from src.constants import (
     FFMPEG_VERSION_MARKER_PATH,
     VGMSTREAM_URL, VGMSTREAM_ZIP_FILENAME, VGMSTREAM_EXE_NAME,
     SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE, TabType,
+    SUBPROCESS_VIDEO_CONVERT_TIMEOUT, SUBPROCESS_AUDIO_CONVERT_TIMEOUT,
+    SUBPROCESS_PREVIEW_TIMEOUT,
 )
 from src.subprocess_runner import SubprocessRunner
 from src.queue_events import (
@@ -112,7 +114,7 @@ class ConversionLogic:
 
     def _run_subprocess(self, command: list[str]) -> subprocess.CompletedProcess[str]:
         """외부 프로세스를 실행하고 출력을 캡처하는 헬퍼 함수입니다."""
-        return SubprocessRunner.run(command)
+        return SubprocessRunner.run(command, timeout=SUBPROCESS_AUDIO_CONVERT_TIMEOUT)
 
     @staticmethod
     def get_installed_dotnet_runtimes() -> list[str]:
@@ -173,7 +175,7 @@ class ConversionLogic:
             command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(output_path.resolve())]
             try:
                 # UsmToolkit 프로세스 실행
-                result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir))
+                result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir), timeout=SUBPROCESS_VIDEO_CONVERT_TIMEOUT)
 
                 log_entries.append(('conv_log_result_header', {}))
                 
@@ -477,7 +479,7 @@ class ConversionLogic:
 
         command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(output_path.resolve())]
         try:
-            result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir))
+            result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir), timeout=SUBPROCESS_PREVIEW_TIMEOUT)
             # 변환 후 임시 중간 파일 정리 (단일 및 다중 스트림 파생 파일 포함)
             self._cleanup_intermediate_files(usm_file.parent, usm_file.stem)
             if final_mp4_path.exists():
@@ -542,7 +544,7 @@ class FFmpegDownloader:
 
         # 2. 실행 파일 바이너리 버전 직접 확인
         try:
-            res = SubprocessRunner.run([str(self.ffmpeg_path), "-version"])
+            res = SubprocessRunner.run([str(self.ffmpeg_path), "-version"], timeout=5)
             first_line = (res.stdout or "").splitlines()[0] if res.stdout else ""
             if f"version {FFMPEG_TARGET_VERSION}" in first_line:
                 try:

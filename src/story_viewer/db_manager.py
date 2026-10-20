@@ -400,7 +400,9 @@ class StoryDBManager:
                         total_size = response.getheader('content-length')
                         total_size = int(total_size) if total_size else 0
                         downloaded = 0
-                        with open(dest_path, 'wb') as out_file:
+                    temp_dest_path = f"{dest_path}.tmp"
+                    try:
+                        with open(temp_dest_path, 'wb') as out_file:
                             while True:
                                 chunk = response.read(16 * 1024)
                                 if not chunk:
@@ -411,12 +413,19 @@ class StoryDBManager:
                                 overall_prog = ((file_idx * 100) + file_prog) / max(1, total_files)
                                 _safe_download_update(overall_prog)
                                 
-                    # 다운로드된 파일이 유효한 SQLite DB인지 무결성 검증
-                    with open(dest_path, 'rb') as db_file:
-                        header = db_file.read(16)
-                    if header != _SQLITE_MAGIC:
-                        os.remove(dest_path)
-                        raise DatabaseIntegrityError(fname, "header mismatch")
+                        # 다운로드된 파일이 유효한 SQLite DB인지 무결성 검증
+                        with open(temp_dest_path, 'rb') as db_file:
+                            header = db_file.read(16)
+                        if header != _SQLITE_MAGIC:
+                            raise DatabaseIntegrityError(fname, "header mismatch")
+
+                        os.replace(temp_dest_path, dest_path)
+                    finally:
+                        if os.path.exists(temp_dest_path):
+                            try:
+                                os.remove(temp_dest_path)
+                            except OSError:
+                                pass
                 
                 # 모든 다운로드가 성공적으로 완료된 후 version.json 업데이트
                 if remote_version_data:

@@ -157,12 +157,11 @@ class AVPreviewHandler:
         """
         d = self._get_lang_data()
         self._cleanup_old_audio_previews()
+        temp_dir = os.path.join(self._preview_temp_dir, f"audio_{os.path.basename(file_path)}_{stream_num}_{int(time.time() * 1000)}")
+        os.makedirs(temp_dir, exist_ok=True)
         clean_name = sanitize_stream_filename(stream_name) if stream_name else ""
         filename = f"{clean_name}.wav" if clean_name else f"preview_{os.path.basename(file_path)}_{stream_num}.wav"
-        temp_wav = os.path.join(self._preview_temp_dir, filename)
-        if os.path.exists(temp_wav):
-            try: os.remove(temp_wav)
-            except OSError: pass
+        temp_wav = os.path.join(temp_dir, filename)
         
         def on_done(result):
             success, error_reason = result if isinstance(result, tuple) else (result, None)
@@ -182,17 +181,18 @@ class AVPreviewHandler:
         )
 
     def _cleanup_old_audio_previews(self) -> None:
-        """기존에 생성된 오디오 미리보기 임시 WAV 파일들을 안전하게 정리합니다."""
+        """기존에 생성된 오디오 미리보기 임시 디렉터리 및 잔여 파일들을 안전하게 정리합니다."""
         if not os.path.exists(self._preview_temp_dir):
             return
         for item in os.listdir(self._preview_temp_dir):
-            if item.endswith(".wav"):
-                item_path = os.path.join(self._preview_temp_dir, item)
-                if os.path.isfile(item_path):
-                    try:
-                        os.remove(item_path)
-                    except OSError:
-                        pass
+            item_path = os.path.join(self._preview_temp_dir, item)
+            if item.startswith("audio_") and os.path.isdir(item_path):
+                shutil.rmtree(item_path, ignore_errors=True)
+            elif item.endswith(".wav") and os.path.isfile(item_path):
+                try:
+                    os.remove(item_path)
+                except OSError:
+                    pass
 
     def _cleanup_old_video_previews(self) -> None:
         """기존에 생성된 비디오 미리보기 임시 디렉터리들을 안전하게 정리합니다."""

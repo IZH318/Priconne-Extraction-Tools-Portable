@@ -290,7 +290,7 @@ class SearchWindow(tk.Toplevel):
                         try:
                             if future.result():
                                 final_matched_files.append(future_to_filename[future])
-                        except (OSError, json.JSONDecodeError, ValueError, KeyError) as e:
+                        except (OSError, json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError) as e:
                             logging.error("SearchEngine future exception: %s", e)
             
             task_queue.put(ActionEvent(action=lambda: search_callback(sorted(final_matched_files))))

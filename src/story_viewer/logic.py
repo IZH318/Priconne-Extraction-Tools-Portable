@@ -143,12 +143,12 @@ class SearchEngine:
         # BGM 및 배경은 파일 전체 범위에서 만족하는 씬이 존재하는지 개별 평가
         if 'bgm' in lower_criteria:
             bgm_crit = lower_criteria['bgm']
-            if not any('bgm' in s and bgm_crit in str(s.get('bgm', '')).lower() for s in data.values()):
+            if not any(isinstance(s, dict) and 'bgm' in s and bgm_crit in str(s.get('bgm', '')).lower() for s in data.values()):
                 return False
 
         if 'background' in lower_criteria:
             bg_crit = lower_criteria['background']
-            if not any('background' in s and bg_crit in str(s.get('background', '')).lower() for s in data.values()):
+            if not any(isinstance(s, dict) and 'background' in s and bg_crit in str(s.get('background', '')).lower() for s in data.values()):
                 return False
 
         # 대사/화자 조건 (char_name, content)
@@ -157,7 +157,7 @@ class SearchEngine:
             return True
 
         for scene in data.values():
-            if SearchEngine.check_scene(scene, dialogue_criteria, char_type_search, char_type_speaker, is_speaker):
+            if isinstance(scene, dict) and SearchEngine.check_scene(scene, dialogue_criteria, char_type_search, char_type_speaker, is_speaker):
                 return True
         return False
 
