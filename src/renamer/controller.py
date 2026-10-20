@@ -127,36 +127,39 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         self._add_log_event('initial_info_start')
         self._add_raw_text("")
 
+    def _format_log_entry(self, timestamp: str | None, key: str, kwargs: dict[str, Any] | None, is_same_group: bool) -> tuple[str, str]:
+        """단일 로그 항목을 포맷하여 (표시용_텍스트, 원본_메시지) 튜플로 반환합니다."""
+        if timestamp is None:
+            return (key + "\n", key)
+
+        render_kwargs = dict(kwargs) if kwargs is not None else None
+        if key == 'initial_info_db' and render_kwargs is not None:
+            folder_lines = []
+            folders = self.file_processor.target_folders
+            for idx, folder in enumerate(folders):
+                prefix_key = 'folder_item_last' if idx == len(folders) - 1 else 'folder_item_branch'
+                folder_lines.append(self.get_string(prefix_key, folder_name=folder))
+            render_kwargs['folder_structure'] = "\n".join(folder_lines)
+
+        message = self.get_string(key, **render_kwargs) if render_kwargs is not None else self.get_string(key)
+        if not message:
+            return ("", "")
+
+        line_prefix = f"[{timestamp}] " if not is_same_group else ' ' * 13
+
+        if key == 'backend_job_summary':
+            return (f"\n[{timestamp}] {message}", message)
+        return (f"{line_prefix}{message}", message)
+
     def redraw_all_logs(self) -> None:
+        """전체 로그를 재렌더링합니다 (언어 변경 또는 초기화 시에만 호출되며 파일 로거는 재호출하지 않음)."""
         output_buffer = []
 
         for i, (timestamp, key, kwargs) in enumerate(self.log_data):
-            if timestamp is None:
-                output_buffer.append(key + "\n")
-                continue
-
-            render_kwargs = dict(kwargs) if kwargs is not None else None
-            if key == 'initial_info_db' and render_kwargs is not None:
-                folder_lines = []
-                folders = self.file_processor.target_folders
-                for idx, folder in enumerate(folders):
-                    prefix_key = 'folder_item_last' if idx == len(folders) - 1 else 'folder_item_branch'
-                    folder_lines.append(self.get_string(prefix_key, folder_name=folder))
-                render_kwargs['folder_structure'] = "\n".join(folder_lines)
-
-            message = self.get_string(key, **render_kwargs) if render_kwargs is not None else self.get_string(key)
-            if not message:
-                continue
-
             is_same_group = i > 0 and self.log_data[i-1][0] == timestamp
-            line_prefix = f"[{timestamp}] " if not is_same_group else ' ' * 13
-
-            if key == 'backend_job_summary':
-                logging.info("[Renamer] %s", message)
-                output_buffer.append(f"\n[{timestamp}] {message}")
-            else:
-                logging.info("[Renamer] %s", message)
-                output_buffer.append(f"{line_prefix}{message}")
+            display_text, _ = self._format_log_entry(timestamp, key, kwargs, is_same_group)
+            if display_text:
+                output_buffer.append(display_text)
 
         final_text = "".join(output_buffer)
         self.view.write_log(final_text)
@@ -222,6 +225,7 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         progress_updates = self._drain_queue(self.progress_queue)
 
         if log_items_batch:
+            incremental_buffer = []
             # 첫 실행이 아닌 경우, 처리 로그 앞에 빈 줄 추가
             last_key = self.log_data[-1][1] if self.log_data else None
             if last_key is not None and last_key.strip() != "":
@@ -230,10 +234,21 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
                     pass
                 else:
                     self._add_raw_text("")
+                    incremental_buffer.append("\n")
 
             for event in log_items_batch:
-                self._add_log_event(event.key, event.kwargs if event.kwargs else None)
-            self.redraw_all_logs()
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                kwargs = event.kwargs if event.kwargs else None
+                is_same_group = len(self.log_data) > 0 and self.log_data[-1][0] == timestamp
+                self.log_data.append((timestamp, event.key, kwargs))
+                display_text, raw_msg = self._format_log_entry(timestamp, event.key, kwargs, is_same_group)
+                if raw_msg:
+                    logging.info("[Renamer] %s", raw_msg)
+                if display_text:
+                    incremental_buffer.append(display_text)
+
+            if incremental_buffer:
+                self.view.append_log("".join(incremental_buffer))
 
         if progress_updates:
             for event in progress_updates:
@@ -246,10 +261,19 @@ class RenamerController(QueuePollingMixin, LogHistoryMixin):
         if self._active_thread is not None and not self._active_thread.is_alive():
             final_log_items = self._drain_queue(self.log_queue)
             if final_log_items:
+                final_buffer = []
                 for event in final_log_items:
-                    self._add_log_event(event.key, event.kwargs if event.kwargs else None)
-            
-            self.redraw_all_logs()
+                    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                    kwargs = event.kwargs if event.kwargs else None
+                    is_same_group = len(self.log_data) > 0 and self.log_data[-1][0] == timestamp
+                    self.log_data.append((timestamp, event.key, kwargs))
+                    display_text, raw_msg = self._format_log_entry(timestamp, event.key, kwargs, is_same_group)
+                    if raw_msg:
+                        logging.info("[Renamer] %s", raw_msg)
+                    if display_text:
+                        final_buffer.append(display_text)
+                if final_buffer:
+                    self.view.append_log("".join(final_buffer))
 
             self.is_processing = False
             self._active_thread = None

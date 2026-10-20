@@ -470,7 +470,8 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self._log("raw_text", format_args={'text': "========================================"})
         if hasattr(self, 'total_extracted_assets') and self.total_extracted_assets > 0:
             self._log("total_extracted_assets", format_args={'count': self.total_extracted_assets})
-        self._log('all_tasks_completed', "SUCCESS")
+        if not self.cancel_token.is_cancelled:
+            self._log('all_tasks_completed', "SUCCESS")
         self.is_running = False
         self.frame.after(0, lambda: self.view.toggle_controls(True))
 

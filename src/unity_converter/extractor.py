@@ -69,7 +69,10 @@ class AssetProcessor:
 
     def log(self, message_key: str, level: str = 'INFO', format_args: dict[str, Any] | None = None) -> None:
         """로그 메시지를 통신 큐에 추가합니다."""
-        self.log_queue.put(LogEvent(target=self.base_name, key=message_key, level=level, kwargs=format_args))
+        safe_args = None
+        if format_args is not None:
+            safe_args = {k: str(v) if isinstance(v, Exception) else v for k, v in format_args.items()}
+        self.log_queue.put(LogEvent(target=self.base_name, key=message_key, level=level, kwargs=safe_args))
 
     def _sanitize_filename(self, name: str) -> str:
         """파일 시스템에서 사용할 수 없는 문자를 '_'로 치환합니다."""
@@ -189,7 +192,7 @@ class AssetProcessor:
             return self._export_generic_json(obj)
         except Exception as e:
             # 처리 실패 시 예외 로깅 및 대체 저장 시도 (대체 저장을 시도하므로 우선 WARNING 처리)
-            self.log('asset_processing_error', 'WARNING', {'path_id': obj.path_id, 'obj_type': obj_type, 'error': e})
+            self.log('asset_processing_error', 'WARNING', {'path_id': obj.path_id, 'obj_type': obj_type, 'error': str(e)})
             if obj_type == "Mesh":
                 self.log('mesh_fallback_info', "WARNING")
                 if self._export_raw_data(obj):
@@ -200,7 +203,7 @@ class AssetProcessor:
                 try:
                     return self._export_generic_json(obj, error_info=str(e))
                 except Exception as e2:
-                    self.log('json_fallback_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj.type.name, 'error': e2})
+                    self.log('json_fallback_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': obj.type.name, 'error': str(e2)})
         return False
 
     def _export_raw_data(self, obj: Any) -> bool:
@@ -212,7 +215,7 @@ class AssetProcessor:
                 f.write(raw_data)
             return True
         except Exception as e:
-            self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': 'raw data', 'error': e})
+            self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': 'raw data', 'error': str(e)})
             return False
 
     # =====================================================================
@@ -282,7 +285,7 @@ class AssetProcessor:
         
         except Exception as e:
             # 실패 시 로그 기록 (대체 저장되므로 에러가 아닌 경고로 처리)
-            self.log('storydata_deserialization_fail', 'WARNING', {'asset_name': asset_name, 'error': e})
+            self.log('storydata_deserialization_fail', 'WARNING', {'asset_name': asset_name, 'error': str(e)})
         
         return bin_saved
 

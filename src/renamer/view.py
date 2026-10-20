@@ -77,3 +77,9 @@ class RenamerView(ttk.Frame):
         self.log_area.insert('1.0', text)
         self.log_area.configure(state=tk.DISABLED)
         self.log_area.see(tk.END)
+
+    def append_log(self, text: str) -> None:
+        self.log_area.configure(state=tk.NORMAL)
+        self.log_area.insert(tk.END, text)
+        self.log_area.configure(state=tk.DISABLED)
+        self.log_area.see(tk.END)

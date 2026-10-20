@@ -9,8 +9,9 @@ import hashlib
 import concurrent.futures
 import queue
 import json
+import re
 from pathlib import Path
-from typing import Any, Callable, TYPE_CHECKING
+from typing import Any, Callable, TYPE_CHECKING, Final
 
 if TYPE_CHECKING:
     from src.cancellation_token import CancellationToken
@@ -22,6 +23,7 @@ from src.constants import (
     USMTOOLKIT_URL, USMTOOLKIT_ZIP_FILENAME, USMTOOLKIT_EXE_NAME,
     FFMPEG_URL, FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
     FFMPEG_TARGET_VERSION, FFMPEG_EXPECTED_SHA256, FFMPEG_VERSION_FILENAME,
+    DOWNLOAD_SOCKET_TIMEOUT,
     FFMPEG_VERSION_MARKER_PATH,
     VGMSTREAM_URL, VGMSTREAM_ZIP_FILENAME, VGMSTREAM_EXE_NAME,
     SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE, TabType,
@@ -31,10 +33,60 @@ from src.queue_events import (
     LogEvent, LogBlockEvent, ProgressEvent, CompletionEvent
 )
 
+FULLWIDTH_CHAR_MAP: Final[dict[str, str]] = {
+    '\\': '＼',  # U+FF3C
+    '/':  '／',  # U+FF0F
+    ':':  '：',  # U+FF1A
+    '*':  '＊',  # U+FF0A
+    '?':  '？',  # U+FF1F
+    '"':  '＂',  # U+FF02
+    '<':  '＜',  # U+FF1C
+    '>':  '＞',  # U+FF1E
+    '|':  '｜',  # U+FF5C
+}
+
+def sanitize_stream_filename(name: str) -> str:
+    """Windows 파일시스템 금지 문자를 전각 유니코드 문자로 치환하고 유효한 파일명으로 정제합니다."""
+    table = str.maketrans(FULLWIDTH_CHAR_MAP)
+    sanitized = name.translate(table)
+    sanitized = re.sub(r'[\x00-\x1f]', '', sanitized)
+    return sanitized.strip('. ')
+
 class ConversionLogic:
     # 시스템 CPU 코어 수의 절반을 최대 작업자 수로 설정 (과도한 부하 방지)
     cpu_threads: int = os.cpu_count() or 1
     MAX_WORKERS: int = max(1, cpu_threads // 2)
+
+    @staticmethod
+    def _cleanup_intermediate_files(directory: Path, stem: str) -> None:
+        """USM 디먹싱 및 변환 시 생성된 중간 임시 파일(.adx, .wav, .m2v, .bin 등)을 안전하게 삭제합니다.
+        
+        단일 스트림 파일(예: movie.wav)뿐만 아니라 다중 오디오 스트림 인덱스가 붙은
+        파생 파일(예: movie_0.adx, movie_1.wav)까지 정확히 탐지하여 제거합니다.
+        """
+        if not directory.exists() or not directory.is_dir():
+            return
+        prefix = f"{stem}_"
+        try:
+            for item in directory.iterdir():
+                if not item.is_file():
+                    continue
+                if item.suffix.lower() not in AV_TEMP_EXTENSIONS:
+                    continue
+                # 1. stem.ext 일치 (단일 스트림)
+                if item.name == f"{stem}{item.suffix}":
+                    try:
+                        os.remove(item)
+                    except OSError:
+                        pass
+                # 2. stem_0.ext 등 숫자 인덱스 접미사 일치 (다중 스트림)
+                elif item.stem.startswith(prefix) and item.stem[len(prefix):].isdigit():
+                    try:
+                        os.remove(item)
+                    except OSError:
+                        pass
+        except OSError:
+            pass
 
     def __init__(self, log_queue: queue.Queue, base_path: Path) -> None:
         """
@@ -152,15 +204,8 @@ class ConversionLogic:
                             log_entries.append(('raw', {'text': ''}))
                             log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_stderr])
 
-                    # 변환 과정에서 생성된 임시 파일 삭제
-                    temp_file_dir = usm_file.parent
-                    for ext in AV_TEMP_EXTENSIONS:
-                        temp_file = temp_file_dir / (usm_file.stem + ext)
-                        if temp_file.exists():
-                            try:
-                                os.remove(temp_file)
-                            except OSError:
-                                pass
+                    # 변환 과정에서 생성된 임시 파일 삭제 (단일 및 다중 스트림 파생 파일 포함)
+                    self._cleanup_intermediate_files(usm_file.parent, usm_file.stem)
                 else:
                     status = "error"
                     log_entries.append(('conv_log_error_fail', {'filename': usm_file.name}))
@@ -366,8 +411,20 @@ class ConversionLogic:
             return 0, log_entries, "Could not read stream info from the file"
 
         # 각 스트림을 개별 .wav 파일로 변환
+        used_filenames: set[str] = set()
         for stream_idx, stream_name in streams:
-            output_file = item_output_folder / f"{stream_name}.wav"
+            clean_name = sanitize_stream_filename(stream_name)
+            if not clean_name:
+                clean_name = f"{item_path.stem}_{stream_idx:04d}"
+
+            target_name = clean_name
+            collision_idx = 1
+            while target_name.lower() in used_filenames:
+                target_name = f"{clean_name}_{collision_idx}"
+                collision_idx += 1
+            used_filenames.add(target_name.lower())
+
+            output_file = item_output_folder / f"{target_name}.wav"
 
             if not overwrite and output_file.exists():
                 log_entries.append(('conv_audio_stream_skipped', {'filename': output_file.name}))
@@ -421,14 +478,8 @@ class ConversionLogic:
         command = [str(usmtoolkit_path), 'convert', '-c', str(usm_file.resolve()), '-o', str(output_path.resolve())]
         try:
             result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir))
-            # 변환 후 임시 중간 파일 정리
-            for ext in AV_TEMP_EXTENSIONS:
-                temp_file = usm_file.parent / (usm_file.stem + ext)
-                if temp_file.exists():
-                    try:
-                        os.remove(temp_file)
-                    except OSError:
-                        pass
+            # 변환 후 임시 중간 파일 정리 (단일 및 다중 스트림 파생 파일 포함)
+            self._cleanup_intermediate_files(usm_file.parent, usm_file.stem)
             if final_mp4_path.exists():
                 return final_mp4_path, None
             else:
@@ -564,7 +615,7 @@ class FFmpegDownloader:
             # 1. 다운로드
             self._log_entry('ffmpeg_download_start', url=FFMPEG_URL)
             req = urllib.request.Request(FFMPEG_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=10) as response, open(local_zip_path, 'wb') as out_file:
+            with urllib.request.urlopen(req, timeout=DOWNLOAD_SOCKET_TIMEOUT) as response, open(local_zip_path, 'wb') as out_file:
                 if response.status != 200:
                     raise DownloadError(f"HTTP Error: {response.status} {response.reason}")
                 shutil.copyfileobj(response, out_file)

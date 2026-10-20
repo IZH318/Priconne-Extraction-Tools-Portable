@@ -90,100 +90,6 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
     """대본(script) 모드 데이터를 마크다운 문법에 완벽히 맞춰 포매팅합니다."""
     scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
 
-    # 1. 태그 -> 씬 번호 매핑
-    tag_to_scene: dict[str, str] = {}
-    for k in scene_keys:
-        s = data[k]
-        if isinstance(s, dict) and 'tag' in s:
-            tag_to_scene[str(s['tag']).strip()] = k
-
-    # 2. 선택지 태그 정보 매핑
-    tag_to_choice_info: dict[str, tuple[str, int, str]] = {}
-    for k in scene_keys:
-        s = data[k]
-        if isinstance(s, dict) and 'choice' in s and isinstance(s['choice'], list):
-            for idx, c in enumerate(s['choice'], 1):
-                if isinstance(c, dict) and 'tag' in c:
-                    tag_to_choice_info[str(c['tag']).strip()] = (k, idx, c.get('text', ''))
-
-    branch_scenes_set = {
-        k for k, s in data.items()
-        if isinstance(s, dict) and str(s.get('tag', '') or '').strip() in tag_to_choice_info
-    }
-
-    # 3. 다중 선택지 합류 씬 계산
-    multi_choice_merge: dict[str, str] = {}
-    for key in scene_keys:
-        scene = data[key]
-        if not isinstance(scene, dict):
-            continue
-        choices = scene.get('choice')
-        if choices and isinstance(choices, list) and len(choices) > 1:
-            branch_scenes: list[int] = []
-            for c in choices:
-                if isinstance(c, dict):
-                    t = str(c.get('tag', '') or '').strip()
-                    if t in tag_to_scene and tag_to_scene[t].isdigit():
-                        branch_scenes.append(int(tag_to_scene[t]))
-            for bs in list(branch_scenes):
-                sub_s = data.get(str(bs), {})
-                if isinstance(sub_s, dict):
-                    sub_ch = sub_s.get('choice')
-                    if sub_ch and isinstance(sub_ch, list):
-                        for sc in sub_ch:
-                            if isinstance(sc, dict):
-                                st = str(sc.get('tag', '') or '').strip()
-                                if st in tag_to_scene and tag_to_scene[st].isdigit():
-                                    branch_scenes.append(int(tag_to_scene[st]))
-            if branch_scenes:
-                max_bs = max(branch_scenes)
-                cand_merge = str(max_bs + 1)
-                cand_scene = data.get(cand_merge)
-                if cand_merge in data and isinstance(cand_scene, dict) and (
-                    'print' in cand_scene or 'choice' in cand_scene or 'place' in cand_scene or 'situation' in cand_scene
-                ):
-                    multi_choice_merge[key] = cand_merge
-
-    merge_target_scenes = set(multi_choice_merge.values())
-
-    # 4. 분기 목적지 사전 계산
-    branch_destinations: dict[str, str | None] = {}
-    for b_key in sorted(branch_scenes_set, key=lambda x: int(x) if x.isdigit() else float('inf')):
-        b_scene = data.get(b_key, {})
-        if not isinstance(b_scene, dict):
-            continue
-        if bool(b_scene.get('choice') and isinstance(b_scene.get('choice'), list) and len(b_scene.get('choice')) > 0):
-            branch_destinations[b_key] = None
-            continue
-        b_dest = None
-        g_tag = str(b_scene.get('goto', '') or '').strip()
-        if g_tag and g_tag in tag_to_scene:
-            t_sc = tag_to_scene[g_tag]
-            t_data = data.get(t_sc, {})
-            if isinstance(t_data, dict) and ('print' in t_data or 'choice' in t_data or 'place' in t_data or 'situation' in t_data):
-                b_dest = t_sc
-        b_tag = str(b_scene.get('tag', '') or '').strip()
-        if not b_dest and b_tag in tag_to_choice_info:
-            from_sc, _, _ = tag_to_choice_info[b_tag]
-            m_sc = multi_choice_merge.get(from_sc)
-            if m_sc and m_sc in data:
-                m_data = data.get(m_sc, {})
-                if isinstance(m_data, dict) and ('print' in m_data or 'choice' in m_data or 'place' in m_data or 'situation' in m_data):
-                    b_dest = m_sc
-        if not b_dest:
-            b_idx = scene_keys.index(b_key) if b_key in scene_keys else -1
-            if b_idx >= 0:
-                for next_k in scene_keys[b_idx + 1:]:
-                    next_s = data.get(next_k, {})
-                    if isinstance(next_s, dict) and ('print' in next_s or 'choice' in next_s or 'place' in next_s or 'situation' in next_s):
-                        if next_k not in branch_scenes_set:
-                            b_dest = next_k
-                            break
-        branch_destinations[b_key] = b_dest
-        if b_dest and b_dest not in branch_scenes_set:
-            merge_target_scenes.add(b_dest)
-
-    # 5. 다국어 라벨 로드 (정규 script_* 키 매핑)
     outline_title = lang_dict.get('script_outline_title', '줄거리')
     branch_point_label = lang_dict.get('script_branch_point', '분기점')
     choice_item_label = lang_dict.get('script_choice_item', '선택')
@@ -193,6 +99,11 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
     branch_end_label = lang_dict.get('script_branch_end', '[스토리 종료]')
     place_prefix = lang_dict.get('script_place_prefix', '장소')
     no_dialogue_msg = lang_dict.get('script_no_dialogue', '대사 데이터가 없는 스토리입니다')
+
+    structure = StoryFormatter.resolve_story_branches(data)
+    scene_to_branch = structure.scene_to_branch
+    merge_scenes = structure.merge_scenes
+    tag_to_scene = structure.tag_to_scene
 
     md_out: list[str] = []
     scene_0 = data.get('0', {})
@@ -223,8 +134,21 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
         if key != '0' and not has_content:
             continue
 
-        if key != '0' and key in merge_target_scenes:
+        if key != '0' and key in merge_scenes:
             md_out.append(f"---\n\n### ═ [ Scene {key} ] ═\n\n")
+
+        b = scene_to_branch.get(key)
+        is_branch_start = bool(b and b.scenes and b.scenes[0] == key)
+        is_branch_end = bool(b and b.scenes and b.scenes[-1] == key)
+
+        if is_branch_start:
+            r_str = f"Scene {b.scenes[0]}~{b.scenes[-1]}" if len(b.scenes) > 1 else f"Scene {key}"
+            tag_str = f" (Tag {b.tag})" if b.tag else ""
+            lbl = branch_label_fmt.format(choice_label=choice_item_label, idx=b.choice_idx, dialogue_label=branch_dialogue_label)
+            md_out.append(f"> #### ┌─ [ {r_str} | {lbl}{tag_str} ] ─┐\n>\n")
+            has_dialogue = True
+
+        b_prefix = "> " if b is not None else ""
 
         raw_place = scene.get('place')
         p_str = ""
@@ -234,20 +158,9 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
             p_str = raw_place.strip()
 
         if p_str and p_str != title and p_str != situation and p_str != last_place:
-            md_out.append(f"*[{place_prefix}: {p_str}]*\n\n")
+            md_out.append(f"{b_prefix}*[{place_prefix}: {p_str}]*\n{b_prefix}\n")
             last_place = p_str
             has_dialogue = True
-
-        branch_tag = str(scene.get('tag', '') or '').strip()
-        is_branch = (key != '0' and bool(branch_tag) and branch_tag in tag_to_choice_info and has_content)
-
-        if is_branch:
-            from_sc, ch_idx, _ = tag_to_choice_info[branch_tag]
-            lbl = branch_label_fmt.format(choice_label=choice_item_label, idx=ch_idx, dialogue_label=branch_dialogue_label)
-            md_out.append(f"> #### ┌─ [ Scene {key} | {lbl} (Tag {branch_tag}) ] ─┐\n>\n")
-            has_dialogue = True
-
-        b_prefix = "> " if is_branch else ""
 
         p_data = scene.get('print')
         if p_data and isinstance(p_data, dict):
@@ -257,7 +170,8 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
                 has_dialogue = True
                 if speaker:
                     md_out.append(f"{b_prefix}**[{speaker}]**  \n")
-                for line in text.splitlines():
+                lines = text.splitlines()
+                for line in lines:
                     md_out.append(f"{b_prefix}{line}  \n")
                 md_out.append(f"{b_prefix}\n")
 
@@ -265,16 +179,15 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
         if choices and isinstance(choices, list) and len(choices) > 0:
             has_dialogue = True
             if len(choices) > 1:
-                target_merge = multi_choice_merge.get(key)
-                md_out.append(f"{b_prefix}> ### ▼ [{branch_point_label} | Scene {key}]\n{b_prefix}>\n")
+                md_out.append(f"{b_prefix}**▼ [{branch_point_label} | Scene {key}]**\n{b_prefix}\n")
                 for idx, c in enumerate(choices, 1):
                     c_text = c.get('text', '') if isinstance(c, dict) else str(c)
                     c_tag = str(c.get('tag', '') or '').strip() if isinstance(c, dict) else ""
                     target_sc = tag_to_scene.get(c_tag)
-                    dest = f"[Scene {target_sc}]" if target_sc else (f"[Scene {target_merge}]" if target_merge else "")
+                    dest = f"[Scene {target_sc}]" if target_sc else ""
                     tag_str = f" *(Tag {c_tag})*" if c_tag else ""
                     dest_str = f" ➔ **{dest}**" if dest else ""
-                    md_out.append(f"{b_prefix}> - **[{choice_item_label} {idx}]** {c_text}{tag_str}{dest_str}\n")
+                    md_out.append(f"{b_prefix}- **[{choice_item_label} {idx}]** {c_text}{tag_str}{dest_str}  \n")
                 md_out.append(f"{b_prefix}\n")
             else:
                 c = choices[0]
@@ -283,15 +196,13 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
                 target_sc = tag_to_scene.get(c_tag)
                 target_dest = f" ➔ **[Scene {target_sc}]**" if target_sc else ""
                 tag_str = f" *(Tag {c_tag})*" if c_tag else ""
-                md_out.append(f"{b_prefix}> **─ [ {choice_item_label} | Scene {key} ] ─**  \n")
-                md_out.append(f"{b_prefix}> 1. {c_text}{tag_str}{target_dest}\n{b_prefix}\n")
+                md_out.append(f"{b_prefix}**─ [ {choice_item_label} | Scene {key} ] ─**  \n")
+                md_out.append(f"{b_prefix}1. {c_text}{tag_str}{target_dest}  \n{b_prefix}\n")
 
-        if is_branch:
-            has_own_choice = bool(scene.get('choice') and isinstance(scene.get('choice'), list) and len(scene.get('choice')) > 0)
-            if not has_own_choice:
-                dest_scene = branch_destinations.get(key)
-                label = branch_leads_to_fmt.format(scene=dest_scene) if dest_scene else branch_end_label
-                md_out.append(f"> └───▶ **{label}**\n\n")
+        if is_branch_end:
+            dest_scene = b.destination
+            label = branch_leads_to_fmt.format(scene=dest_scene) if dest_scene else branch_end_label
+            md_out.append(f">\n> └── ▶ **{label}**\n\n")
 
     if not has_dialogue and not (title or outline):
         md_out.append(f"*({no_dialogue_msg})*\n")

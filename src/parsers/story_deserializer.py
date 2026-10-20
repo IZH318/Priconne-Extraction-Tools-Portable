@@ -1,5 +1,6 @@
 from __future__ import annotations
 import base64
+import binascii
 from enum import Enum
 from struct import unpack, error as struct_error
 from typing import Any
@@ -145,8 +146,11 @@ class StoryDataDeserializer:
             for byte in arg:
                 array2.append(255 - byte if byte > 127 else byte)
             # Base64 디코딩 및 UTF-8 문자열 변환
-            str_ = base64.b64decode(array2)
-            array.append(str_.decode('utf-8', 'surrogateescape'))
+            try:
+                str_ = base64.b64decode(array2)
+                array.append(str_.decode('utf-8', 'surrogateescape'))
+            except (binascii.Error, ValueError):
+                array.append(bytes(array2).decode('utf-8', 'surrogateescape'))
         
         # 숫자 ID를 CommandId Enum 멤버로 변환
         try:
@@ -164,6 +168,7 @@ class StoryDataDeserializer:
         i = 2
         max_command_limit = max(100_000, len(bytes_))
         iteration_count = 0
+        buffer_len = len(bytes_)
 
         while i < len(bytes_):
             iteration_count += 1
@@ -182,13 +187,22 @@ class StoryDataDeserializer:
             args.append(index)
             num = i
             while True:
+                if fs + 4 > buffer_len:
+                    break
                 try:
                     # 4바이트(Big-endian)를 읽어 인자의 길이 파싱
                     length = int(unpack(">l", bytes_[fs : fs + 4])[0])
                 except (struct_error, IndexError):
-                    length = 0
+                    break
                 fs += 4
-                if length == 0: # 길이가 0이면 명령어의 끝
+                if length <= 0: # 길이가 0 이하이면 명령어의 끝 (음수 길이 방어)
+                    break
+                if fs + length > buffer_len:
+                    # 버퍼를 초과하는 비정상 길이인 경우 잔여 버퍼만 읽고 탈출
+                    array = bytes_[fs:buffer_len]
+                    fs = buffer_len
+                    args.append(array)
+                    num += 4 + len(array)
                     break
                 # 해당 길이만큼 읽어 인자 데이터로 저장
                 array = bytes_[fs : fs + length]
@@ -241,18 +255,26 @@ class StoryDataDeserializer:
             match command_id:
                 case StoryDataDeserializer.CommandId.PRINT: # 대사
                     cmd = block.setdefault(command_id.name.lower(), {})
-                    cmd.setdefault("name", args[0])
-                    cmd["text"] = (cmd.get("text") or "") + StoryDataDeserializer._clean_text(args[1])
+                    name = args[0] if len(args) > 0 else ""
+                    text = args[1] if len(args) > 1 else ""
+                    if name and not cmd.get("name"):
+                        cmd["name"] = name
+                    else:
+                        cmd.setdefault("name", name)
+                    cmd["text"] = (cmd.get("text") or "") + StoryDataDeserializer._clean_text(text)
                 case StoryDataDeserializer.CommandId.CHOICE: # 선택지
                     choices = block.setdefault(command_id.name.lower(), [])
                     if isinstance(choices, list):
-                        choices.append({"text": args[0], "tag": args[1]})
+                        choice_text = args[0] if len(args) > 0 else ""
+                        choice_tag = args[1] if len(args) > 1 else ""
+                        choices.append({"text": choice_text, "tag": choice_tag})
                 case StoryDataDeserializer.CommandId.BUSTUP: # 새 블록 시작
                     num += 1
                     block = story.setdefault(num, {})
                 case StoryDataDeserializer.CommandId.TAG: # 태그
                     story.setdefault(num + 1, {})
-                    story[num + 1][command_id.name.lower()] = args[0]
+                    tag_val = args[0] if args else ""
+                    story[num + 1][command_id.name.lower()] = tag_val
                 case StoryDataDeserializer.CommandId.OUTLINE: # 개요 텍스트 정리
                     if args:
                         block[command_id.name.lower()] = StoryDataDeserializer._clean_text(args[0])

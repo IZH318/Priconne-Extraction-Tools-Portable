@@ -79,6 +79,7 @@ VGMSTREAM_URL: Final[str] = _DEPS_CONFIG.get(
 )
 VGMSTREAM_ZIP_FILENAME: Final[str] = "vgmstream_temp.zip"
 VGMSTREAM_EXE_NAME: Final[str] = "vgmstream-cli.exe"
+DOWNLOAD_SOCKET_TIMEOUT: Final[int] = int(os.environ.get('PRICONNE_DOWNLOAD_TIMEOUT', 120))
 FFMPEG_EXPECTED_SHA256: Final[str] = os.environ.get(
     'PRICONNE_FFMPEG_SHA256',
     "04861d3339c5ebe38b56c19a15cf2c0cc97f5de4fa8910e4d47e5e6404e4a2d4"
