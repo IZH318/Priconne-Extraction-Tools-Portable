@@ -3,7 +3,6 @@ import tkinter as tk
 from tkinter import ttk, font
 from typing import TYPE_CHECKING
 
-from src.utils.tooltip import ToolTip
 
 if TYPE_CHECKING:
     from .controller import StoryViewerController
@@ -74,7 +73,6 @@ class StoryViewerView(ttk.Frame):
         self.filter_entry = ttk.Entry(self.filter_frame, textvariable=self.controller.filter_var)
         self.filter_entry.pack(fill=tk.X, expand=True)
         self.filter_entry.bind("<Escape>", lambda e: self.controller.clear_filter())
-        self.filter_tooltip = ToolTip(self.filter_entry, "")
 
         self._placeholder_active = False
 
@@ -227,8 +225,7 @@ class StoryViewerView(ttk.Frame):
         self.listbox_menu.entryconfig(1, label=lang_dict.get('remove_all', '전체 항목 제거'))
         self.listbox_menu.entryconfig(3, label=lang_dict.get('export_this_item', '이 항목 내보내기'))
 
-        # 빠른 필터 플레이스홀더 및 툴팁 갱신
-        self.filter_tooltip.text = lang_dict.get('filter_placeholder', '')
+        # 빠른 필터 플레이스홀더 갱신
         if self._placeholder_active:
             self.show_filter_placeholder()
 

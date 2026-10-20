@@ -415,8 +415,12 @@ class ExportWindow(tk.Toplevel):
         def _check_cancelled() -> bool:
             return bool(progress_dialog.is_cancelled)
 
+        finished = False
         def _on_finish() -> None:
-            self._master.after(0, progress_dialog.close)
+            nonlocal finished
+            if not finished:
+                finished = True
+                self._master.after(0, progress_dialog.close)
 
         def _run_export() -> None:
             try:
@@ -608,8 +612,12 @@ class SingleExportWindow(tk.Toplevel):
         def _check_cancelled() -> bool:
             return bool(progress_dialog.is_cancelled)
 
+        finished = False
         def _on_finish() -> None:
-            self._master.after(0, progress_dialog.close)
+            nonlocal finished
+            if not finished:
+                finished = True
+                self._master.after(0, progress_dialog.close)
 
         def _run_export() -> None:
             try:

@@ -12,6 +12,7 @@ from typing import Any
 
 from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
+from src.utils.base_path import get_application_base_path
 from .windows_search import SearchWindow
 from .windows_export import ExportWindow, SingleExportWindow
 from .logic import StoryDataLoader, StoryFormatter
@@ -171,6 +172,7 @@ class StoryViewerController(QueuePollingMixin):
         self.master = master
         self.app_wrapper = app_wrapper
         self.about_info = about_info or {}
+        self.base_path = get_application_base_path()
         
         self.all_files = {}
         self.search_data = {}
@@ -422,6 +424,7 @@ class StoryViewerController(QueuePollingMixin):
         self.loaded_filenames = []
         self.base_search_files.clear()
         self.filter_var.set("")
+        self.view.show_filter_placeholder()
         self.current_file_path = None
         self.view.search_button.config(state=tk.DISABLED)
         self.view.btn_export.config(state=tk.DISABLED)
@@ -699,14 +702,10 @@ class StoryViewerController(QueuePollingMixin):
             os_ver = platform.platform()
             cpu_cores = multiprocessing.cpu_count()
             
-            if sys.argv and sys.argv[0]:
-                exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
-            else:
-                exec_path = os.path.abspath(os.getcwd())
-                
+            exec_path = str(self.base_path)
             now = datetime.now()
             
-            log_dir = Path(exec_path) / "logs"
+            log_dir = self.base_path / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             log_filename = log_dir / f"StoryViewerLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
 
@@ -1002,8 +1001,7 @@ class StoryViewerController(QueuePollingMixin):
         """빠른 필터 입력값을 초기화합니다."""
         self.filter_var.set("")
         try:
-            if self.view.focus_get() != self.view.filter_entry:
-                self.view.show_filter_placeholder()
+            self.view.show_filter_placeholder()
         except tk.TclError:
             pass
 
