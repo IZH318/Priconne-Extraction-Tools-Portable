@@ -87,11 +87,23 @@ class AVPreviewHandler:
         """
         popup = self._view.create_progress_popup()
         def thread_target():
-            result = worker_func()
-            def update_ui():
-                self._view.destroy_popup_safely(popup)
-                callback_func(result)
-            self._view.after(0, update_ui)
+            result = None
+            err = None
+            try:
+                result = worker_func()
+            except Exception as e:
+                err = e
+            finally:
+                def update_ui():
+                    self._view.destroy_popup_safely(popup)
+                    if err is not None:
+                        d = self._get_lang_data()
+                        title = d.get('preview_menu', 'Preview')
+                        msg = d.get('preview_error', 'Preview failed: {error}').format(error=str(err))
+                        messagebox.showwarning(title, msg, parent=self._view)
+                    else:
+                        callback_func(result)
+                self._view.after(0, update_ui)
         threading.Thread(target=thread_target, daemon=True).start()
 
     def _preview_audio(self, file_path: str) -> None:

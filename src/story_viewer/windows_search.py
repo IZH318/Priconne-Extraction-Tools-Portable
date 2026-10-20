@@ -295,9 +295,10 @@ class SearchWindow(tk.Toplevel):
             
             task_queue.put(ActionEvent(action=lambda: search_callback(sorted(final_matched_files))))
 
-        except (OSError, sqlite3.Error) as e:
+        except (OSError, sqlite3.Error, Exception) as e:
             # self(Toplevel)는 이미 destroy() 되었으므로 self 참조를 피하고
             # 캡처된 참조만 사용합니다.
+            logging.error("Story search failed: %s", e)
             def _show_error(error=e):
                 ld = get_lang_dict_ref()
                 messagebox.showerror(ld['search_error_title'], ld['search_error_msg'].format(e=error), parent=master_ref)

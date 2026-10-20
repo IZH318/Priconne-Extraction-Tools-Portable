@@ -563,4 +563,4 @@ def process_single_file(file_path: str, output_path: str, base_input_path: str |
         log_queue.put(LogEvent(target=base_name, key='worker_process_error', level='ERROR', kwargs={'error': str(e)}))
     finally:
         # 작업 완료 신호 전송
-        completion_queue.put(CompletionEvent(success=True, result=extracted_count))
+        completion_queue.put(CompletionEvent(success=(extracted_count is not None), result=extracted_count))

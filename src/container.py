@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging
+import os
 import shutil
 import tempfile
 import tkinter as tk
@@ -40,8 +41,9 @@ class AppContainer:
         # 전역 상태 (공유 변수)
         self.app_lang_var = tk.StringVar(value='ko')
         
-        # 단일 통합 임시 폴더 제어 (`Priconne_Extraction_Tools_(Portable)_TEMP`)
-        self.app_temp_dir = Path(tempfile.gettempdir()) / 'Priconne_Extraction_Tools_(Portable)_TEMP'
+        # 프로세스별 세션 격리 임시 폴더 제어 (`Priconne_Extraction_Tools_(Portable)_TEMP/session_{pid}`)
+        self._base_temp_dir = Path(tempfile.gettempdir()) / 'Priconne_Extraction_Tools_(Portable)_TEMP'
+        self.app_temp_dir = self._base_temp_dir / f"session_{os.getpid()}"
         
         # 모든 모듈이 공유하는 어바웃 정보
         self.about_info = {
@@ -85,7 +87,7 @@ class AppContainer:
 
 
     def _reset_app_temp_dir(self) -> None:
-        """임시 폴더를 안전하게 지우고 새로 생성합니다. 현재 사용 중인 파일은 무시합니다."""
+        """현재 프로세스 세션 전용 임시 폴더를 생성합니다."""
         if self.app_temp_dir.exists():
             shutil.rmtree(self.app_temp_dir, ignore_errors=True)
         try:
@@ -94,9 +96,14 @@ class AppContainer:
             logging.warning("Failed to create unified temp folder: %s", e)
 
     def cleanup_shared(self) -> None:
-        """앱 종료 시 등록된 공통 자원 및 통합 임시 폴더를 삭제합니다."""
+        """앱 종료 시 현재 세션 임시 폴더를 삭제합니다. 부모 폴더가 비어있으면 함께 정리합니다."""
         if self.app_temp_dir.exists():
             shutil.rmtree(self.app_temp_dir, ignore_errors=True)
+        try:
+            if self._base_temp_dir.exists() and not any(self._base_temp_dir.iterdir()):
+                self._base_temp_dir.rmdir()
+        except OSError:
+            pass
 
     def get_shared_dependencies(self) -> SharedDependencies:
         """GUI 모듈의 생성자(Controller 등)에 넘겨주기 위한 공유 의존성 번들을 반환합니다.

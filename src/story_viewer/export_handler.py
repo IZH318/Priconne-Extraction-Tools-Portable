@@ -320,208 +320,213 @@ class StoryExportHandler:
         total_failed_count = 0
         all_failed_details = []
         file_titles = self._get_file_titles()
-
-        naming_rule = selected_options.get('naming_rule', 'original')
-        file_format = selected_options.get('file_format', 'txt')
-        target_ext = f".{file_format}"
-        target_view_mode = selected_options.get('view_mode', self._view_mode_var.get())
-
-        # 1. 대상 스토리 파일 목록 산출
-        filenames_to_export: list[str] = []
-        if selected_options.get('story_data'):
-            story_data_scope = selected_options.get('story_data_scope', 'current_list')
-            if story_data_scope == 'single_file':
-                filenames_to_export = list(selected_options.get('target_filenames', []))
-            elif story_data_scope == 'current_list':
-                filenames_to_export = self._get_current_filenames()
-            elif story_data_scope == 'all_loaded':
-                filenames_to_export = self._get_loaded_filenames()
-
-        # 2. 기타 목록 태스크 정의
-        loaded_filenames = self._get_loaded_filenames()
-        search_data = self._get_search_data()
-
-        def _get_voices() -> list[str]:
-            voices = search_data.get('voices', [])
-            if voices:
-                return sorted(list(voices))
-            collected = set()
-            all_files_map = self._get_all_files()
-            for fp in all_files_map.values():
-                is_val, d, _ = StoryDataLoader.is_valid_storydata(fp)
-                if is_val and isinstance(d, dict):
-                    for sc in d.values():
-                        if isinstance(sc, dict) and 'vo' in sc:
-                            v_name = StoryDataLoader.extract_asset_name(sc['vo'])
-                            if v_name:
-                                collected.add(v_name)
-            return sorted(list(collected))
-
-        other_export_types = [
-            {'type': 'filenames', 'name_key': 'export_type_filenames', 'data_func': lambda: sorted(list(loaded_filenames)), 'file_suffix': 'filenames', 'header_key': 'export_type_filenames'},
-            {'type': 'character_names', 'name_key': 'export_type_character_names', 'data_func': lambda: sorted(search_data.get('character_names', [])), 'file_suffix': 'character_names', 'header_key': 'export_type_character_names'},
-            {'type': 'bgm_names', 'name_key': 'export_type_bgm_names', 'data_func': lambda: sorted(search_data.get('bgms', [])), 'file_suffix': 'bgm_names', 'header_key': 'export_type_bgm_names'},
-            {'type': 'background_names', 'name_key': 'export_type_background_names', 'data_func': lambda: sorted(search_data.get('backgrounds', [])), 'file_suffix': 'background_names', 'header_key': 'export_type_background_names'},
-            {'type': 'voice_names', 'name_key': 'export_type_voice_names', 'data_func': _get_voices, 'file_suffix': 'voice_names', 'header_key': 'export_type_voice_names'},
-        ]
-
-        if selected_options.get('event_list_master'):
-            server_db_info = self._get_server_db_info()
-            db_manager = self._get_db_manager()
-
-            def get_event_list(server_key: str) -> list[str]:
-                db_info = server_db_info.get(server_key)
-                if not db_info or not db_manager.db_status.get(server_key):
-                    return []
-                try:
-                    return sorted(db_helper.fetch_event_names(db_info))
-                except sqlite3.Error:
-                    return []
-
-            other_export_types.extend([
-                {'type': 'event_list_jp', 'name_key': 'export_type_event_list_jp', 'data_func': lambda: get_event_list('JP'), 'file_suffix': 'event_list_jp', 'header_key': 'export_type_event_list_jp'},
-                {'type': 'event_list_kr', 'name_key': 'export_type_event_list_kr', 'data_func': lambda: get_event_list('KR'), 'file_suffix': 'event_list_kr', 'header_key': 'export_type_event_list_kr'},
-            ])
-
-        active_other_tasks = [t for t in other_export_types if selected_options.get(t['type'])]
-
-        # 3. 안 B: 전체 작업 총합 계산 (스토리 파일 수 + 기타 목록 수)
-        total_items = (len(filenames_to_export) if selected_options.get('story_data') else 0) + len(active_other_tasks)
-        current_step = 0
         was_cancelled = False
 
-        # --- A. 스토리 데이터 추출 진행 ---
-        if selected_options.get('story_data'):
-            if not filenames_to_export:
-                no_files_msg = lang_dict.get('msgbox_no_export_files_msg', 'No story data files selected for export.')
-                export_results['story_data'] = {'success': 0, 'failed': 0, 'details': [no_files_msg]}
-            else:
-                type_name = lang_dict.get('export_type_story_data', '스토리 데이터')
-                success_count = 0
-                fail_count = 0
-                current_failed_details = []
+        try:
+            naming_rule = selected_options.get('naming_rule', 'original')
+            file_format = selected_options.get('file_format', 'txt')
+            target_ext = f".{file_format}"
+            target_view_mode = selected_options.get('view_mode', self._view_mode_var.get())
 
-                # 중복 타이틀 사전 집계 (동일 타이틀 감지 시 끝에 ({adv_id}) 추가용)
-                title_counts: dict[str, int] = {}
-                for fn in filenames_to_export:
-                    t = file_titles.get(fn, "").strip()
-                    if t and t != fn:
-                        title_counts[t] = title_counts.get(t, 0) + 1
-                duplicate_titles = {t for t, count in title_counts.items() if count > 1}
-                used_filenames: set[str] = set()
+            # 1. 대상 스토리 파일 목록 산출
+            filenames_to_export: list[str] = []
+            if selected_options.get('story_data'):
+                story_data_scope = selected_options.get('story_data_scope', 'current_list')
+                if story_data_scope == 'single_file':
+                    filenames_to_export = list(selected_options.get('target_filenames', []))
+                elif story_data_scope == 'current_list':
+                    filenames_to_export = self._get_current_filenames()
+                elif story_data_scope == 'all_loaded':
+                    filenames_to_export = self._get_loaded_filenames()
 
-                all_files = self._get_all_files()
-                for i, filename in enumerate(filenames_to_export):
+            # 2. 기타 목록 태스크 정의
+            loaded_filenames = self._get_loaded_filenames()
+            search_data = self._get_search_data()
+
+            def _get_voices() -> list[str]:
+                voices = search_data.get('voices', [])
+                if voices:
+                    return sorted(list(voices))
+                collected = set()
+                all_files_map = self._get_all_files()
+                for fp in all_files_map.values():
+                    is_val, d, _ = StoryDataLoader.is_valid_storydata(fp)
+                    if is_val and isinstance(d, dict):
+                        for sc in d.values():
+                            if isinstance(sc, dict) and 'vo' in sc:
+                                v_name = StoryDataLoader.extract_asset_name(sc['vo'])
+                                if v_name:
+                                    collected.add(v_name)
+                return sorted(list(collected))
+
+            other_export_types = [
+                {'type': 'filenames', 'name_key': 'export_type_filenames', 'data_func': lambda: sorted(list(loaded_filenames)), 'file_suffix': 'filenames', 'header_key': 'export_type_filenames'},
+                {'type': 'character_names', 'name_key': 'export_type_character_names', 'data_func': lambda: sorted(search_data.get('character_names', [])), 'file_suffix': 'character_names', 'header_key': 'export_type_character_names'},
+                {'type': 'bgm_names', 'name_key': 'export_type_bgm_names', 'data_func': lambda: sorted(search_data.get('bgms', [])), 'file_suffix': 'bgm_names', 'header_key': 'export_type_bgm_names'},
+                {'type': 'background_names', 'name_key': 'export_type_background_names', 'data_func': lambda: sorted(search_data.get('backgrounds', [])), 'file_suffix': 'background_names', 'header_key': 'export_type_background_names'},
+                {'type': 'voice_names', 'name_key': 'export_type_voice_names', 'data_func': _get_voices, 'file_suffix': 'voice_names', 'header_key': 'export_type_voice_names'},
+            ]
+
+            if selected_options.get('event_list_master'):
+                server_db_info = self._get_server_db_info()
+                db_manager = self._get_db_manager()
+
+                def get_event_list(server_key: str) -> list[str]:
+                    db_info = server_db_info.get(server_key)
+                    if not db_info or not db_manager.db_status.get(server_key):
+                        return []
+                    try:
+                        return sorted(db_helper.fetch_event_names(db_info))
+                    except sqlite3.Error:
+                        return []
+
+                other_export_types.extend([
+                    {'type': 'event_list_jp', 'name_key': 'export_type_event_list_jp', 'data_func': lambda: get_event_list('JP'), 'file_suffix': 'event_list_jp', 'header_key': 'export_type_event_list_jp'},
+                    {'type': 'event_list_kr', 'name_key': 'export_type_event_list_kr', 'data_func': lambda: get_event_list('KR'), 'file_suffix': 'event_list_kr', 'header_key': 'export_type_event_list_kr'},
+                ])
+
+            active_other_tasks = [t for t in other_export_types if selected_options.get(t['type'])]
+
+            # 3. 안 B: 전체 작업 총합 계산 (스토리 파일 수 + 기타 목록 수)
+            total_items = (len(filenames_to_export) if selected_options.get('story_data') else 0) + len(active_other_tasks)
+            current_step = 0
+
+            # --- A. 스토리 데이터 추출 진행 ---
+            if selected_options.get('story_data'):
+                if not filenames_to_export:
+                    no_files_msg = lang_dict.get('msgbox_no_export_files_msg', 'No story data files selected for export.')
+                    export_results['story_data'] = {'success': 0, 'failed': 0, 'details': [no_files_msg]}
+                else:
+                    type_name = lang_dict.get('export_type_story_data', '스토리 데이터')
+                    success_count = 0
+                    fail_count = 0
+                    current_failed_details = []
+
+                    # 중복 타이틀 사전 집계 (동일 타이틀 감지 시 끝에 ({adv_id}) 추가용)
+                    title_counts: dict[str, int] = {}
+                    for fn in filenames_to_export:
+                        t = file_titles.get(fn, "").strip()
+                        if t and t != fn:
+                            title_counts[t] = title_counts.get(t, 0) + 1
+                    duplicate_titles = {t for t, count in title_counts.items() if count > 1}
+                    used_filenames: set[str] = set()
+
+                    all_files = self._get_all_files()
+                    for i, filename in enumerate(filenames_to_export):
+                        if check_cancelled and check_cancelled():
+                            was_cancelled = True
+                            break
+
+                        current_step += 1
+                        if progress_callback:
+                            progress_callback(current_step, total_items, type_name)
+
+                        def _update_status(tn=type_name, s=success_count, f=fail_count, step=current_step, tot=total_items):
+                            self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=s, failed=f, i=step, t=tot)
+                        self._task_queue.put(ActionEvent(action=_update_status))
+
+                        filepath = all_files.get(filename)
+                        if not filepath:
+                            fail_count += 1
+                            fnf_msg = lang_dict.get('export_err_file_not_found', 'File Not Found')
+                            current_failed_details.append(f"{filename} ({fnf_msg})")
+                            continue
+
+                        is_valid, data, _ = StoryDataLoader.is_valid_storydata(filepath)
+                        if not is_valid or not isinstance(data, dict):
+                            fail_count += 1
+                            parse_err_msg = lang_dict.get('export_err_parse_error', 'Parse Error')
+                            current_failed_details.append(f"{filename} ({parse_err_msg})")
+                            continue
+
+                        out_fname = resolve_export_filename(
+                            filename, naming_rule, file_titles, target_ext, duplicate_titles=duplicate_titles
+                        )
+
+                        # 2차 충돌 안전 방어 (혹시 이미 사용된 파일명이 존재하는 경우)
+                        if out_fname in used_filenames:
+                            f_base, f_ext = os.path.splitext(out_fname)
+                            match_id = re.match(r'^storydata_(\d+)$', os.path.splitext(filename)[0])
+                            adv_id_val = match_id.group(1) if match_id else None
+                            if adv_id_val and f"({adv_id_val})" not in f_base:
+                                out_fname = f"{f_base} ({adv_id_val}){f_ext}"
+                            counter = 2
+                            while out_fname in used_filenames:
+                                out_fname = f"{f_base} ({counter}){f_ext}"
+                                counter += 1
+
+                        used_filenames.add(out_fname)
+                        output_path = os.path.join(output_folder, out_fname)
+                        try:
+                            text_to_write = format_content_for_export(data, target_view_mode, self._get_lang_dict(), file_format)
+                            with open(output_path, 'w', encoding='utf-8') as f:
+                                f.write(text_to_write)
+                            success_count += 1
+                        except (OSError, json.JSONDecodeError) as e:
+                            fail_count += 1
+                            err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
+                            current_failed_details.append(err_fmt.format(item=filename, err=e))
+
+                    export_results['story_data'] = {'success': success_count, 'failed': fail_count, 'details': current_failed_details}
+                    total_exported_count += success_count
+                    total_failed_count += fail_count
+                    all_failed_details.extend(current_failed_details)
+
+            # --- B. 기타 목록 데이터 추출 진행 ---
+            if not was_cancelled:
+                for task in active_other_tasks:
                     if check_cancelled and check_cancelled():
                         was_cancelled = True
                         break
 
                     current_step += 1
+                    task_type = task['type']
+                    type_name = lang_dict.get(task['name_key'], task_type)
+
                     if progress_callback:
                         progress_callback(current_step, total_items, type_name)
 
-                    def _update_status(tn=type_name, s=success_count, f=fail_count, step=current_step, tot=total_items):
-                        self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=s, failed=f, i=step, t=tot)
-                    self._task_queue.put(ActionEvent(action=_update_status))
-
-                    filepath = all_files.get(filename)
-                    if not filepath:
-                        fail_count += 1
-                        fnf_msg = lang_dict.get('export_err_file_not_found', 'File Not Found')
-                        current_failed_details.append(f"{filename} ({fnf_msg})")
-                        continue
-
-                    is_valid, data, _ = StoryDataLoader.is_valid_storydata(filepath)
-                    if not is_valid or not isinstance(data, dict):
-                        fail_count += 1
-                        parse_err_msg = lang_dict.get('export_err_parse_error', 'Parse Error')
-                        current_failed_details.append(f"{filename} ({parse_err_msg})")
-                        continue
-
-                    out_fname = resolve_export_filename(
-                        filename, naming_rule, file_titles, target_ext, duplicate_titles=duplicate_titles
-                    )
-
-                    # 2차 충돌 안전 방어 (혹시 이미 사용된 파일명이 존재하는 경우)
-                    if out_fname in used_filenames:
-                        f_base, f_ext = os.path.splitext(out_fname)
-                        match_id = re.match(r'^storydata_(\d+)$', os.path.splitext(filename)[0])
-                        adv_id_val = match_id.group(1) if match_id else None
-                        if adv_id_val and f"({adv_id_val})" not in f_base:
-                            out_fname = f"{f_base} ({adv_id_val}){f_ext}"
-                        counter = 2
-                        while out_fname in used_filenames:
-                            out_fname = f"{f_base} ({counter}){f_ext}"
-                            counter += 1
-
-                    used_filenames.add(out_fname)
-                    output_path = os.path.join(output_folder, out_fname)
+                    self._task_queue.put(ActionEvent(action=lambda tn=type_name: self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=0, failed=0)))
                     try:
-                        text_to_write = format_content_for_export(data, target_view_mode, self._get_lang_dict(), file_format)
-                        with open(output_path, 'w', encoding='utf-8') as f:
-                            f.write(text_to_write)
-                        success_count += 1
-                    except (OSError, json.JSONDecodeError) as e:
-                        fail_count += 1
-                        err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
-                        current_failed_details.append(err_fmt.format(item=filename, err=e))
+                        data_list = task['data_func']()
+                        if not data_list:
+                            no_data_msg = lang_dict.get('export_err_no_data', 'No data found for {name}.').format(name=type_name)
+                            export_results[task_type] = {'success': 0, 'failed': 0, 'details': [no_data_msg]}
+                            continue
 
-                export_results['story_data'] = {'success': success_count, 'failed': fail_count, 'details': current_failed_details}
-                total_exported_count += success_count
-                total_failed_count += fail_count
-                all_failed_details.extend(current_failed_details)
-
-        # --- B. 기타 목록 데이터 추출 진행 ---
-        if not was_cancelled:
-            for task in active_other_tasks:
-                if check_cancelled and check_cancelled():
-                    was_cancelled = True
-                    break
-
-                current_step += 1
-                task_type = task['type']
-                type_name = lang_dict.get(task['name_key'], task_type)
-
-                if progress_callback:
-                    progress_callback(current_step, total_items, type_name)
-
-                self._task_queue.put(ActionEvent(action=lambda tn=type_name: self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=0, failed=0)))
-                try:
-                    data_list = task['data_func']()
-                    if not data_list:
-                        no_data_msg = lang_dict.get('export_err_no_data', 'No data found for {name}.').format(name=type_name)
-                        export_results[task_type] = {'success': 0, 'failed': 0, 'details': [no_data_msg]}
-                        continue
-
-                    empty_list_msg = lang_dict.get('export_empty_list_content', '(No data found for {name})').format(name=task['file_suffix'])
-                    success, error = self._save_list_to_file(
-                        data_list, task['file_suffix'], output_folder,
-                        lang_dict.get(task['header_key'], type_name) if 'event_list' in task_type else "",
-                        empty_msg=empty_list_msg
-                    )
-                    if success:
-                        total_exported_count += 1
-                    else:
+                        empty_list_msg = lang_dict.get('export_empty_list_content', '(No data found for {name})').format(name=task['file_suffix'])
+                        success, error = self._save_list_to_file(
+                            data_list, task['file_suffix'], output_folder,
+                            lang_dict.get(task['header_key'], type_name) if 'event_list' in task_type else "",
+                            empty_msg=empty_list_msg
+                        )
+                        if success:
+                            total_exported_count += 1
+                        else:
+                            total_failed_count += 1
+                            err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
+                            all_failed_details.append(err_fmt.format(item=type_name, err=error))
+                    except (sqlite3.Error, OSError) as e:
                         total_failed_count += 1
                         err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
-                        all_failed_details.append(err_fmt.format(item=type_name, err=error))
-                except (sqlite3.Error, OSError) as e:
-                    total_failed_count += 1
-                    err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
-                    all_failed_details.append(err_fmt.format(item=type_name, err=e))
+                        all_failed_details.append(err_fmt.format(item=type_name, err=e))
+        except Exception as e:
+            total_failed_count += 1
+            err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
+            all_failed_details.append(err_fmt.format(item="Export", err=e))
+        finally:
+            # 4. 종료 처리
+            def _on_complete_ui():
+                if on_finish:
+                    on_finish()
+                self._finish_export(
+                    total_exported_count, total_failed_count, all_failed_details,
+                    was_cancelled=was_cancelled,
+                    open_folder_after=selected_options.get('open_folder_after', False),
+                    output_folder=output_folder
+                )
 
-        # 4. 종료 처리
-        def _on_complete_ui():
-            if on_finish:
-                on_finish()
-            self._finish_export(
-                total_exported_count, total_failed_count, all_failed_details,
-                was_cancelled=was_cancelled,
-                open_folder_after=selected_options.get('open_folder_after', False),
-                output_folder=output_folder
-            )
-
-        self._task_queue.put(ActionEvent(action=_on_complete_ui))
+            self._task_queue.put(ActionEvent(action=_on_complete_ui))
 
     def _finish_export(
         self,

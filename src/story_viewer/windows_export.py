@@ -418,11 +418,16 @@ class ExportWindow(tk.Toplevel):
         def _on_finish() -> None:
             self._master.after(0, progress_dialog.close)
 
+        def _run_export() -> None:
+            try:
+                self._export_func(selected_options, output_folder, _progress_cb, _check_cancelled, _on_finish)
+            finally:
+                _on_finish()
+
         thread = threading.Thread(
-            target=self._export_func,
-            args=(selected_options, output_folder, _progress_cb, _check_cancelled, _on_finish)
+            target=_run_export,
+            daemon=True
         )
-        thread.daemon = True
         thread.start()
 
         self.destroy()
@@ -606,11 +611,16 @@ class SingleExportWindow(tk.Toplevel):
         def _on_finish() -> None:
             self._master.after(0, progress_dialog.close)
 
+        def _run_export() -> None:
+            try:
+                self._export_func(selected_options, output_folder, _progress_cb, _check_cancelled, _on_finish)
+            finally:
+                _on_finish()
+
         thread = threading.Thread(
-            target=self._export_func,
-            args=(selected_options, output_folder, _progress_cb, _check_cancelled, _on_finish)
+            target=_run_export,
+            daemon=True
         )
-        thread.daemon = True
         thread.start()
 
         self.destroy()

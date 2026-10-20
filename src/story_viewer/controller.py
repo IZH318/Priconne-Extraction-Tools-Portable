@@ -500,7 +500,7 @@ class StoryViewerController(QueuePollingMixin):
         import re
         temp_all_files, invalid_files = {}, []
         file_candidates = {}
-        pattern = re.compile(r'^storydata_\d{7}\.json$')
+        pattern = re.compile(r'^storydata_\d+\.json$')
 
         if paths:
             for path in paths:

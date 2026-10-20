@@ -31,6 +31,7 @@ class SubprocessRunner:
         return subprocess.run(
             command,
             cwd=cwd,
+            stdin=subprocess.DEVNULL,
             timeout=timeout,
             capture_output=True,
             text=True,

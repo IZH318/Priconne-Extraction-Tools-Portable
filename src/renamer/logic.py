@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import shutil
 import sqlite3
 import contextlib
 import hashlib
@@ -229,7 +230,8 @@ class RenameHashedFile:
                         
                         if new_filename:
                             new_filepath = self.get_unique_filename(self.base_path / new_filename)
-                            Path(file_path).rename(new_filepath)
+                            new_filepath.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(file_path), str(new_filepath))
                             self.processed_count_check += 1
                             try:
                                 relative_file_path = Path(file_path).relative_to(self.base_path)
@@ -313,7 +315,7 @@ class RenameHashedFile:
                 new_filepath = self.get_unique_filename(new_filepath)
                 
             try:
-                Path(file_path).rename(new_filepath)
+                shutil.move(str(file_path), str(new_filepath))
                 try:
                     relative_file_path = Path(file_path).relative_to(self.base_path)  # 로그에 표시할 상대 경로
                 except ValueError:
@@ -336,21 +338,21 @@ class RenameHashedFile:
                 md5_hash.update(chunk)
         return xxhash64_hash.hexdigest().lower(), md5_hash.hexdigest().lower()
 
-    def calculate_md5(self, file_path: str) -> hashlib._Hash:
-        """파일을 4KB 청크 단위로 읽어 메모리 효율적으로 MD5 해시를 계산합니다."""
+    def calculate_md5(self, file_path: str) -> str:
+        """파일을 청크 단위로 읽어 메모리 효율적으로 MD5 해시 문자열을 계산합니다."""
         md5_hash = hashlib.md5()
         with open(file_path, "rb") as file:
             for chunk in iter(lambda: file.read(HASH_CHUNK_SIZE), b""):
                 md5_hash.update(chunk)
-        return md5_hash
+        return md5_hash.hexdigest().lower()
 
-    def calculate_xxhash64(self, file_path: str) -> Any:
-        """파일을 4KB 청크 단위로 읽어 메모리 효율적으로 xxHash64 해시를 계산합니다."""
+    def calculate_xxhash64(self, file_path: str) -> str:
+        """파일을 청크 단위로 읽어 메모리 효율적으로 xxHash64 해시 문자열을 계산합니다."""
         xxhash64_hash = xxhash.xxh64()
         with open(file_path, "rb") as file:
             for chunk in iter(lambda: file.read(HASH_CHUNK_SIZE), b""):
                 xxhash64_hash.update(chunk)
-        return xxhash64_hash
+        return xxhash64_hash.hexdigest().lower()
 
     def get_all_files_in_folders(self, target_folders: Sequence[str]) -> list[str]:
         """지정된 모든 폴더와 그 하위 폴더를 재귀적으로 탐색하여 SHA1 형식의 파일 목록을 반환합니다."""

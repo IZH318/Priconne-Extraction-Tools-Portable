@@ -742,23 +742,27 @@ def resolve_all_servers_parallel(
 
     try:
         max_workers = min(len(all_tasks), os.cpu_count() or 4)
+        resolved_results = []
         with ProcessPoolExecutor(max_workers=max_workers) as pool:
             futures = [pool.submit(resolve_single_table_worker, task) for task in all_tasks]
             for future in as_completed(futures):
                 s_key, t_key, base_tbl, best_tbl, col_map = future.result()
                 if progress_callback:
                     progress_callback(s_key, t_key)
+                resolved_results.append((s_key, t_key, best_tbl, col_map))
+
+        # 모든 future 작업이 성공적으로 완료된 후 원자적으로(Atomic) 일괄 반영
+        for s_key, t_key, best_tbl, col_map in resolved_results:
+            if best_tbl and s_key in server_db_info:
+                s_info = server_db_info[s_key]
+                s_info[t_key] = best_tbl
                 
-                if best_tbl and s_key in server_db_info:
-                    s_info = server_db_info[s_key]
-                    s_info[t_key] = best_tbl
-                    
-                    target_col_keys = COLUMN_MAPPINGS.get(t_key, [])
-                    for col_k in target_col_keys:
-                        orig_col_val = s_info.get(col_k)
-                        if orig_col_val and orig_col_val in col_map:
-                            s_info[col_k] = col_map[orig_col_val]
-                            
+                target_col_keys = COLUMN_MAPPINGS.get(t_key, [])
+                for col_k in target_col_keys:
+                    orig_col_val = s_info.get(col_k)
+                    if orig_col_val and orig_col_val in col_map:
+                        s_info[col_k] = col_map[orig_col_val]
+                        
         logging.info("Successfully executed parallel schema resolution across all servers.")
     except Exception as e:
         logging.warning(f"ProcessPoolExecutor parallel resolution failed ({e}), falling back to sequential: {e}")
@@ -776,49 +780,27 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
     이 함수는 server_info를 직접 제자리(in-place)에서 수정합니다.
     """
     server_key = server_info.get("version_key", "Unknown")
-    # 이미 해시(예: 'v1_...')로 시작한다면 무시
-    event_list_table = server_info.get("event_list_table", "")
-    if event_list_table.startswith("v1_"):
+    # 모든 대상 테이블이 이미 해시(예: 'v1_...')로 시작한다면 완료된 것으로 간주
+    all_table_keys = [
+        "event_list_table", "event_details_table", "birthday_table", "quest_table",
+        "story_detail_table", "dear_story_detail_table", "tower_story_detail_table",
+        "alchemy_story_detail_table", "sekai_top_data_table", "sekai_top_story_data_table",
+        "event_top_adv_table", "unit_table", "hatsune_boss_table", "hatsune_special_battle_table",
+        "legion_special_battle_table", "byway_battle_quest_data_table", "byway_quest_data_table"
+    ]
+    for tbl_prefix in BASELINE_TABLES_LIST:
+        all_table_keys.append(f"{tbl_prefix}_table")
+
+    unresolved_tables = [
+        k for k in all_table_keys 
+        if server_info.get(k) and not server_info.get(k, "").startswith("v1_")
+    ]
+
+    if not unresolved_tables:
         if progress_callback:
-            progress_callback(server_key, "event_list_table")
-            progress_callback(server_key, "event_details_table")
-            progress_callback(server_key, "birthday_table")
-            progress_callback(server_key, "quest_table")
-            progress_callback(server_key, "story_detail_table")
-            progress_callback(server_key, "dear_story_detail_table")
-            progress_callback(server_key, "tower_story_detail_table")
-            if server_info.get("alchemy_story_detail_table"):
-                progress_callback(server_key, "alchemy_story_detail_table")
-            if server_info.get("sekai_top_data_table"):
-                progress_callback(server_key, "sekai_top_data_table")
-            if server_info.get("sekai_top_story_data_table"):
-                progress_callback(server_key, "sekai_top_story_data_table")
-            if server_info.get("event_top_adv_table"):
-                progress_callback(server_key, "event_top_adv_table")
-            if server_info.get("unit_table"):
-                progress_callback(server_key, "unit_table")
-            if server_info.get("hatsune_boss_table"):
-                progress_callback(server_key, "hatsune_boss_table")
-            if server_info.get("hatsune_special_battle_table"):
-                progress_callback(server_key, "hatsune_special_battle_table")
-            if server_info.get("legion_special_battle_table"):
-                progress_callback(server_key, "legion_special_battle_table")
-            if server_info.get("byway_battle_quest_data_table"):
-                progress_callback(server_key, "byway_battle_quest_data_table")
-            if server_info.get("byway_quest_data_table"):
-                progress_callback(server_key, "byway_quest_data_table")
-            for tbl_prefix in [
-                "alchemy_story_detail", "hatsune_scenario_boss", "hatsune_boss_v2", "hatsune_sp_battle_v2",
-                "hatsune_ex_battle", "event_cooking_minigame", "event_cooking_reaction", "event_museum_minigame",
-                "event_riddle_minigame", "event_story_v2",
-                "event_secret_minigame", "event_collab_minigame", "event_vampire_minigame", "event_crybaby_minigame",
-                "event_summer_minigame", "event_liberate_minigame", "event_hatsune_dream_minigame", "event_christmas_minigame",
-                "event_coaster_minigame", "event_nebia_minigame", "event_taiso_minigame", "event_alces_minigame",
-                "event_trip_minigame", "event_house_minigame", "event_diary_minigame", "event_opening_adv",
-                "event_boss_battle_v3", "event_remember_story", "hatsune_present", "hatsune_quest"
-            ]:
-                if server_info.get(f"{tbl_prefix}_table"):
-                    progress_callback(server_key, f"{tbl_prefix}_table")
+            for k in all_table_keys:
+                if server_info.get(k):
+                    progress_callback(server_key, k)
         return
 
     if not os.path.exists(baseline_path):
@@ -839,18 +821,20 @@ def resolve_server_config(baseline_path: str, latest_path: str, server_info: dic
         extractor = get_extractor(baseline_path)
 
         # 1. 이벤트 목록 테이블 매핑
+        event_list_table = server_info.get("event_list_table", "")
         if progress_callback:
             progress_callback(server_key, "event_list_table")
-        obf_list_table, list_col_map = extractor._find_and_deobfuscate_table(event_list_table)
-        server_info["event_list_table"] = obf_list_table
-        
-        event_name_col_list = server_info.get("event_name_col_list")
-        if event_name_col_list and event_name_col_list in list_col_map:
-            server_info["event_name_col_list"] = list_col_map[event_name_col_list]
+        if event_list_table and not event_list_table.startswith("v1_"):
+            obf_list_table, list_col_map = extractor._find_and_deobfuscate_table(event_list_table)
+            server_info["event_list_table"] = obf_list_table
+            
+            event_name_col_list = server_info.get("event_name_col_list")
+            if event_name_col_list and event_name_col_list in list_col_map:
+                server_info["event_name_col_list"] = list_col_map[event_name_col_list]
 
-        event_group_id_col_list = server_info.get("event_group_id_col_list")
-        if event_group_id_col_list and event_group_id_col_list in list_col_map:
-            server_info["event_group_id_col_list"] = list_col_map[event_group_id_col_list]
+            event_group_id_col_list = server_info.get("event_group_id_col_list")
+            if event_group_id_col_list and event_group_id_col_list in list_col_map:
+                server_info["event_group_id_col_list"] = list_col_map[event_group_id_col_list]
 
         # 2. 이벤트 상세 정보 테이블 매핑
         if progress_callback:

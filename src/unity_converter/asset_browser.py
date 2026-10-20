@@ -197,16 +197,17 @@ class AssetBrowserWindow(tk.Toplevel):
             error = None
             try:
                 if type_name in ('Texture2D', 'Sprite', 'Texture2DArray'):
-                    self._export_image(data, name)
+                    self._export_image(data, name, obj.path_id)
                 elif type_name == 'AudioClip':
-                    self._export_audio(data, name)
+                    self._export_audio(data, name, obj.path_id)
                 elif type_name == 'TextAsset':
-                    self._export_text(data, name)
+                    self._export_text(data, name, obj.path_id)
                 else:
                     self._export_raw(obj, data, name, type_name)
-            except (OSError, ValueError, TypeError) as e:
+            except Exception as e:
                 error = e
-            self.after(0, lambda: on_done(error))
+            finally:
+                self.after(0, lambda: on_done(error))
 
         def on_done(error):
             try:
@@ -227,33 +228,40 @@ class AssetBrowserWindow(tk.Toplevel):
         """OS 기본 프로그램으로 파일을 엽니다."""
         open_with_default_app(file_path)
 
-    def _export_image(self, data: Any, name: str) -> None:
+    def _get_preview_file_path(self, name: str, path_id: int, ext: str) -> str:
+        """미리보기 파일의 고유한 격리 경로를 생성하여 반환합니다."""
+        import time
+        safe_name = self._sanitize_name(name) or f"asset_{path_id}"
+        sub_dir = os.path.join(self._preview_temp_dir, f"asset_{path_id}_{int(time.time() * 1000)}")
+        os.makedirs(sub_dir, exist_ok=True)
+        return os.path.join(sub_dir, f"{safe_name}{ext}")
+
+    def _export_image(self, data: Any, name: str, path_id: int) -> None:
         """이미지 에셋을 .png로 추출하여 OS 기본 프로그램으로 엽니다."""
         img = data.image
         if img is None:
             raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
 
-        temp_path = os.path.join(self._preview_temp_dir, f"{self._sanitize_name(name)}.png")
+        temp_path = self._get_preview_file_path(name, path_id, ".png")
         img.save(temp_path)
         self._open_with_os(temp_path)
 
-    def _export_audio(self, data: Any, name: str) -> None:
+    def _export_audio(self, data: Any, name: str, path_id: int) -> None:
         """오디오 에셋을 추출하여 OS 기본 프로그램으로 엽니다."""
         if not data.samples:
             raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
 
-        safe_name = self._sanitize_name(name)
         for sample_name, audio_data in data.samples.items():
             _, ext = os.path.splitext(sample_name)
             if not ext:
                 ext = ".wav"
-            temp_path = os.path.join(self._preview_temp_dir, f"{safe_name}{ext}")
+            temp_path = self._get_preview_file_path(name, path_id, ext)
             with open(temp_path, "wb") as f:
                 f.write(audio_data)
             self._open_with_os(temp_path)
             break  # 첫 번째 샘플만
 
-    def _export_text(self, data: Any, name: str) -> None:
+    def _export_text(self, data: Any, name: str, path_id: int) -> None:
         """텍스트 에셋을 .txt로 추출하여 OS 기본 프로그램으로 엽니다."""
         text_content = data.m_Script
         if isinstance(text_content, bytes):
@@ -263,7 +271,7 @@ class AssetBrowserWindow(tk.Toplevel):
         else:
             text_content = str(text_content).encode('utf-8')
 
-        temp_path = os.path.join(self._preview_temp_dir, f"{self._sanitize_name(name)}.txt")
+        temp_path = self._get_preview_file_path(name, path_id, ".txt")
         with open(temp_path, "wb") as f:
             f.write(text_content)
         self._open_with_os(temp_path)
@@ -274,7 +282,7 @@ class AssetBrowserWindow(tk.Toplevel):
         if ext is None:
             ext = ".bin"
 
-        temp_path = os.path.join(self._preview_temp_dir, f"{self._sanitize_name(name)}{ext}")
+        temp_path = self._get_preview_file_path(name, obj.path_id, ext)
 
         # raw bytes 추출
         raw_data = obj.get_raw_data()

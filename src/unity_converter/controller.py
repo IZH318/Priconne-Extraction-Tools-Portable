@@ -449,8 +449,25 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
                 for future in concurrent.futures.as_completed(future_to_path):
                     if self.cancel_token.is_cancelled:
                         self.log_queue.put(LogEvent(target="", key='extraction_cancelled', level='ERROR'))
+                        for p in getattr(executor, '_processes', {}).values():
+                            try:
+                                p.terminate()
+                            except Exception:
+                                pass
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
+                    try:
+                        exc = future.exception()
+                        if exc:
+                            file_p = future_to_path[future]
+                            b_name = os.path.basename(file_p)
+                            self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(exc)}))
+                            self.completion_queue.put(CompletionEvent(success=False, result=0))
+                    except Exception as future_err:
+                        file_p = future_to_path.get(future, "unknown")
+                        b_name = os.path.basename(file_p)
+                        self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(future_err)}))
+                        self.completion_queue.put(CompletionEvent(success=False, result=0))
         except Exception as e:
             logging.error("ProcessPoolExecutor encountered an unexpected failure: %s", e)
         finally:

@@ -19,13 +19,11 @@ def write_error_log(app_info: dict[str, Any], context_name: str, exc_type: type[
     타임스탬프가 포함된 새 로그 파일을 생성하고 오류 상세 정보를 표준 형식으로 기록합니다.
     생성된 로그 파일의 절대 경로를 반환합니다.
     """
-    # 실행 경로: 메인 실행 파일(main.py)의 절대 경로를 우선 확보
-    if sys.argv and sys.argv[0]:
-        exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
-    else:
-        exec_path = os.path.abspath(os.getcwd())
+    from src.utils.base_path import get_application_base_path
+    base_path = get_application_base_path()
+    exec_path = str(base_path)
     
-    log_dir = Path(exec_path) / "logs"
+    log_dir = base_path / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.now()

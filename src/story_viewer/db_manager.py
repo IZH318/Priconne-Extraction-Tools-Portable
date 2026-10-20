@@ -142,124 +142,137 @@ class StoryDBManager:
             import urllib.request
             import json
             import logging
-            
-            local_version_path = os.path.join(root_dir, "version.json")
-            local_version_data = {}
-            if os.path.exists(local_version_path):
-                try:
-                    with open(local_version_path, "r", encoding="utf-8") as f:
-                        local_version_data = json.load(f)
-                except Exception:
-                    pass
-                    
-            common_config = self._server_db_info.get("Common", {})
-            api_url = common_config.get("version_api_url", "https://api.github.com/repos/Expugn/priconne-database/contents/version.json")
-            raw_url = common_config.get("version_raw_url", "https://raw.githubusercontent.com/Expugn/priconne-database/master/version.json")
-
-            remote_version_data = {}
             try:
-                # 1순위: GitHub API (캐시 무시, 항상 최신 버전 보장)
-                api_req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(api_req, timeout=5) as response:
-                    import base64
-                    data = json.loads(response.read().decode('utf-8'))
-                    remote_version_data = json.loads(base64.b64decode(data['content']).decode('utf-8'))
-            except Exception:
+                local_version_path = os.path.join(root_dir, "version.json")
+                local_version_data = {}
+                if os.path.exists(local_version_path):
+                    try:
+                        with open(local_version_path, "r", encoding="utf-8") as f:
+                            local_version_data = json.load(f)
+                    except Exception:
+                        pass
+                        
+                common_config = self._server_db_info.get("Common", {})
+                api_url = common_config.get("version_api_url", "https://api.github.com/repos/Expugn/priconne-database/contents/version.json")
+                raw_url = common_config.get("version_raw_url", "https://raw.githubusercontent.com/Expugn/priconne-database/master/version.json")
+
+                remote_version_data = {}
                 try:
-                    # 2순위: Raw URL (API 제한 시 fallback, 5분 캐시 있음)
-                    req = urllib.request.Request(raw_url, headers={'User-Agent': 'Mozilla/5.0'})
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        remote_version_data = json.loads(response.read().decode('utf-8'))
-                except Exception as e:
-                    log_msg = lang_dict.get('log_remote_version_fail', 'Failed to check remote version.json: {e}').format(e=e)
-                    logging.warning(log_msg)
+                    # 1순위: GitHub API (캐시 무시, 항상 최신 버전 보장)
+                    api_req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(api_req, timeout=5) as response:
+                        import base64
+                        data = json.loads(response.read().decode('utf-8'))
+                        remote_version_data = json.loads(base64.b64decode(data['content']).decode('utf-8'))
+                except Exception:
+                    try:
+                        # 2순위: Raw URL (API 제한 시 fallback, 5분 캐시 있음)
+                        req = urllib.request.Request(raw_url, headers={'User-Agent': 'Mozilla/5.0'})
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            remote_version_data = json.loads(response.read().decode('utf-8'))
+                    except Exception as e:
+                        log_msg = lang_dict.get('log_remote_version_fail', 'Failed to check remote version.json: {e}').format(e=e)
+                        logging.warning(log_msg)
 
-            _safe_update_ui(val=10)
+                _safe_update_ui(val=10)
 
-            missing_db_files = [] # 누락 메시지용 문자열 리스트
-            downloads_list = []   # (url, dest_path, dest_filename) 튜플 리스트
-            
-            from .schema_resolver import resolve_server_config, COLUMN_MAPPINGS
-            
-            tag_missing = lang_dict.get('tag_missing', '[Missing] ')
-            tag_update = lang_dict.get('tag_update', '[Update] ')
-            is_feature_completely_unavailable = False
-            
-            servers = [s for s, i in self._server_db_info.items() if isinstance(i, dict) and 'db_path' in i]
-            # Calculate total tables across servers dynamically
-            total_steps = 0
-            for s, i in self._server_db_info.items():
-                if isinstance(i, dict) and 'db_path' in i:
-                    total_steps += sum(1 for t in COLUMN_MAPPINGS if i.get(t))
-            total_steps = max(1, total_steps)
-            step_size = 90 / total_steps
-            current_progress = 10
-            
-            def on_table_progress(server_key: str, table_key: str) -> None:
-                nonlocal current_progress
-                current_progress += step_size
-                fmt_str = lang_dict.get('db_parsing_table', '{server} schema resolved: {table}')
-                msg = fmt_str.format(server=server_key, table=table_key)
-                _safe_update_ui(val=current_progress, text=msg)
-            
-            for server, info in self._server_db_info.items():
-                if not isinstance(info, dict) or 'db_path' not in info:
-                    continue
+                missing_db_files = [] # 누락 메시지용 문자열 리스트
+                downloads_list = []   # (url, dest_path, dest_filename) 튜플 리스트
                 
-                db_path = os.path.join(root_dir, info['db_path'])
-                b_default_fname = (
-                    info.get('baseline_dbs', {}).get('default', {}).get('db_path', '')
-                    if isinstance(info.get('baseline_dbs'), dict)
-                    else ''
-                )
-                baseline_path = os.path.join(src_dir, b_default_fname or info.get('baseline_db_path', ''))
+                from .schema_resolver import resolve_server_config, COLUMN_MAPPINGS
                 
-                # Baseline 확인 (단일 및 다중 기준점 전수 검사)
-                baseline_dbs = info.get('baseline_dbs')
-                if isinstance(baseline_dbs, dict) and baseline_dbs:
-                    for b_key, b_item in baseline_dbs.items():
-                        b_fname = b_item.get('db_path', '')
-                        b_url = b_item.get('db_url', '')
-                        b_full_path = os.path.join(src_dir, b_fname)
-                        if b_fname and not os.path.exists(b_full_path):
-                            missing_db_files.append(f"{tag_missing}src/{b_fname}")
-                            if b_url:
-                                downloads_list.append((b_url, b_full_path, b_fname))
-                else:
-                    if not os.path.exists(baseline_path):
-                        missing_db_files.append(f"{tag_missing}src/{info.get('baseline_db_path', '')}")
-                        downloads_list.append((info.get('baseline_db_url', ''), baseline_path, info.get('baseline_db_path', '')))
+                tag_missing = lang_dict.get('tag_missing', '[Missing] ')
+                tag_update = lang_dict.get('tag_update', '[Update] ')
+                is_feature_completely_unavailable = False
+                
+                servers = [s for s, i in self._server_db_info.items() if isinstance(i, dict) and 'db_path' in i]
+                # Calculate total tables across servers dynamically
+                total_steps = 0
+                for s, i in self._server_db_info.items():
+                    if isinstance(i, dict) and 'db_path' in i:
+                        total_steps += sum(1 for t in COLUMN_MAPPINGS if i.get(t))
+                total_steps = max(1, total_steps)
+                step_size = 90 / total_steps
+                current_progress = 10
+                
+                def on_table_progress(server_key: str, table_key: str) -> None:
+                    nonlocal current_progress
+                    current_progress += step_size
+                    fmt_str = lang_dict.get('db_parsing_table', '{server} schema resolved: {table}')
+                    msg = fmt_str.format(server=server_key, table=table_key)
+                    _safe_update_ui(val=current_progress, text=msg)
+                
+                for server, info in self._server_db_info.items():
+                    if not isinstance(info, dict) or 'db_path' not in info:
+                        continue
                     
-                # 최신 DB 확인 및 버전 비교
-                needs_latest = False
-                if not os.path.exists(db_path):
-                    needs_latest = True
-                    missing_db_files.append(f"{tag_missing}{info['db_path']}")
-                else:
-                    v_key = info.get('version_key', '')
-                    if v_key and remote_version_data.get(v_key):
-                        remote_v = remote_version_data[v_key].get('version', 0)
-                        local_v = local_version_data.get(v_key, {}).get('version', 0)
-                        if remote_v != 0 and remote_v != local_v:
-                            needs_latest = True
-                            missing_db_files.append(f"{tag_update}{info['db_path']}")
-                
-                if needs_latest:
-                    downloads_list.append((info.get('db_url', ''), db_path, info['db_path']))
-                
-                # 다운로드 중이 아니더라도, 취소 시 사용 가능한 DB(없으면 baseline)로 기능 사용 가능 여부 확인
-                has_fallback = os.path.isfile(baseline_path)
-                self.db_status[server] = os.path.exists(db_path)
+                    db_path = os.path.join(root_dir, info['db_path'])
+                    b_default_fname = (
+                        info.get('baseline_dbs', {}).get('default', {}).get('db_path', '')
+                        if isinstance(info.get('baseline_dbs'), dict)
+                        else ''
+                    )
+                    baseline_path = os.path.join(src_dir, b_default_fname or info.get('baseline_db_path', ''))
                     
-                if not has_fallback:
-                    is_feature_completely_unavailable = True
+                    # Baseline 확인 (단일 및 다중 기준점 전수 검사)
+                    baseline_dbs = info.get('baseline_dbs')
+                    if isinstance(baseline_dbs, dict) and baseline_dbs:
+                        for b_key, b_item in baseline_dbs.items():
+                            b_fname = b_item.get('db_path', '')
+                            b_url = b_item.get('db_url', '')
+                            b_full_path = os.path.join(src_dir, b_fname)
+                            if b_fname and not os.path.exists(b_full_path):
+                                missing_db_files.append(f"{tag_missing}src/{b_fname}")
+                                if b_url:
+                                    downloads_list.append((b_url, b_full_path, b_fname))
+                    else:
+                        if not os.path.exists(baseline_path):
+                            missing_db_files.append(f"{tag_missing}src/{info.get('baseline_db_path', '')}")
+                            downloads_list.append((info.get('baseline_db_url', ''), baseline_path, info.get('baseline_db_path', '')))
+                        
+                    # 최신 DB 확인 및 버전 비교
+                    needs_latest = False
+                    if not os.path.exists(db_path):
+                        needs_latest = True
+                        missing_db_files.append(f"{tag_missing}{info['db_path']}")
+                    else:
+                        v_key = info.get('version_key', '')
+                        if v_key and remote_version_data.get(v_key):
+                            remote_v = remote_version_data[v_key].get('version', 0)
+                            local_v = local_version_data.get(v_key, {}).get('version', 0)
+                            if remote_v != 0 and remote_v != local_v:
+                                needs_latest = True
+                                missing_db_files.append(f"{tag_update}{info['db_path']}")
+                    
+                    if needs_latest:
+                        downloads_list.append((info.get('db_url', ''), db_path, info['db_path']))
+                    
+                    # 다운로드 중이 아니더라도, 취소 시 사용 가능한 DB(없으면 baseline)로 기능 사용 가능 여부 확인
+                    has_fallback = os.path.isfile(baseline_path)
+                    self.db_status[server] = os.path.exists(db_path)
+                        
+                    if not has_fallback:
+                        is_feature_completely_unavailable = True
 
-            # 모든 서버의 파일 상태 및 버전 확인 완료 후, 멀티프로세스 병렬로 스키마 일괄 역난독화 분석 실행
-            from .schema_resolver import resolve_all_servers_parallel
-            resolve_all_servers_parallel(self._server_db_info, root_dir, src_dir, progress_callback=on_table_progress)
-            _safe_update_ui(val=100)
+                # 모든 서버의 파일 상태 및 버전 확인 완료 후, 멀티프로세스 병렬로 스키마 일괄 역난독화 분석 실행
+                from .schema_resolver import resolve_all_servers_parallel
+                resolve_all_servers_parallel(self._server_db_info, root_dir, src_dir, progress_callback=on_table_progress)
+                _safe_update_ui(val=100)
 
-            self._task_queue.put(ActionEvent(action=lambda: self._on_check_complete(top, downloads_list, remote_version_data, local_version_path, missing_db_files, on_ready, lang_dict, is_feature_completely_unavailable)))
+                self._task_queue.put(ActionEvent(action=lambda: self._on_check_complete(top, downloads_list, remote_version_data, local_version_path, missing_db_files, on_ready, lang_dict, is_feature_completely_unavailable)))
+            except Exception as e:
+                logging.error(f"Unexpected error in _check_thread: {e}", exc_info=True)
+                def _handle_check_error():
+                    try:
+                        if top.winfo_exists():
+                            top.grab_release()
+                            top.destroy()
+                    except (tk.TclError, Exception):
+                        pass
+                    self._view.set_action_buttons_state("normal" if self._get_all_files() else "disabled")
+                    if on_ready:
+                        on_ready()
+                self._task_queue.put(ActionEvent(action=_handle_check_error))
 
         threading.Thread(target=_check_thread, daemon=True).start()
 
@@ -400,32 +413,32 @@ class StoryDBManager:
                         total_size = response.getheader('content-length')
                         total_size = int(total_size) if total_size else 0
                         downloaded = 0
-                    temp_dest_path = f"{dest_path}.tmp"
-                    try:
-                        with open(temp_dest_path, 'wb') as out_file:
-                            while True:
-                                chunk = response.read(16 * 1024)
-                                if not chunk:
-                                    break
-                                out_file.write(chunk)
-                                downloaded += len(chunk)
-                                file_prog = (downloaded / total_size * 100) if total_size > 0 else 100
-                                overall_prog = ((file_idx * 100) + file_prog) / max(1, total_files)
-                                _safe_download_update(overall_prog)
-                                
-                        # 다운로드된 파일이 유효한 SQLite DB인지 무결성 검증
-                        with open(temp_dest_path, 'rb') as db_file:
-                            header = db_file.read(16)
-                        if header != _SQLITE_MAGIC:
-                            raise DatabaseIntegrityError(fname, "header mismatch")
+                        temp_dest_path = f"{dest_path}.tmp"
+                        try:
+                            with open(temp_dest_path, 'wb') as out_file:
+                                while True:
+                                    chunk = response.read(16 * 1024)
+                                    if not chunk:
+                                        break
+                                    out_file.write(chunk)
+                                    downloaded += len(chunk)
+                                    file_prog = (downloaded / total_size * 100) if total_size > 0 else 100
+                                    overall_prog = ((file_idx * 100) + file_prog) / max(1, total_files)
+                                    _safe_download_update(overall_prog)
+                                    
+                            # 다운로드된 파일이 유효한 SQLite DB인지 무결성 검증
+                            with open(temp_dest_path, 'rb') as db_file:
+                                header = db_file.read(16)
+                            if header != _SQLITE_MAGIC:
+                                raise DatabaseIntegrityError(fname, "header mismatch")
 
-                        os.replace(temp_dest_path, dest_path)
-                    finally:
-                        if os.path.exists(temp_dest_path):
-                            try:
-                                os.remove(temp_dest_path)
-                            except OSError:
-                                pass
+                            os.replace(temp_dest_path, dest_path)
+                        finally:
+                            if os.path.exists(temp_dest_path):
+                                try:
+                                    os.remove(temp_dest_path)
+                                except OSError:
+                                    pass
                 
                 # 모든 다운로드가 성공적으로 완료된 후 version.json 업데이트
                 if remote_version_data:
@@ -433,7 +446,7 @@ class StoryDBManager:
                         json.dump(remote_version_data, f, ensure_ascii=False, indent=4)
                         
                 self._task_queue.put(ActionEvent(action=lambda: self._on_download_success(top, on_ready)))
-            except (OSError, DatabaseIntegrityError) as e:
+            except (OSError, DatabaseIntegrityError, Exception) as e:
                 self._task_queue.put(ActionEvent(action=lambda err=e: self._on_download_error(top, err)))
                 
         t = threading.Thread(target=_download_thread, daemon=True)
