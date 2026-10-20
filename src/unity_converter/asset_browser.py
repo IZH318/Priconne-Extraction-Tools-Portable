@@ -196,12 +196,22 @@ class AssetBrowserWindow(tk.Toplevel):
         def export_worker():
             error = None
             try:
-                if type_name in ('Texture2D', 'Sprite', 'Texture2DArray'):
+                if type_name in ('Texture2D', 'Sprite'):
                     self._export_image(data, name, obj.path_id)
+                elif type_name == 'Texture2DArray':
+                    self._export_texture2darray(data, name, obj.path_id)
                 elif type_name == 'AudioClip':
                     self._export_audio(data, name, obj.path_id)
                 elif type_name == 'TextAsset':
                     self._export_text(data, name, obj.path_id)
+                elif type_name == 'Font':
+                    self._export_font(data, name, obj.path_id)
+                elif type_name == 'Mesh':
+                    self._export_mesh(data, name, obj.path_id)
+                elif type_name == 'Shader':
+                    self._export_shader(data, name, obj.path_id)
+                elif type_name == 'MonoBehaviour':
+                    self._export_monobehaviour(obj, data, name)
                 else:
                     self._export_raw(obj, data, name, type_name)
             except Exception as e:
@@ -246,6 +256,61 @@ class AssetBrowserWindow(tk.Toplevel):
         img.save(temp_path)
         self._open_with_os(temp_path)
 
+    def _export_texture2darray(self, data: Any, name: str, path_id: int) -> None:
+        """Texture2DArray 에셋의 첫 번째 레이어를 .png로 추출하여 OS 기본 프로그램으로 엽니다."""
+        images = getattr(data, 'images', None)
+        if not images:
+            raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
+        temp_path = self._get_preview_file_path(f"{name}_0", path_id, ".png")
+        images[0].save(temp_path)
+        self._open_with_os(temp_path)
+
+    def _export_font(self, data: Any, name: str, path_id: int) -> None:
+        """Font 에셋을 .ttf 또는 .otf로 추출하여 OS 기본 프로그램으로 엽니다."""
+        if not getattr(data, 'm_FontData', None):
+            raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
+        font_bytes = bytes(data.m_FontData)
+        ext = ".otf" if font_bytes[:4] == b"OTTO" else ".ttf"
+        temp_path = self._get_preview_file_path(name, path_id, ext)
+        with open(temp_path, "wb") as f:
+            f.write(font_bytes)
+        self._open_with_os(temp_path)
+
+    def _export_mesh(self, data: Any, name: str, path_id: int) -> None:
+        """Mesh 에셋을 Wavefront OBJ 파일로 추출하여 OS 기본 프로그램으로 엽니다."""
+        obj_text = data.export()
+        if not obj_text:
+            raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
+        temp_path = self._get_preview_file_path(name, path_id, ".obj")
+        with open(temp_path, "w", encoding="utf-8", newline="") as f:
+            f.write(obj_text)
+        self._open_with_os(temp_path)
+
+    def _export_shader(self, data: Any, name: str, path_id: int) -> None:
+        """Shader 에셋을 .txt 텍스트 파일로 추출하여 OS 기본 프로그램으로 엽니다."""
+        shader_text = data.export()
+        if not shader_text:
+            raise ValueError(self.lang_dict.get('asset_no_data', 'No data.'))
+        temp_path = self._get_preview_file_path(name, path_id, ".txt")
+        with open(temp_path, "w", encoding="utf-8", newline="") as f:
+            f.write(shader_text)
+        self._open_with_os(temp_path)
+
+    def _export_monobehaviour(self, obj: Any, data: Any, name: str) -> None:
+        """MonoBehaviour 에셋을 포맷팅된 JSON 또는 바이너리로 추출하여 OS 기본 프로그램으로 엽니다."""
+        import json
+        try:
+            tree = obj.parse_as_dict()
+            export_bytes = json.dumps(tree, indent=4, ensure_ascii=False, default=str).encode('utf-8')
+            ext = ".json"
+        except Exception:
+            export_bytes = obj.get_raw_data()
+            ext = ".bin"
+        temp_path = self._get_preview_file_path(name, obj.path_id, ext)
+        with open(temp_path, "wb") as f:
+            f.write(export_bytes)
+        self._open_with_os(temp_path)
+
     def _export_audio(self, data: Any, name: str, path_id: int) -> None:
         """오디오 에셋을 추출하여 OS 기본 프로그램으로 엽니다."""
         if not data.samples:
@@ -262,14 +327,29 @@ class AssetBrowserWindow(tk.Toplevel):
             break  # 첫 번째 샘플만
 
     def _export_text(self, data: Any, name: str, path_id: int) -> None:
-        """텍스트 에셋을 .txt로 추출하여 OS 기본 프로그램으로 엽니다."""
+        """텍스트 에셋을 .txt 또는 StoryData JSON으로 추출하여 OS 기본 프로그램으로 엽니다."""
         text_content = data.m_Script
-        if isinstance(text_content, bytes):
-            pass  # 바이너리 그대로 저장
-        elif isinstance(text_content, str):
-            text_content = text_content.encode('utf-8')
-        else:
-            text_content = str(text_content).encode('utf-8')
+        if name.startswith('storydata_'):
+            from src.parsers.story_deserializer import StoryDataDeserializer
+            import json
+            try:
+                if isinstance(text_content, str):
+                    raw_bytes = text_content.encode('utf-8', 'surrogateescape')
+                else:
+                    raw_bytes = bytes(text_content)
+                deserialized = StoryDataDeserializer.deserialize(raw_bytes)
+                temp_path = self._get_preview_file_path(name, path_id, ".json")
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(deserialized, f, indent=4, ensure_ascii=False)
+                self._open_with_os(temp_path)
+                return
+            except Exception:
+                pass  # 실패 시 일반 텍스트 저장으로 폴백
+
+        if isinstance(text_content, str):
+            text_content = text_content.encode('utf-8', 'surrogateescape')
+        elif not isinstance(text_content, (bytes, bytearray)):
+            text_content = str(text_content).encode('utf-8', 'surrogateescape')
 
         temp_path = self._get_preview_file_path(name, path_id, ".txt")
         with open(temp_path, "wb") as f:
