@@ -87,10 +87,7 @@ class ResourceRemoverLogic:
                 os_ver = platform.platform()
                 cpu_cores = multiprocessing.cpu_count()
                 
-                if sys.argv and sys.argv[0]:
-                    exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
-                else:
-                    exec_path = os.path.abspath(os.getcwd())
+                exec_path = str(get_application_base_path())
 
                 with open(log_filename, 'w', encoding='utf-8') as f:
                     f.write(f"{SEPARATOR_LONG}\n")

@@ -93,8 +93,7 @@ class ResourceRemoverView(ttk.Frame):
 
         # 완료 상태면 현재 상태 텍스트를 보존하고, 그 외에는 'ready'로 초기화
         if not self.controller.is_task_complete:
-            if not self.controller.status_var.get():
-                self.controller.status_var.set(lang_dict.get('status_ready', 'Ready'))
+            self.controller.status_var.set(lang_dict.get('status_ready', 'Ready'))
 
     def set_control_state(self, state: str) -> None:
         """컨트롤(버튼, 체크박스 등)의 활성화/비활성화 상태를 설정합니다.
@@ -108,6 +107,9 @@ class ResourceRemoverView(ttk.Frame):
             self.chk_trash.config(state=state)
         if hasattr(self, 'btn_select_dir'):
             self.btn_select_dir.config(state=state)
+        if hasattr(self, 'chk_widgets'):
+            for chk in self.chk_widgets.values():
+                chk.config(state=state)
 
     def set_status_color(self, color: str) -> None:
         """상태 메시지 라벨의 텍스트 색상을 설정합니다.
