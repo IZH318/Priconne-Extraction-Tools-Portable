@@ -186,6 +186,12 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         return len(runtimes) > 0
 
 
+    def is_converting(self, tab_type: TabType) -> bool:
+        """해당 탭이 현재 도구 다운로드 또는 변환 작업 중인지 확인합니다."""
+        widgets = self.view.video_widgets if tab_type == 'video' else self.view.audio_widgets
+        add_btn = widgets.get('add_files_btn')
+        return bool(add_btn and (str(add_btn.cget('state')) == 'disabled' or add_btn.instate(['disabled'])))
+
     def add_files_cmd(self, tab_type: TabType) -> None:
         """파일 선택 대화상자를 열어 변환 대상 파일을 목록에 추가합니다.
 
@@ -218,22 +224,18 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             listbox: 파일을 추가할 Listbox 위젯.
             tab_type: 탭 타입 ('video' 또는 'audio').
         """
+        if self.is_converting(tab_type):
+            return
         if tab_type == 'audio':
             full_paths = self.audio_full_paths
             filenames_var = self.view.audio_filenames_var
             file_types = [("CRIWARE Audio", "*.awb")]
             supported_exts = AV_AUDIO_SUPPORTED_EXTENSIONS
-            action_btn = self.view.audio_widgets.get('action_btn')
-            if action_btn and action_btn.cget('state') == 'disabled':
-                return
         else:
             full_paths = self.video_full_paths
             filenames_var = self.view.video_filenames_var
             file_types = [("USM Video files", "*.usm")]
             supported_exts = AV_VIDEO_SUPPORTED_EXTENSIONS
-            action_btn = self.view.video_widgets.get('action_btn')
-            if action_btn and action_btn.cget('state') == 'disabled':
-                return
 
         paths = self._parse_dnd_paths(self.view.winfo_toplevel(), event.data)
         if not paths:
@@ -319,6 +321,8 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             listbox: 항목을 제거할 Listbox 위젯.
             tab_type: 탭 타입 ('video' 또는 'audio').
         """
+        if self.is_converting(tab_type):
+            return
         full_paths = self.audio_full_paths if tab_type == 'audio' else self.video_full_paths
         filenames_var = self.view.audio_filenames_var if tab_type == 'audio' else self.view.video_filenames_var
         
@@ -336,6 +340,8 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         Args:
             tab_type: 탭 타입 ('video' 또는 'audio').
         """
+        if self.is_converting(tab_type):
+            return
         full_paths = self.audio_full_paths if tab_type == 'audio' else self.video_full_paths
         filenames_var = self.view.audio_filenames_var if tab_type == 'audio' else self.view.video_filenames_var
         
@@ -393,10 +399,10 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
                         self._find_tools()
                         next_func(output_dir)
                     else:
-                        self.view.reset_ui_state(tab_type)
+                        self.view.reset_ui_state(tab_type, reset_status=True)
                 except Exception as e:
                     self._add_log_entry(tab_type, 'conv_log_error_exception', error=str(e))
-                    self.view.reset_ui_state(tab_type)
+                    self.view.reset_ui_state(tab_type, reset_status=True)
             else:
                 self.view.after(GUI_POLLING_INTERVAL_MS, check_tool_status)
 
@@ -613,11 +619,6 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         total = getattr(self, f'{tab_type}_total_files')
         current = widgets['progress']['value']
 
-        if cancel_token and cancel_token.is_cancelled:
-            widgets['status_label'].config(text=d['status_cancelled'])
-        else:
-            widgets['status_label'].config(text=d['status_complete'].format(current=current, total=total))
-        
         failed_files = msg.result if msg.result is not None else []
         if len(failed_files) > 0:
             self._generate_error_log(tab_type, failed_files)
@@ -625,7 +626,12 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             text = d.get('msgbox_error_log_saved_msg', 'An error log has been created in the logs folder. / 작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다.')
             messagebox.showwarning(title, text, parent=self.view)
             
-        self.view.reset_ui_state(tab_type)
+        self.view.reset_ui_state(tab_type, reset_status=False)
+        if cancel_token and cancel_token.is_cancelled:
+            widgets['status_label'].config(text=d['status_cancelled'])
+        else:
+            widgets['status_label'].config(text=d['status_complete'].format(current=current, total=total))
+            widgets['progress']['value'] = total
 
     def _generate_error_log(self, tab_type: str, failed_files: list[tuple[str, str]]) -> None:
         import platform, multiprocessing, sys, os

@@ -49,7 +49,7 @@ class AVConverterView(ttk.Frame):
             ('audio', self.audio_widgets, self.audio_ui_elements),
             ('video', self.video_widgets, self.video_ui_elements),
         ]:
-            is_converting = widgets['action_btn'].instate(['disabled'])
+            is_converting = self.controller.is_converting(tab_type)
             for elem_key, lang_key in ui_elements.items():
                 w = getattr(self, f'{tab_type}_ui_{elem_key}', None)
                 if w:
@@ -193,6 +193,8 @@ class AVConverterView(ttk.Frame):
         menu.add_command(label="", command=lambda: self.controller.preview_selected(listbox, tab_type))
         
         def show_menu(event):
+            if self.controller.is_converting(tab_type):
+                return
             d = self.controller.get_lang_dict()
             menu.entryconfig(0, label=d['remove_selected'], state=tk.NORMAL if listbox.curselection() else "disabled")
             menu.entryconfig(1, label=d['remove_all'], state=tk.NORMAL if listbox.size() > 0 else "disabled")
@@ -200,7 +202,7 @@ class AVConverterView(ttk.Frame):
             menu.post(event.x_root, event.y_root)
             
         listbox.bind("<Button-3>", show_menu)
-        listbox.bind("<Delete>", lambda e: self.controller.remove_selected_from_list(listbox, tab_type))
+        listbox.bind("<Delete>", lambda e: self.controller.remove_selected_from_list(listbox, tab_type) if not self.controller.is_converting(tab_type) else None)
 
     def create_progress_popup(self, width: int = 360, height: int = 105) -> tk.Toplevel:
         d = self.controller.get_lang_dict()
@@ -270,7 +272,7 @@ class AVConverterView(ttk.Frame):
             new_state = 'readonly' if isinstance(widget, ttk.Entry) and state == 'disabled' else state
             widget.config(state=new_state)
 
-    def reset_ui_state(self, tab_type: TabType) -> None:
+    def reset_ui_state(self, tab_type: TabType, reset_status: bool = False) -> None:
         d = self.controller.get_lang_dict()
         widgets = self.video_widgets if tab_type == 'video' else self.audio_widgets
         self.set_ui_state(tab_type, 'normal')
@@ -281,5 +283,6 @@ class AVConverterView(ttk.Frame):
             new_cmd = lambda: self.controller.start_audio_conversion(widgets['output_entry'].get(), self.audio_overwrite_var.get())
         
         widgets['action_btn'].config(text=d['start_conversion'], state=tk.NORMAL, command=new_cmd)
-        widgets['status_label'].config(text=d['status_idle'])
-        widgets['progress']['value'] = 0
+        if reset_status:
+            widgets['status_label'].config(text=d['status_idle'])
+            widgets['progress']['value'] = 0
