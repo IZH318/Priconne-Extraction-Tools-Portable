@@ -8,6 +8,7 @@ import zipfile
 import hashlib
 import concurrent.futures
 import queue
+import json
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
@@ -17,10 +18,12 @@ if TYPE_CHECKING:
 from src.exceptions import DownloadError, FileIntegrityError
 
 from src.constants import (
-    SEPARATOR_SHORT, AV_TEMP_EXTENSIONS, FFMPEG_URL, 
-    FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
+    SEPARATOR_SHORT, AV_TEMP_EXTENSIONS,
+    USMTOOLKIT_URL, USMTOOLKIT_ZIP_FILENAME, USMTOOLKIT_EXE_NAME,
+    FFMPEG_URL, FFMPEG_ZIP_FILENAME, FFMPEG_EXE_NAME,
     FFMPEG_TARGET_VERSION, FFMPEG_EXPECTED_SHA256, FFMPEG_VERSION_FILENAME,
     FFMPEG_VERSION_MARKER_PATH,
+    VGMSTREAM_URL, VGMSTREAM_ZIP_FILENAME, VGMSTREAM_EXE_NAME,
     SENTINEL_VIDEO_DONE, SENTINEL_AUDIO_DONE, TabType,
 )
 from src.subprocess_runner import SubprocessRunner
@@ -625,3 +628,264 @@ class FFmpegDownloader:
                     shutil.rmtree(temp_extract_dir)
                 except OSError:
                     pass
+
+
+class UsmToolkitDownloader:
+    """UsmToolkit 자동 다운로드 및 압축 해제 관리 클래스."""
+
+    def __init__(
+        self,
+        log_queue: queue.Queue,
+        usmtoolkit_dir: Path,
+        get_lang_data_func: Callable[[], dict[str, str]],
+    ) -> None:
+        self.log_queue = log_queue
+        self.download_dir = usmtoolkit_dir
+        self.usm_exe_path = self.download_dir / USMTOOLKIT_EXE_NAME
+        self.get_lang_data = get_lang_data_func
+        self.target_tab: TabType = 'video'
+
+    def _log_entry(self, log_key: str, **kwargs: Any) -> None:
+        """로그 메시지를 통신 큐에 추가합니다."""
+        self.log_queue.put(LogEvent(target=self.target_tab, key=log_key, kwargs=kwargs))
+
+    def ensure_ready(self) -> bool:
+        """UsmToolkit.exe가 준비되었는지 확인하고, 없으면 다운로드 및 설치를 수행합니다."""
+        if self.usm_exe_path.exists():
+            self._log_entry('usmtoolkit_already_exists', path=self.download_dir)
+            return True
+
+        self._log_entry('usmtoolkit_not_found', path=self.download_dir)
+        os.makedirs(self.download_dir, exist_ok=True)
+        local_zip_path = self.download_dir / USMTOOLKIT_ZIP_FILENAME
+
+        try:
+            self._log_entry('usmtoolkit_download_start', url=USMTOOLKIT_URL)
+            req = urllib.request.Request(USMTOOLKIT_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=15) as response, open(local_zip_path, 'wb') as out_file:
+                if response.status != 200:
+                    raise DownloadError(f"HTTP Error: {response.status} {response.reason}")
+                shutil.copyfileobj(response, out_file)
+
+            with open(local_zip_path, 'rb') as f:
+                magic = f.read(4)
+            if magic[:2] != b'PK':
+                raise FileIntegrityError(str(local_zip_path), "not a valid ZIP archive (magic bytes mismatch)")
+
+            with zipfile.ZipFile(local_zip_path, 'r') as zip_test:
+                bad_file = zip_test.testzip()
+                if bad_file is not None:
+                    raise zipfile.BadZipFile(f"ZIP archive integrity check failed: corrupted entry '{bad_file}'.")
+
+            self._log_entry('usmtoolkit_download_complete')
+            self._log_entry('usmtoolkit_extract_start')
+
+            # config.json 및 deps.json을 제외하고 압축 해제
+            with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
+                for member in zip_ref.infolist():
+                    base_name = os.path.basename(member.filename).lower()
+                    if base_name in {"config.json", "deps.json"}:
+                        continue
+                    zip_ref.extract(member, self.download_dir)
+
+            # 압축 해제 후 기본 최적화 config.json이 없으면 생성
+            config_file = self.download_dir / "config.json"
+            if not config_file.exists():
+                default_config = {
+                    "VideoParameter": "-c:v libx264 -crf 14 -bf 2 -preset medium -pix_fmt yuv420p -tune animation -deblock 1:1",
+                    "AudioParameter": "-c:a aac -b:a 320k -ac 2",
+                    "OutputFormat": "mp4"
+                }
+                config_file.write_text(json.dumps(default_config, indent=4), encoding="utf-8")
+
+            # 혹시 deps.json이 존재한다면 삭제하여 오해 방지
+            deps_file = self.download_dir / "deps.json"
+            if deps_file.exists():
+                try:
+                    os.remove(deps_file)
+                except OSError:
+                    pass
+
+            self._log_entry('usmtoolkit_extract_complete', path=self.usm_exe_path)
+            return True
+        except (urllib.error.URLError, OSError, zipfile.BadZipFile, DownloadError, FileIntegrityError) as e:
+            self._log_entry('usmtoolkit_download_fail', error=e)
+            return False
+        finally:
+            if local_zip_path.exists():
+                try:
+                    os.remove(local_zip_path)
+                except OSError:
+                    pass
+
+
+class VgmstreamDownloader:
+    """vgmstream 자동 다운로드 및 압축 해제 관리 클래스."""
+
+    def __init__(
+        self,
+        log_queue: queue.Queue,
+        vgmstream_dir: Path,
+        get_lang_data_func: Callable[[], dict[str, str]],
+    ) -> None:
+        self.log_queue = log_queue
+        self.download_dir = vgmstream_dir
+        self.vgm_exe_path = self.download_dir / VGMSTREAM_EXE_NAME
+        self.get_lang_data = get_lang_data_func
+        self.target_tab: TabType = 'audio'
+
+    def _log_entry(self, log_key: str, **kwargs: Any) -> None:
+        """로그 메시지를 통신 큐에 추가합니다."""
+        self.log_queue.put(LogEvent(target=self.target_tab, key=log_key, kwargs=kwargs))
+
+    def ensure_ready(self) -> bool:
+        """vgmstream-cli.exe가 준비되었는지 확인하고, 없으면 다운로드 및 설치를 수행합니다."""
+        if self.vgm_exe_path.exists():
+            test_exe = self.download_dir / "test.exe"
+            if not test_exe.exists():
+                try:
+                    shutil.copy2(self.vgm_exe_path, test_exe)
+                except OSError:
+                    pass
+            self._log_entry('vgmstream_already_exists', path=self.download_dir)
+            return True
+
+        self._log_entry('vgmstream_not_found', path=self.download_dir)
+        os.makedirs(self.download_dir, exist_ok=True)
+        local_zip_path = self.download_dir / VGMSTREAM_ZIP_FILENAME
+
+        try:
+            self._log_entry('vgmstream_download_start', url=VGMSTREAM_URL)
+            req = urllib.request.Request(VGMSTREAM_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=15) as response, open(local_zip_path, 'wb') as out_file:
+                if response.status != 200:
+                    raise DownloadError(f"HTTP Error: {response.status} {response.reason}")
+                shutil.copyfileobj(response, out_file)
+
+            with open(local_zip_path, 'rb') as f:
+                magic = f.read(4)
+            if magic[:2] != b'PK':
+                raise FileIntegrityError(str(local_zip_path), "not a valid ZIP archive (magic bytes mismatch)")
+
+            with zipfile.ZipFile(local_zip_path, 'r') as zip_test:
+                bad_file = zip_test.testzip()
+                if bad_file is not None:
+                    raise zipfile.BadZipFile(f"ZIP archive integrity check failed: corrupted entry '{bad_file}'.")
+
+            self._log_entry('vgmstream_download_complete')
+            self._log_entry('vgmstream_extract_start')
+
+            with zipfile.ZipFile(local_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(self.download_dir)
+
+            # UsmToolkit 호환성을 위해 vgmstream-cli.exe를 test.exe로 복사
+            test_exe = self.download_dir / "test.exe"
+            if self.vgm_exe_path.exists() and not test_exe.exists():
+                try:
+                    shutil.copy2(self.vgm_exe_path, test_exe)
+                except OSError:
+                    pass
+
+            self._log_entry('vgmstream_extract_complete', path=self.vgm_exe_path)
+            return True
+        except (urllib.error.URLError, OSError, zipfile.BadZipFile, DownloadError, FileIntegrityError) as e:
+            self._log_entry('vgmstream_download_fail', error=e)
+            return False
+        finally:
+            if local_zip_path.exists():
+                try:
+                    os.remove(local_zip_path)
+                except OSError:
+                    pass
+
+
+class ToolPipelineManager:
+    """UsmToolkit, vgmstream, FFmpeg의 순차적 준비를 통합 관리하는 파이프라인 매니저."""
+
+    def __init__(
+        self,
+        log_queue: queue.Queue,
+        base_path: Path,
+        get_lang_data_func: Callable[[], dict[str, str]],
+        on_tools_updated_callback: Callable[[], None] | None = None,
+    ) -> None:
+        self.log_queue = log_queue
+        self.base_path = base_path
+        self.get_lang_data = get_lang_data_func
+        self.on_tools_updated = on_tools_updated_callback
+
+        self.usmtoolkit_dir = self.base_path / "usmtoolkit"
+        self.vgmstream_dir = self.usmtoolkit_dir / "vgmstream"
+
+        self.usmtoolkit_downloader = UsmToolkitDownloader(
+            log_queue=self.log_queue,
+            usmtoolkit_dir=self.usmtoolkit_dir,
+            get_lang_data_func=self.get_lang_data,
+        )
+        self.vgmstream_downloader = VgmstreamDownloader(
+            log_queue=self.log_queue,
+            vgmstream_dir=self.vgmstream_dir,
+            get_lang_data_func=self.get_lang_data,
+        )
+        self.ffmpeg_downloader = FFmpegDownloader(
+            log_queue=self.log_queue,
+            usmtoolkit_path_parent_dir=self.usmtoolkit_dir,
+            get_lang_data_func=self.get_lang_data,
+        )
+
+    def _log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
+        """로그 메시지를 통신 큐에 추가합니다."""
+        self.log_queue.put(LogEvent(target=target_tab, key=log_key, kwargs=kwargs))
+
+    def ensure_tools_ready(self, tab_type: TabType) -> concurrent.futures.Future:
+        """탭 종류에 맞는 도구 준비 작업을 백그라운드 스레드에서 순차적으로 실행하고 Future를 반환합니다."""
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self._prepare_pipeline, tab_type)
+
+        def _shutdown_executor(_future: concurrent.futures.Future) -> None:
+            try:
+                _future.result()
+            except Exception:
+                pass
+            finally:
+                executor.shutdown(wait=False)
+
+        future.add_done_callback(_shutdown_executor)
+        return future
+
+    def _prepare_pipeline(self, tab_type: TabType) -> bool:
+        """지정된 탭 타입에 필요한 도구들을 올바른 계층 순서로 준비합니다."""
+        if tab_type == 'video':
+            # 1. UsmToolkit 준비 (usmtoolkit 폴더 생성 및 압축 해제, config/deps 필터링)
+            self.usmtoolkit_downloader.target_tab = 'video'
+            if not self.usmtoolkit_downloader.ensure_ready():
+                self._log_entry('video', 'usmtoolkit_prepare_fail')
+                return False
+
+            # 2. vgmstream 준비 (usmtoolkit/vgmstream 폴더에 압축 해제 및 test.exe 복사)
+            self.vgmstream_downloader.target_tab = 'video'
+            if not self.vgmstream_downloader.ensure_ready():
+                self._log_entry('video', 'vgmstream_prepare_fail')
+                return False
+
+            # 3. FFmpeg 준비 (usmtoolkit/ffmpeg.exe)
+            if not self.ffmpeg_downloader._actual_download_and_extract():
+                self._log_entry('video', 'ffmpeg_prepare_fail')
+                return False
+
+            if self.on_tools_updated:
+                self.on_tools_updated()
+            return True
+
+        elif tab_type == 'audio':
+            # 1. vgmstream 준비 (usmtoolkit/vgmstream 폴더)
+            self.vgmstream_downloader.target_tab = 'audio'
+            if not self.vgmstream_downloader.ensure_ready():
+                self._log_entry('audio', 'vgmstream_prepare_fail')
+                return False
+
+            if self.on_tools_updated:
+                self.on_tools_updated()
+            return True
+
+        return False

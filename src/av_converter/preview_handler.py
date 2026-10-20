@@ -33,6 +33,7 @@ class AVPreviewHandler:
         preview_temp_dir: str,
         get_tool_paths: Callable[[], dict[str, Path | None]],
         generate_error_log: Callable[[str, list[tuple[str, str]]], None] | None = None,
+        prepare_tools: Callable[[TabType, Callable[[], None]], None] | None = None,
     ) -> None:
         """AVPreviewHandler를 초기화합니다.
 
@@ -44,6 +45,7 @@ class AVPreviewHandler:
             preview_temp_dir: 미리보기 임시 파일 디렉터리 경로.
             get_tool_paths: 도구 경로 딕셔너리를 반환하는 콜백.
             generate_error_log: 에러 로그 파일 생성 콜백.
+            prepare_tools: 누락된 도구를 자동 다운로드 및 준비하는 콜백.
         """
         self._get_lang_data = get_lang_data
         self._get_paths = get_paths
@@ -52,6 +54,7 @@ class AVPreviewHandler:
         self._preview_temp_dir = preview_temp_dir
         self._get_tool_paths = get_tool_paths
         self._generate_error_log = generate_error_log
+        self._prepare_tools = prepare_tools
 
     def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
         """리스트박스에서 선택된 파일의 미리보기를 실행합니다.
@@ -100,6 +103,9 @@ class AVPreviewHandler:
         tool_paths = self._get_tool_paths()
         vgmstream_path = tool_paths.get('vgmstream')
         if not vgmstream_path:
+            if self._prepare_tools:
+                self._prepare_tools('audio', lambda: self._preview_audio(file_path))
+                return
             messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_audio', 'vgmstream not found.'), parent=self._view)
             return
         
@@ -206,6 +212,9 @@ class AVPreviewHandler:
         tool_paths = self._get_tool_paths()
         usmtoolkit_path = tool_paths.get('usmtoolkit')
         if not usmtoolkit_path:
+            if self._prepare_tools:
+                self._prepare_tools('video', lambda: self._preview_video(file_path))
+                return
             messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_video', 'UsmToolkit not found.'), parent=self._view)
             return
         

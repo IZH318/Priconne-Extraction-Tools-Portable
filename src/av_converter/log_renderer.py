@@ -190,10 +190,9 @@ class AVLogRenderer:
             self._add_log_entry('video', 'env_error_desc_dotnet')
 
         self.log_tool_status('video', usmtoolkit_path, "UsmToolkit.exe", 'env_error_desc_video')
-        if usmtoolkit_path:
-            ffmpeg_downloader = self._get_ffmpeg_downloader()
-            ffmpeg_path = ffmpeg_downloader.ffmpeg_path if ffmpeg_downloader.ffmpeg_path.exists() else None
-            self.log_tool_status('video', ffmpeg_path, "FFmpeg (ffmpeg.exe)", 'env_error_desc_ffmpeg_auto_download')
+        ffmpeg_downloader = self._get_ffmpeg_downloader()
+        ffmpeg_path = ffmpeg_downloader.ffmpeg_path if ffmpeg_downloader.ffmpeg_path.exists() else None
+        self.log_tool_status('video', ffmpeg_path, "FFmpeg (ffmpeg.exe)", 'env_error_desc_ffmpeg_auto_download')
         self._add_log_entry('video', 'max_worker_log', count=self._logic.MAX_WORKERS)
         self._add_spacing('video')
 

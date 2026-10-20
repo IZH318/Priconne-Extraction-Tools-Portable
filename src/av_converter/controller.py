@@ -12,14 +12,18 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Any, Callable
 
 from src.cancellation_token import CancellationToken
-from src.constants import SEPARATOR_LONG as SEPARATOR, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER, APP_WEBSITE, GUI_POLLING_INTERVAL_MS, SENTINEL_VIDEO_DONE, TabType
+from src.constants import (
+    SEPARATOR_LONG as SEPARATOR, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER,
+    APP_WEBSITE, GUI_POLLING_INTERVAL_MS, SENTINEL_VIDEO_DONE, TabType,
+    AV_VIDEO_SUPPORTED_EXTENSIONS, AV_AUDIO_SUPPORTED_EXTENSIONS,
+)
 from src.languages import AV_CONVERTER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
 from src.queue_events import (
     QueueEvent, LogEvent, LogBlockEvent, ProgressEvent, CompletionEvent
 )
 from src.subprocess_runner import SubprocessRunner
-from .logic import ConversionLogic, FFmpegDownloader
+from .logic import ConversionLogic, FFmpegDownloader, ToolPipelineManager
 from .log_renderer import AVLogRenderer
 from .preview_handler import AVPreviewHandler
 from .view import AVConverterView
@@ -77,8 +81,13 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self.audio_log_history = []
 
         self._find_tools()
-        ffmpeg_parent_dir = self.usmtoolkit_path.parent if self.usmtoolkit_path else self.base_path
-        self.ffmpeg_downloader = FFmpegDownloader(self.log_queue, ffmpeg_parent_dir, self.get_lang_dict)
+        self.tool_pipeline = ToolPipelineManager(
+            log_queue=self.log_queue,
+            base_path=self.base_path,
+            get_lang_data_func=self.get_lang_dict,
+            on_tools_updated_callback=self._find_tools,
+        )
+        self.ffmpeg_downloader = self.tool_pipeline.ffmpeg_downloader
         self.last_log_timestamp = {'video': None, 'audio': None}
 
         self._log_renderer = AVLogRenderer(
@@ -98,6 +107,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             preview_temp_dir=self._preview_temp_dir,
             get_tool_paths=lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path},
             generate_error_log=self._generate_error_log,
+            prepare_tools=self._prepare_tools_for_preview,
         )
 
         # 참고: video_log_history, audio_log_history는 73-74행에서 이미 초기화됨
@@ -166,13 +176,14 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
 
     def _is_dotnet_runtime_available(self) -> bool:
         """UsmToolkit.exe를 실행할 수 있는 .NET Runtime이 시스템에 존재하는지 사전 검증합니다."""
-        if not self.usmtoolkit_path or not self.usmtoolkit_path.exists():
-            return False
-        try:
-            res = SubprocessRunner.run([str(self.usmtoolkit_path), '--version'], timeout=3)
-            return res.returncode == 0
-        except Exception:
-            return False
+        if self.usmtoolkit_path and self.usmtoolkit_path.exists():
+            try:
+                res = SubprocessRunner.run([str(self.usmtoolkit_path), '--version'], timeout=3)
+                return res.returncode == 0
+            except Exception:
+                return False
+        runtimes = self.logic.get_installed_dotnet_runtimes()
+        return len(runtimes) > 0
 
 
     def add_files_cmd(self, tab_type: TabType) -> None:
@@ -211,6 +222,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             full_paths = self.audio_full_paths
             filenames_var = self.view.audio_filenames_var
             file_types = [("CRIWARE Audio", "*.awb")]
+            supported_exts = AV_AUDIO_SUPPORTED_EXTENSIONS
             action_btn = self.view.audio_widgets.get('action_btn')
             if action_btn and action_btn.cget('state') == 'disabled':
                 return
@@ -218,6 +230,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             full_paths = self.video_full_paths
             filenames_var = self.view.video_filenames_var
             file_types = [("USM Video files", "*.usm")]
+            supported_exts = AV_VIDEO_SUPPORTED_EXTENSIONS
             action_btn = self.view.video_widgets.get('action_btn')
             if action_btn and action_btn.cget('state') == 'disabled':
                 return
@@ -225,7 +238,10 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         paths = self._parse_dnd_paths(self.view.winfo_toplevel(), event.data)
         if not paths:
             return
-        self._add_paths_to_list(paths, file_types, full_paths, filenames_var, tab_type)
+        found_paths = self._collect_files_from_paths(paths, supported_exts)
+        if not found_paths:
+            return
+        self._add_paths_to_list(found_paths, file_types, full_paths, filenames_var, tab_type)
 
 
 
@@ -282,7 +298,8 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         if not new_paths:
             return
 
-        added = self._add_paths_to_file_list(new_paths, full_paths)
+        supported_exts = AV_AUDIO_SUPPORTED_EXTENSIONS if tab_type == 'audio' else AV_VIDEO_SUPPORTED_EXTENSIONS
+        added = self._add_paths_to_file_list(new_paths, full_paths, supported_exts=supported_exts)
         if not added:
             self._add_spacing(tab_type)
             self._add_log_entry(tab_type, 'alert_files_exist')
@@ -334,7 +351,10 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
     def start_video_conversion(self, output_dir: str) -> None:
         """비디오 변환 작업을 백그라운드 스레드로 시작합니다.
 
-        Workflow: start_video_conversion → _start_ffmpeg_preparation → _start_actual_video_conversion
+        Workflow: start_video_conversion → _start_tool_preparation → _start_actual_video_conversion
+
+        Args:
+            output_dir: 변환된 파일이 저장될 출력 디렉터리 경로.
         """
         if not self.video_full_paths:
             self._add_log_entry('video', 'error_no_files')
@@ -351,39 +371,75 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             )
             return
         add_breadcrumb("conv", "Started video conversion", {"files": len(self.video_full_paths), "output": output_dir})
-        self._start_ffmpeg_preparation(output_dir)
+        self._start_tool_preparation('video', output_dir, self._start_actual_video_conversion)
 
-    def _start_ffmpeg_preparation(self, output_dir: str) -> None:
-        """비디오 변환 전 FFmpeg의 존재 여부를 확인하고 필요시 다운로드하는 작업을 시작합니다.
+    def _start_tool_preparation(self, tab_type: TabType, output_dir: str, next_func: Callable[[str], None]) -> None:
+        """변환 전 필수 도구들의 존재 여부를 점검하고 필요시 다운로드하는 작업을 시작합니다.
 
         Args:
+            tab_type: 탭 타입 ('video' 또는 'audio').
             output_dir: 변환된 파일이 저장될 출력 디렉터리 경로.
+            next_func: 도구 준비 완료 후 실행할 콜백 함수.
         """
-        if not self.usmtoolkit_path:
-            self._add_log_entry('video', 'ffmpeg_no_usm_path')
-            return
+        self.view.set_ui_state(tab_type, 'disabled')
+        self._add_log_entry(tab_type, 'tools_preparing')
 
-        self.view.set_ui_state('video', 'disabled')
-        self._add_log_entry('video', 'ffmpeg_preparing')
-        
-        download_future = self.ffmpeg_downloader.ensure_ffmpeg_ready()
+        download_future = self.tool_pipeline.ensure_tools_ready(tab_type)
 
-        def check_ffmpeg_status():
+        def check_tool_status():
             if download_future.done():
                 try:
-                    if download_future.result(): 
-                        self._start_actual_video_conversion(output_dir)
-                    else: 
-                        self._add_log_entry('video', 'ffmpeg_prepare_fail')
-                        self.view.reset_ui_state('video')
+                    if download_future.result():
+                        self._find_tools()
+                        next_func(output_dir)
+                    else:
+                        self.view.reset_ui_state(tab_type)
                 except Exception as e:
-                    self._add_log_entry('video', 'ffmpeg_prepare_fail')
-                    self._add_log_entry('video', 'conv_log_error_exception', error=e)
-                    self.view.reset_ui_state('video')
-            else: 
-                self.view.after(GUI_POLLING_INTERVAL_MS, check_ffmpeg_status)
-                
-        self.view.after(GUI_POLLING_INTERVAL_MS, check_ffmpeg_status)
+                    self._add_log_entry(tab_type, 'conv_log_error_exception', error=str(e))
+                    self.view.reset_ui_state(tab_type)
+            else:
+                self.view.after(GUI_POLLING_INTERVAL_MS, check_tool_status)
+
+        self.view.after(GUI_POLLING_INTERVAL_MS, check_tool_status)
+
+    def _prepare_tools_for_preview(self, tab_type: TabType, on_success: Callable[[], None]) -> None:
+        """미리보기 실행 전 누락된 도구를 자동 준비합니다.
+
+        Args:
+            tab_type: 탭 타입 ('video' 또는 'audio').
+            on_success: 도구 준비 성공 시 실행할 미리보기 콜백.
+        """
+        if tab_type == 'video' and not self._is_dotnet_runtime_available():
+            lang_dict = self.get_lang_dict()
+            messagebox.showwarning(
+                lang_dict.get('dotnet_runtime_missing_title', '.NET Runtime Required'),
+                lang_dict.get('dotnet_runtime_missing_msg', 'A .NET Runtime is required to convert video (.usm) files.'),
+                parent=self.view
+            )
+            return
+
+        self._add_log_entry(tab_type, 'tools_preparing')
+        download_future = self.tool_pipeline.ensure_tools_ready(tab_type)
+
+        def check_status():
+            if download_future.done():
+                try:
+                    if download_future.result():
+                        self._find_tools()
+                        on_success()
+                    else:
+                        lang_dict = self.get_lang_dict()
+                        fail_msg = lang_dict.get(
+                            'usmtoolkit_prepare_fail' if tab_type == 'video' else 'vgmstream_prepare_fail',
+                            'Tool preparation failed.'
+                        )
+                        messagebox.showwarning(lang_dict.get('preview_menu', 'Preview'), fail_msg, parent=self.view)
+                except Exception as e:
+                    self._add_log_entry(tab_type, 'conv_log_error_exception', error=str(e))
+            else:
+                self.view.after(GUI_POLLING_INTERVAL_MS, check_status)
+
+        self.view.after(GUI_POLLING_INTERVAL_MS, check_status)
     
     def _start_conversion_thread(self, tab_type: TabType, target_func: Any, args: tuple) -> None:
         """실제 변환 로직을 실행할 백그라운드 스레드를 생성하고 시작합니다.
@@ -432,11 +488,14 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
 
         add_breadcrumb("conv", "Started audio conversion", {"files": len(self.audio_full_paths), "output": output_dir})
 
-        self._start_conversion_thread(
-            'audio',
-            self.logic.run_audio_conversion,
-            (self.audio_full_paths[:], output_dir, self.vgmstream_path, overwrite, self.audio_cancel_token)
-        )
+        def _do_start_audio(out_dir: str) -> None:
+            self._start_conversion_thread(
+                'audio',
+                self.logic.run_audio_conversion,
+                (self.audio_full_paths[:], out_dir, self.vgmstream_path, overwrite, self.audio_cancel_token)
+            )
+
+        self._start_tool_preparation('audio', output_dir, _do_start_audio)
 
     def _add_log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
         """새로운 로그 이벤트를 큐에 추가합니다.

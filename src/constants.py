@@ -40,6 +40,8 @@ RENAMER_TARGET_FOLDERS: Final[tuple[str, ...]] = ('a', 'b', 'm', 'manifest', 's'
 
 # === AV Converter Tool ===
 AV_TEMP_EXTENSIONS: Final[tuple[str, ...]] = ('.adx', '.bin', '.m2v', '.wav')
+AV_VIDEO_SUPPORTED_EXTENSIONS: Final[tuple[str, ...]] = ('.usm',)
+AV_AUDIO_SUPPORTED_EXTENSIONS: Final[tuple[str, ...]] = ('.awb',)
 FFMPEG_TARGET_VERSION: Final[str] = "7.1.1"
 
 def _load_deps_config() -> dict[str, str]:
@@ -58,6 +60,14 @@ def _load_deps_config() -> dict[str, str]:
 
 _DEPS_CONFIG = _load_deps_config()
 
+USMTOOLKIT_DEFAULT_URL: Final[str] = "https://github.com/Rikux3/UsmToolkit/releases/download/0.2/publish.zip"
+USMTOOLKIT_URL: Final[str] = os.environ.get(
+    'PRICONNE_USMTOOLKIT_URL',
+    _DEPS_CONFIG.get("UsmToolkit", USMTOOLKIT_DEFAULT_URL)
+)
+USMTOOLKIT_ZIP_FILENAME: Final[str] = "usmtoolkit_temp.zip"
+USMTOOLKIT_EXE_NAME: Final[str] = "UsmToolkit.exe"
+
 FFMPEG_DEFAULT_URL: Final[str] = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
 FFMPEG_URL: Final[str] = os.environ.get(
     'PRICONNE_FFMPEG_URL',
@@ -67,6 +77,8 @@ VGMSTREAM_URL: Final[str] = _DEPS_CONFIG.get(
     "Vgmstream",
     "https://github.com/vgmstream/vgmstream/releases/download/r2117/vgmstream-win.zip"
 )
+VGMSTREAM_ZIP_FILENAME: Final[str] = "vgmstream_temp.zip"
+VGMSTREAM_EXE_NAME: Final[str] = "vgmstream-cli.exe"
 FFMPEG_EXPECTED_SHA256: Final[str] = os.environ.get(
     'PRICONNE_FFMPEG_SHA256',
     "04861d3339c5ebe38b56c19a15cf2c0cc97f5de4fa8910e4d47e5e6404e4a2d4"

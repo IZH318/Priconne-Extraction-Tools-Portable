@@ -119,6 +119,23 @@ class AVConverterLangDict(TypedDict, total=False):
     status_idle: str
     status_processing: str
     status_starting: str
+    tools_preparing: str
+    usmtoolkit_already_exists: str
+    usmtoolkit_download_complete: str
+    usmtoolkit_download_fail: str
+    usmtoolkit_download_start: str
+    usmtoolkit_extract_complete: str
+    usmtoolkit_extract_start: str
+    usmtoolkit_not_found: str
+    usmtoolkit_prepare_fail: str
+    vgmstream_already_exists: str
+    vgmstream_download_complete: str
+    vgmstream_download_fail: str
+    vgmstream_download_start: str
+    vgmstream_extract_complete: str
+    vgmstream_extract_start: str
+    vgmstream_not_found: str
+    vgmstream_prepare_fail: str
     video_tab: str
     window_title: str
 
