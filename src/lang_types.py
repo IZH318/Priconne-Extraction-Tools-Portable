@@ -347,6 +347,8 @@ class StoryViewerLangDict(TypedDict, total=False):
     msgbox_export_failed_title: str
     msgbox_export_folder_title: str
     msgbox_export_options_title: str
+    msgbox_kr_server_notice_msg: str
+    msgbox_kr_server_notice_title: str
     msgbox_load_fail_msg: str
     msgbox_load_fail_title: str
     msgbox_loading_msg: str

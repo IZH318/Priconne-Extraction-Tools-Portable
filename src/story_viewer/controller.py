@@ -196,6 +196,7 @@ class StoryViewerController(QueuePollingMixin):
         self.display_mode_var = tk.StringVar(value="original")
         self.view_mode_var = tk.StringVar(value="script")
         self.server_var = tk.StringVar(value='JP')
+        self._kr_notice_shown: bool = False
         
         self.filter_var = tk.StringVar(value="")
         self.filter_timer: str | None = None
@@ -302,6 +303,17 @@ class StoryViewerController(QueuePollingMixin):
             return
             
         server = self.server_var.get()
+
+        # 한국 서버(KR) 최초 선택 시 2024-07-25 기준일 안내 (세션당 1회)
+        if server == 'KR' and not self._kr_notice_shown:
+            self._kr_notice_shown = True
+            lang_dict = self.get_lang_dict()
+            title = lang_dict.get('msgbox_kr_server_notice_title') or 'Korean Server Data Notice'
+            msg = lang_dict.get('msgbox_kr_server_notice_msg') or (
+                'Data for the Korean server (KR) is only processed up to July 25, 2024.\n\n'
+                'Stories added after this date may not display official titles or metadata.'
+            )
+            messagebox.showinfo(title, msg, parent=self.view)
 
         # 1. 캐시 확인: force_fetch가 False이고 캐시에 저장된 타이틀이 있다면 0ms 즉시 복원
         if not force_fetch and server in self._server_titles_cache and self._server_titles_cache[server]:
