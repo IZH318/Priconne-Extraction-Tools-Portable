@@ -20,9 +20,9 @@ from src.utils.about_dialog import show_about_dialog
 
 
 class _MenuBarIndex:
-    """메인 메뉴바의 cascade 인덱스 (Tkinter Menu는 1-based)."""
-    FILE = 1
-    LANGUAGE = 2
+    """메인 메뉴바의 cascade 인덱스 (Tkinter Menu는 0-based)."""
+    FILE = 0
+    LANGUAGE = 1
 
 
 class _FileMenuIndex:

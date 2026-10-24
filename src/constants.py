@@ -99,7 +99,7 @@ EXTENSION_CATEGORIES: Final = (
     },
     {
         "key": "chk_audio",
-        "extensions": (".awb", ".acb"),
+        "extensions": (".acb", ".awb"),
     },
     {
         "key": "chk_video",

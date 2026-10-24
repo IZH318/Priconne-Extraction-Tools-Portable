@@ -1,4 +1,4 @@
-tkinterdnd2==0.6.3
-xxhash==4.0.1
+tkinterdnd2==0.6.4
+xxhash==4.0.2
 send2trash==2.1.0
-UnityPy==1.25.2
+UnityPy==1.25.4

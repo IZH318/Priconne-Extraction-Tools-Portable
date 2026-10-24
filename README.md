@@ -114,11 +114,17 @@
 
 ### ※ 추출 도구는 상단 쥬얼 아이콘을 클릭 또는 본 저장소의 Releases 페이지로 이동하여 다운로드 하십시오. <br><br>
 
-| 소프트웨어 | URL | 필수여부 | 비고 |
-| :--- | :--- | :--- | :--- |
-| `Python 3.10+` | [Download](https://www.python.org/downloads/release/python-31011/) | **필수** | ◼ 모든 GUI 애플리케이션 실행에 필요합니다.<br>◼ **설치 시 'Add python.exe to PATH' 옵션을 반드시 체크해주세요.** |
-| `.NET Runtime 3.1` | [Download](https://dotnet.microsoft.com/en-us/download/dotnet/3.1) | 선택 | ◼ `03. Audio Video Converter`의 일부 기능(UsmToolkit) 실행에 필요합니다. |
-| `K-Lite Codec Pack` | [Download](https://codecguide.com/download_k-lite_codec_pack_standard.htm) | 선택 | ◼ 변환된 오디오(.wav) 및 비디오(.mp4) 파일이 정상적으로 재생되지 않을 경우 설치를 권장합니다. |
+| 소프트웨어 | 다운로드 | 구분 | 용도 |
+| :--- | :---: | :---: | :--- |
+| <nobr>`Python 3.14.9`</nobr> | [Download](https://www.python.org/downloads/release/python-3149/) | **필수** | GUI 애플리케이션 실행을 위한 핵심 런타임 |
+| <nobr>`.NET Runtime 3.1`</nobr> | [Download](https://dotnet.microsoft.com/en-us/download/dotnet/3.1) | 선택 | `03. Audio Video Converter` (UsmToolkit) 기능 실행에 필요 |
+| <nobr>`K-Lite Codec Pack`</nobr> | [Download](https://codecguide.com/download_k-lite_codec_pack_standard.htm) | 선택 | 미디어 파일(.wav, .mp4) 재생이 정상적이지 않을 경우 설치 |
+
+**💡 파이썬(Python) 설치 안내**
+- **온라인 환경**:
+    - 미설치 상태에서 `run.bat`을 실행하면 PC 환경(32/64/ARM)에 맞춰 **자동으로 다운로드 및 설치**됩니다.
+- **오프라인 환경**:
+    - 수동 설치 시, **반드시 기본 설치 경로를 유지**해 주세요.
 
 <br><br>
 
