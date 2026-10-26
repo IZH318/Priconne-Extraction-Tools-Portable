@@ -1,6 +1,5 @@
 # ======================================================================
 # Game Resources and Generated Asset Directories
-# Anchored with '/' to prevent unintended matches in subdirectories
 # ======================================================================
 /a/
 /b/
@@ -22,7 +21,10 @@
 # ======================================================================
 # Python Virtual Environments
 # ======================================================================
-.venv/
+/.commandcode/
+/.mypy_cache/
+/.ruff_cache/
+/.venv/
 venv/
 env/
 ENV/
@@ -46,7 +48,7 @@ dist/
 # ======================================================================
 # Editor and IDE Configurations
 # ======================================================================
-.vscode/
+/.vscode/
 .idea/
 *.swp
 *.swo
@@ -75,10 +77,11 @@ $RECYCLE.BIN/
 /_임시추출/
 /docs/
 /logs/
-/.editorconfig
+/scratch/
+/usmtoolkit/ffmpeg.exe
 /AGENTS.md
 /Essential Software Pack (x64).zip
 /master_jp.db
 /master_kr.db
 /version.json
-.ffmpeg_version
+/PyPackageWhlDownloader.ps1

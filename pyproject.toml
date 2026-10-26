@@ -1,0 +1,32 @@
+[project]
+name = "priconne-extraction-tools"
+version = "3.0.0"
+description = "Princess Connect Re:Dive asset and resource extraction toolkit (Portable)"
+readme = "README.md"
+requires-python = ">=3.14.9"
+dependencies = []
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+]
+ignore = [
+    "E402", # module level import not at top of file
+    "E501", # line too long
+    "E701", # multiple statements on one line
+]
+
+[tool.mypy]
+python_version = "3.14"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false

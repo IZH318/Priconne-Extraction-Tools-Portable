@@ -1,21 +1,51 @@
 # ======================================================================
-# Git Attributes Configuration
+# Git attributes: align with .editorconfig (LF for source, CRLF for Windows batch)
 # ======================================================================
-
-# Force LF line endings for all text files by default
 * text=auto eol=lf
 
-# Windows batch scripts must preserve CRLF line endings
+# ======================================================================
+# Python Source Code
+# ======================================================================
+*.py text eol=lf
+
+# ======================================================================
+# JSON, YAML, and Configuration Files
+# ======================================================================
+*.json text eol=lf
+*.toml text eol=lf
+*.cfg text eol=lf
+*.ini text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# ======================================================================
+# Windows Batch Scripts (Keep CRLF for Execution)
+# ======================================================================
 *.bat text eol=crlf
 *.cmd text eol=crlf
 
-# Binary files - Do not modify line endings
-*.png binary
+# ======================================================================
+# Binary Assets and Compressed/Compiled Packages
+# ======================================================================
 *.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.zip binary
 *.db binary
+*.pyc binary
 *.unity3d binary
 *.usm binary
 *.awb binary
 *.acb binary
 *.whl binary
-*.zip binary
+
+# ======================================================================
+# GitHub Release Archive Exclusions
+# ======================================================================
+.editorconfig export-ignore
+.gitattributes export-ignore
+.gitignore export-ignore
+pyproject.toml export-ignore

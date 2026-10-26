@@ -1,23 +1,36 @@
+"""Windows 탐색기 및 기본 프로그램 연동 유틸리티 모듈.
+
+변환 완료된 오디오/비디오 파일 재생, 추출된 텍스처/메시 폴더 탐색기 열기 등
+Windows 셸(ShellExecute)을 통한 파일 및 폴더 열기 지원.
+"""
 from __future__ import annotations
+
+import logging
 import os
-import sys
-import subprocess
+
+logger = logging.getLogger(__name__)
 
 
 def open_with_default_app(file_path: str) -> None:
-    """OS 기본 프로그램으로 파일을 엽니다.
+    """Windows 기본 프로그램 또는 탐색기로 파일 및 폴더 열기.
 
-    플랫폼별 차이를 추상화하여 Windows, macOS, Linux에서 동일하게 동작합니다.
+    os.startfile(file_path)을 호출하여 Windows ShellExecute 실행.
 
     Args:
-        file_path: 열 파일의 절대 경로.
+        file_path (str): 열고자 하는 파일 또는 폴더의 절대 경로.
 
     Raises:
-        OSError: 파일이 존재하지 않거나 열 수 없는 경우.
+        FileNotFoundError: 지정된 경로가 디스크 상에 존재하지 않는 경우.
+        OSError: 기본 프로그램 실행에 실패한 경우.
     """
-    if sys.platform == 'win32':
+    if not os.path.exists(file_path):
+        logger.warning("File does not exist: %s", file_path)
+        raise FileNotFoundError(file_path)
+
+    logger.info("Opening %s with default app", file_path)
+    if hasattr(os, 'startfile'):
         os.startfile(file_path)
-    elif sys.platform == 'darwin':
-        subprocess.call(['open', file_path])
     else:
-        subprocess.call(['xdg-open', file_path])
+        import subprocess
+        subprocess.Popen(['cmd', '/c', 'start', '', file_path])
+

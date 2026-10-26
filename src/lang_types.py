@@ -1,18 +1,14 @@
-from __future__ import annotations
-from typing import TypedDict
+"""다국어 딕셔너리의 TypedDict 스키마 정의 모듈.
 
-
-"""
-다국어 딕셔너리의 TypedDict 정의 모듈.
-
-이 파일은 languages.json의 키 구조를 TypedDict로 정의하여
-IDE 자동완성 및 정적 타입 검사를 지원합니다.
+languages.json에 정의된 각 서브도구별 UI/로그 문자열 키를 TypedDict로 선언하여
+IDE 코드 자동완성 및 Mypy 정적 타입 검사 지원 (total=False로 선택적 필드 허용).
 
 Note:
-    languages.json 키가 변경되면 이 파일도 함께 업데이트해야 합니다.
-    키 목록은 각 모듈의 ko 언어 데이터를 기준으로 생성됩니다.
+    languages.json 번역 키 추가/변경 시 동기화 대상 스키마 정의.
 """
+from __future__ import annotations
 
+from typing import TypedDict
 
 
 class AVConverterLangDict(TypedDict, total=False):

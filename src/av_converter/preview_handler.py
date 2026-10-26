@@ -1,52 +1,74 @@
+"""AV Converter 미디어 미리보기 핸들러 모듈.
+
+비디오(.usm) 및 오디오(.awb, .acb, .hca) 단일 파일 재생 미리보기를 위한
+모달 대기 팝업 창, 다중 오디오 트랙 선택기(Track Selector) 트리뷰 연계,
+OS 기본 미디어 플레이어 실행 및 임시 파일 정리 전담.
+"""
+
 from __future__ import annotations
+
+import contextlib
+import logging
 import os
 import shutil
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox
-from typing import Any, Callable
+from collections.abc import Callable
 from pathlib import Path
+from tkinter import messagebox
+from typing import Any, cast
 
 from src.constants import TabType
-
 from src.utils.platform_open import open_with_default_app
+
 from .logic import sanitize_stream_filename
+
+logger = logging.getLogger(__name__)
 
 
 class AVPreviewHandler:
-    """AV Converter의 미리보기(Preview) 기능을 전담하는 핸들러 클래스입니다.
+    """AV Converter의 미디어 파일 미리보기(Preview) 전담 핸들러 클래스.
 
-    Controller에서 미리보기 관련 로직을 분리하여 코드 가독성과
-    유지보수성을 향상시킵니다.
+    컨트롤러와의 상호 의존성을 완화하기 위해 의존성 주입(Dependency Injection) 방식을 채택하며,
+    백그라운드 변환 스레드와 Tkinter 모달 팝업을 연계하여 UI 프리징 없는 즉시 재생 환경 제공.
 
-    Note:
-        Controller와의 순환 참조를 방지하기 위해, Controller 전체를 참조하지 않고
-        필요한 콜백과 데이터 접근자만 개별 인자로 주입받습니다.
+    Attributes:
+        _get_lang_data (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
+        _get_paths (Callable[[TabType], list[str]]): 탭별 파일 경로 목록 조회 콜백.
+        _logic (Any): 미디어 변환 엔진 인스턴스.
+        _view (Any): 상위 Tkinter 뷰 위젯.
+        _preview_temp_dir (str): 미리보기용 임시 파일 저장소 경로.
+        _get_tool_paths (Callable[[], dict[str, Path | None]]): 외부 툴체인 경로 사전 조회 콜백.
+        _generate_error_log (Callable[..., Any]): 오류 로그 파일 작성 콜백.
+        _prepare_tools (Callable[[TabType, Callable[[], None]], None]): 툴체인 다운로드/준비 트리거 콜백.
+        shared_state (Any): 공유 애플리케이션 상태 객체.
     """
 
     def __init__(
         self,
         get_lang_data: Callable[[], dict[str, str]],
-        get_paths: Callable[[str], list[str]],
+        get_paths: Callable[[TabType], list[str]],
         logic: Any,
         view: Any,
         preview_temp_dir: str,
         get_tool_paths: Callable[[], dict[str, Path | None]],
-        generate_error_log: Callable[[str, list[tuple[str, str]]], None] | None = None,
-        prepare_tools: Callable[[TabType, Callable[[], None]], None] | None = None,
+        generate_error_log: Callable[..., Any],
+        prepare_tools: Callable[[TabType, Callable[[], None]], None],
+        shared_state: Any = None,
     ) -> None:
-        """AVPreviewHandler를 초기화합니다.
+        """AVPreviewHandler 초기화.
 
         Args:
-            get_lang_data: 현재 언어 딕셔너리를 반환하는 콜백.
-            get_paths: 탭 타입('video'/'audio')에 해당하는 경로 리스트를 반환하는 콜백.
-            logic: ConversionLogic 인스턴스.
-            view: AVConverterView 인스턴스 (UI 조작용).
-            preview_temp_dir: 미리보기 임시 파일 디렉터리 경로.
-            get_tool_paths: 도구 경로 딕셔너리를 반환하는 콜백.
-            generate_error_log: 에러 로그 파일 생성 콜백.
-            prepare_tools: 누락된 도구를 자동 다운로드 및 준비하는 콜백.
+            get_lang_data (Callable[[], dict[str, str]]): 다국어 딕셔너리 반환 콜백.
+            get_paths (Callable[[TabType], list[str]]): 탭 타입별 입력 파일 목록 반환 콜백.
+            logic (Any): 변환 로직 인스턴스 (ConversionLogic).
+            view (Any): UI 조작용 상위 뷰 객체.
+            preview_temp_dir (str): 미리보기 임시 디렉터리 경로.
+            get_tool_paths (Callable[[], dict[str, Path | None]]): 도구 실행 경로 맵 반환 콜백.
+            generate_error_log (Callable[..., Any]): 에러 로그 파일 생성 콜백.
+            prepare_tools (Callable[[TabType, Callable[[], None]], None]): 툴체인 준비 및 완료 콜백.
+            shared_state (Any): 모듈 간 공유 상태 객체 (선택 사항).
         """
         self._get_lang_data = get_lang_data
         self._get_paths = get_paths
@@ -56,110 +78,139 @@ class AVPreviewHandler:
         self._get_tool_paths = get_tool_paths
         self._generate_error_log = generate_error_log
         self._prepare_tools = prepare_tools
+        self.shared_state = shared_state
 
     def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
-        """리스트박스에서 선택된 파일의 미리보기를 실행합니다.
+        """리스트박스에서 선택된 파일의 미리보기 실행.
 
         Args:
             listbox: 선택된 항목이 있는 Listbox 위젯.
             tab_type: 탭 타입 ('video' 또는 'audio').
         """
-        full_paths = self._get_paths(tab_type)
-        selection = listbox.curselection()
-        if not selection:
+        lang_dict = self._get_lang_data()
+        selected_indices = listbox.curselection()
+
+        if not selected_indices:
+            messagebox.showwarning(
+                lang_dict.get('preview_menu', 'Preview'),
+                lang_dict.get('preview_no_selection', 'Please select a file to preview.'),
+                parent=self._view
+            )
             return
-        idx = selection[0]
-        if idx >= len(full_paths):
+
+        selected_idx = selected_indices[0]
+        paths = self._get_paths(tab_type)
+
+        if selected_idx >= len(paths):
             return
-        file_path = full_paths[idx]
-        
+
+        file_path = paths[selected_idx]
+
         if tab_type == 'audio':
             self._preview_audio(file_path)
-        else:
+        elif tab_type == 'video':
             self._preview_video(file_path)
 
-    def _run_preview_task(self, worker_func: Any, callback_func: Any) -> None:
-        """미리보기 생성을 위한 백그라운드 작업을 실행하고 진행 팝업을 표시합니다.
+    def _run_preview_task_with_popup(self, worker_func: Callable[[], Any], callback_func: Callable[[Any], None]) -> None:
+        """미리보기 생성을 위한 백그라운드 작업 실행 및 진행 팝업 표시.
 
         Args:
             worker_func: 실제 미리보기를 생성하는 백그라운드 함수.
             callback_func: 작업 완료 후 결과를 받아 처리할 콜백 함수.
         """
-        popup = self._view.create_progress_popup()
-        def thread_target():
-            result = None
-            err = None
+        lang_dict = self._get_lang_data()
+        progress_win = tk.Toplevel(self._view)
+        progress_win.title(lang_dict.get('preview_progress_title', 'Preview Preparation'))
+        progress_win.geometry("320x100")
+        progress_win.resizable(False, False)
+        progress_win.transient(self._view)
+        progress_win.grab_set()
+
+        progress_label = tk.Label(
+            progress_win,
+            text=lang_dict.get('preview_progress_msg', 'Preparing preview file...\nPlease wait.'),
+            padx=10,
+            pady=10
+        )
+        progress_label.pack(expand=True)
+
+        progress_win.update_idletasks()
+        x = self._view.winfo_rootx() + (self._view.winfo_width() // 2) - (progress_win.winfo_width() // 2)
+        y = self._view.winfo_rooty() + (self._view.winfo_height() // 2) - (progress_win.winfo_height() // 2)
+        progress_win.geometry(f"+{x}+{y}")
+
+        def thread_target() -> None:
+            res = worker_func()
+            def update_ui() -> None:
+                with contextlib.suppress(tk.TclError, RuntimeError):
+                    if progress_win.winfo_exists():
+                        progress_win.grab_release()
+                        progress_win.destroy()
+                callback_func(res)
             try:
-                result = worker_func()
-            except Exception as e:
-                err = e
-            finally:
-                def update_ui():
-                    self._view.destroy_popup_safely(popup)
-                    if err is not None:
-                        d = self._get_lang_data()
-                        title = d.get('preview_menu', 'Preview')
-                        msg = d.get('preview_error', 'Preview failed: {error}').format(error=str(err))
-                        messagebox.showwarning(title, msg, parent=self._view)
-                    else:
-                        callback_func(result)
                 self._view.after(0, update_ui)
+            except tk.TclError:
+                pass
+
         threading.Thread(target=thread_target, daemon=True).start()
 
     def _preview_audio(self, file_path: str) -> None:
-        """선택된 오디오 파일의 스트림 구조를 분석하고 트랙 선택기를 띄우거나 바로 재생합니다.
+        """선택된 오디오 파일의 스트림 구조 분석 후 트랙 선택기 표시 또는 즉시 재생.
 
         Args:
             file_path: 분석할 오디오 파일(AWB 등) 경로.
         """
-        d = self._get_lang_data()
+        lang_dict = self._get_lang_data()
         tool_paths = self._get_tool_paths()
         vgmstream_path = tool_paths.get('vgmstream')
-        if not vgmstream_path:
-            if self._prepare_tools:
+
+        if not vgmstream_path or not vgmstream_path.exists():
+            from tkinter import messagebox
+            if messagebox.askyesno(
+                lang_dict.get('preview_menu', 'Preview'),
+                lang_dict.get('vgmstream_missing_confirm', 'vgmstream is required for audio preview. Would you like to download it now?'),
+                parent=self._view
+            ):
                 self._prepare_tools('audio', lambda: self._preview_audio(file_path))
-                return
-            messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_audio', 'vgmstream not found.'), parent=self._view)
             return
-        
-        def on_analyze_done(streams_info: list[tuple[int, str]]) -> None:
-            if not streams_info:
-                if self._generate_error_log:
-                    self._generate_error_log('audio', [(file_path, 'No audio streams found or vgmstream stream analysis failed.')])
-                title = d.get('preview_menu', 'Preview')
-                fail_msg = d.get('preview_error', 'Preview failed: {error}').format(error=os.path.basename(file_path))
-                notice_msg = d.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
-                messagebox.showwarning(title, f"{fail_msg}\n\n{notice_msg}", parent=self._view)
+
+        def parse_streams_worker() -> list[tuple[int, str]]:
+            return cast(list[tuple[int, str]], self._logic.get_audio_streams_info(file_path, vgmstream_path))
+
+        def on_streams_parsed(streams: list[tuple[int, str]]) -> None:
+            if not streams:
+                messagebox.showerror(
+                    lang_dict.get('preview_menu', 'Preview'),
+                    lang_dict.get('preview_stream_parse_fail', 'Failed to analyze audio streams or file is corrupted.'),
+                    parent=self._view
+                )
                 return
-            
-            if len(streams_info) == 1:
-                stream_num, stream_name = streams_info[0]
+
+            if len(streams) == 1:
+                stream_num, stream_name = streams[0]
                 self._play_audio_stream(file_path, stream_num, vgmstream_path, stream_name)
             else:
-                def map_builder(tree):
+                def map_builder(tree: Any) -> None:
                     stream_map = {}
                     name_map = {}
-                    for stream_num, name in streams_info:
-                        item_id = tree.insert('', tk.END, values=(stream_num, name))
+                    for stream_num, name in streams:
+                        item_id = tree.insert("", tk.END, values=(stream_num, name))
                         stream_map[item_id] = stream_num
                         name_map[item_id] = name
                     tree.stream_map = stream_map
                     tree.name_map = name_map
-                    
-                def on_double_click(tree):
+
+                def on_double_click(tree: Any) -> None:
                     item_id = tree.focus()
                     if hasattr(tree, 'stream_map') and item_id in tree.stream_map:
                         self._play_audio_stream(file_path, tree.stream_map[item_id], vgmstream_path, tree.name_map[item_id])
-                        
-                self._view.show_track_selector(len(streams_info), map_builder, on_double_click)
-        
-        self._run_preview_task(
-            lambda: self._logic.get_audio_streams_info(file_path, vgmstream_path),
-            on_analyze_done
-        )
+
+                self._view.show_track_selector(len(streams), map_builder, on_double_click)
+
+        self._run_preview_task_with_popup(parse_streams_worker, on_streams_parsed)
 
     def _play_audio_stream(self, file_path: str, stream_num: int, vgmstream_path: Path, stream_name: str | None = None) -> None:
-        """특정 오디오 스트림을 WAV로 추출하여 기본 플레이어로 재생합니다.
+        """특정 오디오 스트림을 WAV로 추출하여 기본 플레이어로 재생.
 
         Args:
             file_path: 원본 오디오 파일 경로.
@@ -167,88 +218,111 @@ class AVPreviewHandler:
             vgmstream_path: vgmstream 실행 파일 경로.
             stream_name: 생성될 임시 파일에 사용할 스트림 이름 (옵션).
         """
-        d = self._get_lang_data()
-        self._cleanup_old_audio_previews()
-        temp_dir = os.path.join(self._preview_temp_dir, f"audio_{os.path.basename(file_path)}_{stream_num}_{int(time.time() * 1000)}")
-        os.makedirs(temp_dir, exist_ok=True)
+        lang_dict = self._get_lang_data()
         clean_name = sanitize_stream_filename(stream_name) if stream_name else ""
         filename = f"{clean_name}.wav" if clean_name else f"preview_{os.path.basename(file_path)}_{stream_num}.wav"
+        temp_dir = os.path.join(self._preview_temp_dir, f"audio_{os.path.basename(file_path)}_{stream_num}_{int(time.time() * 1000)}")
+        os.makedirs(temp_dir, exist_ok=True)
         temp_wav = os.path.join(temp_dir, filename)
-        
-        def on_done(result):
-            success, error_reason = result if isinstance(result, tuple) else (result, None)
-            if success:
+
+        def extract_worker() -> tuple[bool, str | None]:
+            self._cleanup_old_audio_previews()
+            return cast(tuple[bool, str | None], self._logic.preview_single_audio(file_path, stream_num, temp_wav, vgmstream_path))
+
+        def on_done(result: Any) -> None:
+            success, err_msg = result if isinstance(result, tuple) else (bool(result), None)
+            if success and os.path.exists(temp_wav):
                 open_with_default_app(temp_wav)
             else:
-                if self._generate_error_log:
-                    self._generate_error_log('audio', [(file_path, error_reason or 'Audio preview failed')])
-                title = d.get('preview_menu', 'Preview')
-                fail_msg = d.get('preview_error', 'Preview failed: {error}').format(error=os.path.basename(file_path))
-                notice_msg = d.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
-                messagebox.showwarning(title, f"{fail_msg}\n\n{notice_msg}", parent=self._view)
-        
-        self._run_preview_task(
-            lambda: self._logic.preview_single_audio(file_path, stream_num, temp_wav, vgmstream_path),
-            on_done
-        )
+                self._generate_error_log('audio', [(file_path, err_msg or "Failed to extract audio preview.")])
+                messagebox.showerror(
+                    lang_dict.get('preview_menu', 'Preview'),
+                    lang_dict.get('preview_audio_extract_fail', 'Failed to extract audio preview.'),
+                    parent=self._view
+                )
+
+        self._run_preview_task_with_popup(extract_worker, on_done)
 
     def _cleanup_old_audio_previews(self) -> None:
-        """기존에 생성된 오디오 미리보기 임시 디렉터리 및 잔여 파일들을 안전하게 정리합니다."""
+        """기존에 생성된 오디오 미리보기 임시 디렉터리 및 잔여 파일 정리."""
         if not os.path.exists(self._preview_temp_dir):
             return
+        current_time = time.time()
         for item in os.listdir(self._preview_temp_dir):
             item_path = os.path.join(self._preview_temp_dir, item)
-            if item.startswith("audio_") and os.path.isdir(item_path):
-                shutil.rmtree(item_path, ignore_errors=True)
-            elif item.endswith(".wav") and os.path.isfile(item_path):
+            if item.startswith("preview_stream_") and item.endswith(".wav"):
                 try:
-                    os.remove(item_path)
+                    if current_time - os.path.getmtime(item_path) > 300:
+                        os.remove(item_path)
+                except OSError:
+                    pass
+            elif item.startswith("audio_preview_") or item.startswith("audio_"):
+                try:
+                    shutil.rmtree(item_path, ignore_errors=True)
+                except OSError as _e:
+                    logger.debug('AV preview cleanup failed: %s', _e)
+
+    def _cleanup_old_video_previews(self) -> None:
+        """기존에 생성된 비디오 미리보기 임시 디렉터리 정리."""
+        if not os.path.exists(self._preview_temp_dir):
+            return
+        current_time = time.time()
+        for item in os.listdir(self._preview_temp_dir):
+            if item.startswith("video_preview_") or item.startswith("video_"):
+                item_path = os.path.join(self._preview_temp_dir, item)
+                try:
+                    if current_time - os.path.getmtime(item_path) > 300:
+                        try:
+                            shutil.rmtree(item_path, ignore_errors=True)
+                        except OSError as exc:
+                            logger.debug("Video preview cleanup failed: %s", exc)
                 except OSError:
                     pass
 
-    def _cleanup_old_video_previews(self) -> None:
-        """기존에 생성된 비디오 미리보기 임시 디렉터리들을 안전하게 정리합니다."""
-        if not os.path.exists(self._preview_temp_dir):
-            return
-        for item in os.listdir(self._preview_temp_dir):
-            if item.startswith("video_"):
-                item_path = os.path.join(self._preview_temp_dir, item)
-                if os.path.isdir(item_path):
-                    shutil.rmtree(item_path, ignore_errors=True)
-
     def _preview_video(self, file_path: str) -> None:
-        """선택된 비디오 파일을 임시 폴더에 추출하여 기본 플레이어로 재생합니다.
+        """선택된 비디오 파일을 임시 폴더에 추출하여 기본 플레이어로 재생.
 
         Args:
             file_path: 원본 비디오 파일(USM) 경로.
         """
-        d = self._get_lang_data()
+        lang_dict = self._get_lang_data()
         tool_paths = self._get_tool_paths()
         usmtoolkit_path = tool_paths.get('usmtoolkit')
-        if not usmtoolkit_path:
-            if self._prepare_tools:
+
+        if not usmtoolkit_path or not usmtoolkit_path.exists():
+            from tkinter import messagebox
+            if messagebox.askyesno(
+                lang_dict.get('preview_menu', 'Preview'),
+                lang_dict.get('usmtoolkit_missing_confirm', 'UsmToolkit is required for video preview. Would you like to download it now?'),
+                parent=self._view
+            ):
                 self._prepare_tools('video', lambda: self._preview_video(file_path))
-                return
-            messagebox.showwarning(d.get('preview_menu', 'Preview'), d.get('preview_no_tool_video', 'UsmToolkit not found.'), parent=self._view)
             return
-        
-        self._cleanup_old_video_previews()
+
         temp_dir = os.path.join(self._preview_temp_dir, f"video_{os.path.basename(file_path)}_{int(time.time() * 1000)}")
         os.makedirs(temp_dir, exist_ok=True)
-        
-        def on_convert_done(result):
-            result_path, error_reason = result if isinstance(result, tuple) else (result, None)
-            if result_path:
-                open_with_default_app(str(result_path))
+
+        def convert_worker() -> tuple[Path | None, str | None]:
+            self._cleanup_old_video_previews()
+            return cast(tuple[Path | None, str | None], self._logic.preview_single_video(file_path, temp_dir, usmtoolkit_path))
+
+        def on_convert_done(result: Any) -> None:
+            video_file, err_msg = result
+            if video_file and os.path.exists(str(video_file)):
+                open_with_default_app(str(video_file))
             else:
-                if self._generate_error_log:
-                    self._generate_error_log('video', [(file_path, error_reason or 'Video preview failed')])
-                title = d.get('preview_menu', 'Preview')
-                fail_msg = d.get('preview_error', 'Preview failed: {error}').format(error=os.path.basename(file_path))
-                notice_msg = d.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
-                messagebox.showwarning(title, f"{fail_msg}\n\n{notice_msg}", parent=self._view)
-        
-        self._run_preview_task(
-            lambda: self._logic.preview_single_video(file_path, temp_dir, usmtoolkit_path),
-            on_convert_done
-        )
+                self._generate_error_log('video', [(file_path, err_msg or "")])
+                messagebox.showerror(
+                    lang_dict.get('preview_menu', 'Preview'),
+                    lang_dict.get('preview_video_demux_fail', 'Failed to extract video preview.'),
+                    parent=self._view
+                )
+
+        self._run_preview_task_with_popup(convert_worker, on_convert_done)
+
+    def cleanup(self) -> None:
+        """임시 미리보기 아티팩트(WAV 및 추출 디렉터리) 정리."""
+        with contextlib.suppress(OSError):
+            self._cleanup_old_audio_previews()
+        with contextlib.suppress(OSError):
+            self._cleanup_old_video_previews()

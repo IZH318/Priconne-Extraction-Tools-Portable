@@ -1,104 +1,164 @@
+"""유니티 변환기(Unity Converter) 컨트롤러 모듈.
+
+멀티프로세싱 기반 에셋 추출 워커 풀, UI 이벤트 처리,
+에셋 카테고리 필터링, 유니티 엔진 버전 프리셋, 드래그 앤 드롭 파일 등록,
+에셋 상세 브라우저 창 연동 등 유니티 변환기 탭의 전반적인 제어 흐름 조율.
+"""
+
 from __future__ import annotations
+
 import atexit
+import concurrent.futures
+import contextlib
 import logging
+import multiprocessing
 import os
 import threading
-from src.cancellation_token import CancellationToken
-import concurrent.futures
-from multiprocessing import Manager, cpu_count
-from datetime import datetime
 import tkinter as tk
+from datetime import datetime
+from multiprocessing import Manager
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
-from src.languages import UNITY_CONVERTER_LANGUAGES as LANGUAGES
+from typing import Any
+
 from src.breadcrumbs import add_breadcrumb
-from src.queue_events import LogEvent, CompletionEvent
-from .extractor import process_single_file, AssetProcessor
-from .asset_browser import AssetBrowserWindow
-from src.constants import UNITY_SUPPORTED_EXTENSIONS as SUPPORTED_EXTENSIONS
+from src.cancellation_token import CancellationToken
 from src.constants import DEFAULT_UNITY_VERSION, UNITY_VERSION_PRESETS
+from src.constants import UNITY_SUPPORTED_EXTENSIONS as SUPPORTED_EXTENSIONS
+from src.languages import UNITY_CONVERTER_LANGUAGES as LANGUAGES
+from src.queue_events import CompletionEvent, LogEvent
 from src.queue_polling import QueuePollingMixin
-from src.log_history import LogHistoryMixin
+from src.shared_state import SharedState
 from src.utils.file_list_mixin import FileListMixin
+
+from .asset_browser import AssetBrowserWindow
+from .extractor import AssetProcessor, process_file_batch
+from .service import UnityExtractionService
 from .view import AssetExtractorView
 
-class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
-    # --- Lifecycle & Initialization ---
-    def __init__(self, frame: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None, app_temp_dir: str | None = None) -> None:
-        """AssetExtractorController를 초기화합니다.
+logger = logging.getLogger(__name__)
+
+
+class AssetExtractorController(QueuePollingMixin, FileListMixin):
+    """Unity Converter MVC 컨트롤러.
+
+    프레젠테이션 뷰, 멀티프로세싱 에셋 추출 워커 풀, IPC 큐 이벤트 폴링,
+    드래그 앤 드롭 파일 등록, 에셋 브라우저 창 연동 관리.
+
+    Attributes:
+        frame: 뷰를 배치하는 탭 컨테이너 프레임.
+        master: 최상위 애플리케이션 윈도우.
+        app_temp_dir: 전역 애플리케이션 임시 디렉터리 경로.
+        base_path: 애플리케이션 루트 실행 경로.
+        file_paths: 처리 대상 .unity3d 번들 파일 경로 목록.
+        output_path: 추출된 에셋 저장 대상 디렉터리 경로.
+        is_running: 에셋 추출 워커 동작 여부 플래그.
+        processed_files_count: 현재 실행 세션에서 처리 완료된 번들 파일 수.
+        base_input_path: 중첩 폴더 추출 시 기준이 되는 공통 루트 디렉터리 경로.
+        log_events: LogEvent 객체 메모리 내 로그 히스토리 버퍼.
+        unity_version_var: 선택 또는 직접 입력된 유니티 버전 문자열 추적 StringVar.
+        version_combo_var: 프리셋 드롭다운 선택값 추적 StringVar.
+        cancel_token: 워커 프로세스 중단용 협조적 취소 토큰.
+        about_info: 프로그램 메타데이터 딕셔너리.
+        asset_type_vars: 에셋 유형별 활성화 상태(BooleanVar) 매핑 딕셔너리.
+        lang_var: 전역 애플리케이션 언어 코드 추적 StringVar.
+        view: UI 위젯 관리 프레젠테이션 뷰.
+        shared_state: 콜백 주입용 공유 상태 객체.
+        extraction_service: 배치 분할 및 오류 로그 생성 관리 서비스.
+    """
+
+    # --- 생명주기 및 초기화 ---
+    def __init__(
+        self,
+        frame: ttk.Frame,
+        master: tk.Misc,
+        app_lang_var: tk.StringVar | None = None,
+        about_info: dict[str, str | int] | None = None,
+        app_temp_dir: Path | str | None = None,
+    ) -> None:
+        """AssetExtractorController 및 하위 의존성 초기화.
 
         Args:
-            frame: gui.py의 ttk.Frame 래퍼 (View의 부모 위젯).
-            master: 최상위 Tk 윈도우 (다이얼로그 위치 기준용).
-            app_lang_var: 앱 전역 언어 StringVar.
-            about_info: About 대화상자에 표시될 정보 딕셔너리.
-            app_temp_dir: 앱 전역 임시 디렉터리 경로.
-
-        Note:
-            다른 Controller(Renamer, AV, ResourceRemover)는 master 하나만 받지만,
-            UnityConverter와 StoryViewer는 대화상자 위치 지정을 위해
-            별도의 master(최상위 윈도우)가 필요하여 2개의 위젯 인자를 받습니다.
+            frame: 뷰를 포함하는 부모 ttk.Frame 래퍼.
+            master: 루트 Tk 또는 Toplevel 애플리케이션 윈도우.
+            app_lang_var: 언어 변경 감지 전역 StringVar.
+            about_info: 프로그램 메타데이터 딕셔너리(선택 사항).
+            app_temp_dir: 루트 임시 캐시 디렉터리 경로(선택 사항).
         """
-        self.frame = frame
-        self.master = master
-        self.app_temp_dir = app_temp_dir
+        self.frame: ttk.Frame = frame
+        self.master: tk.Misc = master
+        self.app_temp_dir: Path | str | None = app_temp_dir
         from src.utils.base_path import get_application_base_path
-        self.base_path = get_application_base_path()
-        self.file_paths = []
-        self.output_path = ""
-        self.is_running = False
-        self.processed_files_count = 0
-        self.base_input_path = None
-        self.log_events = []
-        self.unity_version_var = tk.StringVar(value=DEFAULT_UNITY_VERSION)
-        self.version_combo_var = tk.StringVar(value=DEFAULT_UNITY_VERSION)
-        self.cancel_token = CancellationToken()
-        self.about_info = about_info or {}
-        self.asset_type_vars = {}
+        self.base_path: Path = get_application_base_path()
+        self.file_paths: list[str] = []
+        self.output_path: str = ""
+        self.is_running: bool = False
+        self.processed_files_count: int = 0
+        self.base_input_path: str | None = None
+        self.log_events: list[Any] = []
+        self.unity_version_var: tk.StringVar = tk.StringVar(value=DEFAULT_UNITY_VERSION)
+        self.version_combo_var: tk.StringVar = tk.StringVar(value=DEFAULT_UNITY_VERSION)
+        self.cancel_token: CancellationToken = CancellationToken()
+        self.about_info: dict[str, str | int] = about_info or {}
+        self.asset_type_vars: dict[str, tk.BooleanVar] = {}
 
         if app_lang_var:
-            self.lang_var = app_lang_var
+            self.lang_var: tk.StringVar = app_lang_var
         else:
             self.lang_var = tk.StringVar(value='ko')
 
-        self._manager = None
-        self._log_queue = None
-        self._completion_queue = None
-        
-        # UI_PRESETS
+        self._manager: Any = None
+        self._state_lock: threading.RLock = threading.RLock()
+        self._atexit_registered: bool = False
+        self._log_queue: Any = None
+        self._completion_queue: Any = None
+
         self.UNITY_VERSION_PRESETS = list(UNITY_VERSION_PRESETS)
 
         self.view = AssetExtractorView(frame, self)
-        
+
+        self.shared_state: SharedState = SharedState()
+        self.shared_state.get_lang_dict = self.get_lang_dict
+        self.shared_state.get_base_path = lambda: self.base_path
+        self.shared_state.get_view = lambda: self.view
+        self._extraction_service: UnityExtractionService = UnityExtractionService(shared_state=self.shared_state, controller=self)
+        self._unity_service: UnityExtractionService = self._extraction_service
+        self._unity_extraction_service: UnityExtractionService = self._extraction_service
+        self.extraction_service: UnityExtractionService = self._extraction_service
+        self.service: UnityExtractionService = self._extraction_service
+
         self.lang_var.trace_add('write', self._on_language_change)
-        
+
         self.view.update_ui_text()
         self._log('program_started')
         self._init_queue_polling(self.frame)
 
     @property
     def manager(self) -> Any:
-        """멀티프로세싱 Manager 객체를 반환하거나 필요시 초기화합니다."""
+        """multiprocessing.Manager 인스턴스 지연 생성 및 반환."""
         if self._manager is None:
             self._manager = Manager()
-            atexit.register(self.cleanup)
+            if not self._atexit_registered:
+                atexit.register(self.cleanup)
+                self._atexit_registered = True
         return self._manager
 
     @property
     def log_queue(self) -> Any:
-        """백그라운드 워커에서 로그를 전달받을 큐를 반환합니다."""
+        """워커 프로세스로부터 LogEvent 항목을 수신하는 IPC 큐 반환."""
         if self._log_queue is None:
             self._log_queue = self.manager.Queue()
         return self._log_queue
 
     @property
     def completion_queue(self) -> Any:
-        """파일 처리 완료 이벤트를 전달받을 큐를 반환합니다."""
+        """워커 프로세스로부터 CompletionEvent 항목을 수신하는 IPC 큐 반환."""
         if self._completion_queue is None:
             self._completion_queue = self.manager.Queue()
         return self._completion_queue
 
     def cleanup(self) -> None:
-        """폴링을 중지하고 멀티프로세싱 Manager 리소스를 정리합니다."""
+        """큐 폴링 중단 및 multiprocessing Manager 정상 종료."""
         self._stop_polling()
         if self._manager is not None:
             try:
@@ -109,43 +169,48 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             self._log_queue = None
             self._completion_queue = None
             try:
-                atexit.unregister(self.cleanup)
-            except Exception:
-                pass
+                if self._atexit_registered:
+                    atexit.unregister(self.cleanup)
+                    self._atexit_registered = False
+            except (ValueError, RuntimeError) as _exc:
+                logger.debug("Failed to unregister atexit cleanup: %s", _exc)
 
     def _get_enabled_types(self) -> set[str]:
-        """체크박스에서 활성화된 에셋 타입 목록을 반환합니다.
+        """필터 체크박스에서 현재 활성화된 에셋 유형 집합 수집 및 반환.
 
         Returns:
-            활성화된 에셋 타입들의 집합(set).
+            활성화된 에셋 유형 이름 문자열 집합.
         """
         return {name for name, var in self.asset_type_vars.items() if var.get()}
 
     @property
     def asset_skip_types(self) -> set[str]:
-        """추출에서 건너뛸 에셋 타입 목록을 반환합니다."""
+        """내보내기 미지원 기본 유니티 컴포넌트 유형 집합 반환."""
         return AssetProcessor.SKIP_TYPES
 
     @property
     def asset_default_enabled(self) -> set[str]:
-        """기본으로 활성화할 에셋 타입 목록을 반환합니다."""
+        """기본 활성화 대상 에셋 유형 집합 반환."""
         return AssetProcessor.DEFAULT_ENABLED
 
     def select_all_types(self) -> None:
-        """모든 에셋 타입 체크박스를 선택 상태로 변경합니다."""
+        """모든 에셋 유형 필터 체크박스 선택 활성화."""
         for var in self.asset_type_vars.values():
             var.set(True)
 
     def deselect_all_types(self) -> None:
-        """모든 에셋 타입 체크박스를 선택 해제 상태로 변경합니다."""
+        """모든 에셋 유형 필터 체크박스 선택 해제."""
         for var in self.asset_type_vars.values():
             var.set(False)
 
     def on_version_selection_change(self, event: Any = None) -> None:
-        """Unity 버전 콤보박스 선택이 변경되었을 때의 이벤트를 처리합니다.
+        """유니티 엔진 버전 콤보박스 선택 변경 이벤트 처리.
+
+        '직접 입력' 선택 시 수동 버전 입력 엔트리를 활성화하고,
+        프리셋 선택 시 해당 버전으로 고정 및 비활성화.
 
         Args:
-            event: Tkinter 이벤트 객체 (기본값: None).
+            event: Tkinter 이벤트 객체(선택 사항).
         """
         selected = self.version_combo_var.get()
         if selected in self.UNITY_VERSION_PRESETS:
@@ -158,14 +223,18 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             self.view.set_version_entry_state('normal', focus=True)
 
     def get_lang_dict(self) -> dict[str, str]:
-        """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
+        """현재 언어 설정에 맞는 다국어 번역 문자열 딕셔너리 조회 및 반환.
+
+        Returns:
+            번역 키와 다국어 문자열 매핑 딕셔너리.
+        """
+        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))  # type: ignore[no-any-return]
 
     def _on_language_change(self, *args: str) -> None:
-        """언어 변경 이벤트를 처리하고 UI 텍스트 및 로그를 업데이트합니다.
+        """애플리케이션 언어 StringVar 변경 시 호출되는 콜백.
 
         Args:
-            *args: 가변 인자 리스트.
+            *args: Tkinter trace 콜백 가변 인자.
         """
         try:
             self.view.update_ui_text()
@@ -173,25 +242,39 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         except tk.TclError:
             pass
 
-    def _get_log_configs(self) -> list[tuple[list, tk.Text]]:
-        """재렌더링 대상 (히스토리 리스트, Text 위젯) 쌍의 리스트를 반환합니다."""
-        return [(self.log_events, self.view.log_text)]
+    def redraw_all_logs(self) -> None:
+        """누적된 LogEvent 히스토리를 UI 텍스트 위젯에 재렌더링."""
+        try:
+            self.view.log_text.config(state=tk.NORMAL)
+            self.view.log_text.delete('1.0', tk.END)
+            for event in self.log_events:
+                self._render_log_event(event)
+            self.view.log_text.config(state=tk.DISABLED)
+            self.view.log_text.see(tk.END)
+        except tk.TclError:
+            pass
 
     def _render_single_entry(self, entry: Any, index: int, history: list, widget: tk.Text) -> None:
-        """단일 로그 이벤트를 Text 위젯에 포매팅하여 출력합니다."""
+        """단일 LogEvent 항목을 서식화하여 지정된 텍스트 위젯에 출력."""
         self._render_log_event(entry, widget)
 
-    def _add_log_event(self, message_key: str, level: str = 'INFO', format_args: dict[str, Any] | None = None, prefix: str | None = None) -> LogEvent:
-        """로그 이벤트를 생성하여 반환합니다.
+    def _add_log_event(
+        self,
+        message_key: str,
+        level: str = 'INFO',
+        format_args: dict[str, Any] | None = None,
+        prefix: str | None = None,
+    ) -> LogEvent:
+        """타임스탬프가 포함된 LogEvent 생성 및 반환.
 
         Args:
-            message_key: 다국어 딕셔너리의 로그 메시지 키.
-            level: 로그 레벨 ('INFO', 'WARNING', 'ERROR', 'SUCCESS').
-            format_args: 메시지 포매팅에 사용할 인자 딕셔너리.
-            prefix: 로그 라인 앞에 붙일 접두사.
+            message_key: 다국어 번역 사전 키.
+            level: 로그 심각도 수준('INFO', 'WARNING', 'ERROR', 'SUCCESS').
+            format_args: 문자열 보간용 서식화 인자 딕셔너리(선택 사항).
+            prefix: 대상 접두사(예: 파일명, 선택 사항).
 
         Returns:
-            생성된 LogEvent 객체.
+            신규 생성된 LogEvent 인스턴스.
         """
         return LogEvent(
             target=prefix or "",
@@ -202,12 +285,12 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             timestamp=datetime.now().strftime("%H:%M:%S.%f")[:-3]
         )
 
-    def _render_log_event(self, event: LogEvent, widget=None) -> None:
-        """단일 로그 이벤트를 UI Text 위젯에 포매팅하여 출력합니다.
+    def _render_log_event(self, event: LogEvent, widget: Any = None) -> None:
+        """색상 태그와 타임스탬프가 적용된 메시지를 로그 Text 위젯에 추가 출력.
 
         Args:
-            event: 출력할 LogEvent 객체.
-            widget: 로그를 출력할 Text 위젯 (기본값: self.view.log_text).
+            event: 렌더링 대상 LogEvent 객체.
+            widget: 출력 대상 Text 위젯(미지정 시 self.view.log_text 사용).
         """
         target_widget = widget or self.view.log_text
         timestamp = event.timestamp or datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -215,40 +298,48 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         message_key = event.key
         level = event.level
         format_args = event.kwargs
-        
+
         lang = self.lang_var.get()
         message_template = LANGUAGES.get(lang, LANGUAGES.get('ko', {})).get(message_key, message_key)
-        
+
         if message_key == 'raw_text':
             message = format_args.get('text', '') if format_args else ''
         else:
             message = message_template.format(**format_args) if format_args else message_template
-        
+
         log_prefix = f"[{prefix}] " if prefix else ""
         full_message = f"[{timestamp}] {log_prefix}{message}\n"
-        
-        logging.info("[Unity Converter] %s%s", log_prefix, message)
-        
+
+        logger.info("[Unity Converter] %s%s", log_prefix, message)
+
         target_widget.config(state=tk.NORMAL)
         target_widget.insert(tk.END, full_message, level)
         target_widget.config(state=tk.DISABLED)
 
-    def _log(self, message_key: str, level: str = 'INFO', format_args: dict[str, Any] | None = None, prefix: str | None = None) -> None:
-        """로그 이벤트를 생성하고 히스토리에 추가한 뒤 UI에 출력합니다.
+    def _log(
+        self,
+        message_key: str,
+        level: str = 'INFO',
+        format_args: dict[str, Any] | None = None,
+        prefix: str | None = None,
+    ) -> None:
+        """LogEvent 생성, 최대 10,000건 히스토리 버퍼 추가 및 UI 즉시 출력.
 
         Args:
-            message_key: 다국어 딕셔너리의 로그 메시지 키.
-            level: 로그 레벨 ('INFO', 'WARNING', 'ERROR', 'SUCCESS').
-            format_args: 메시지 포매팅에 사용할 인자 딕셔너리.
-            prefix: 로그 라인 앞에 붙일 접두사.
+            message_key: 번역 딕셔너리 키.
+            level: 로그 심각도 문자열.
+            format_args: 템플릿 서식화 딕셔너리.
+            prefix: 메시지 접두사 문자열(선택 사항).
         """
         event = self._add_log_event(message_key, level, format_args, prefix)
         self.log_events.append(event)
+        if len(self.log_events) > 10000:
+            del self.log_events[:len(self.log_events) - 10000]
         self._render_log_event(event)
         self.view.log_text.see(tk.END)
 
     def _on_poll_cycle(self) -> None:
-        """멀티프로세싱 큐에서 로그 및 진행 상황 이벤트를 가져와 UI를 업데이트합니다."""
+        """주기적 UI 타이머 틱: IPC 로그 및 완료 큐 비우기 및 UI 상태 동기화."""
         log_batch = self._drain_queue(self.log_queue)
 
         completion_batch_size = 0
@@ -274,6 +365,8 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
                                 self.failed_files.append((log_item.target, error_msg))
                         event = self._add_log_event(log_item.key, log_item.level, log_item.kwargs, log_item.target)
                     self.log_events.append(event)
+                    if len(self.log_events) > 10000:
+                        del self.log_events[:len(self.log_events) - 10000]
                     self._render_log_event(event)
             self.view.log_text.config(state=tk.DISABLED)
             self.view.log_text.see(tk.END)
@@ -286,24 +379,24 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             self._on_extraction_complete()
 
     def select_files(self) -> None:
-        """파일 선택 대화상자를 열고 .unity3d 파일을 추가합니다."""
+        """복수 .unity3d 파일 선택 대화상자 표시 및 목록 추가."""
         if self.is_running:
             return
         d = self.get_lang_dict()
         paths = filedialog.askopenfilenames(
-            title=d['file_dialog_title'],
-            filetypes=((d['file_dialog_type'], "*.unity3d"),)
+            title=d.get('file_dialog_title', 'Select Unity3D files'),
+            filetypes=((d.get('file_dialog_type', 'Unity3D Files'), "*.unity3d"),)
         )
         if paths:
             self.base_input_path = None
             self._add_files_to_list(paths)
-        
+
     def select_folder(self) -> None:
-        """폴더 선택 대화상자를 열고 내부 .unity3d 파일을 추가합니다."""
+        """폴더 선택 대화상자 표시 및 .unity3d 파일 재귀 탐색 후 목록 추가."""
         if self.is_running:
             return
         d = self.get_lang_dict()
-        folder_path = filedialog.askdirectory(title=d['folder_dialog_title'])
+        folder_path = filedialog.askdirectory(title=d.get('folder_dialog_title', 'Select a folder containing Unity3D files'))
         if folder_path:
             self.base_input_path = folder_path
             found_paths = [os.path.join(r, f) for r, _, fs in os.walk(folder_path) for f in fs if f.lower().endswith(SUPPORTED_EXTENSIONS)]
@@ -311,50 +404,49 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
                 self._add_files_to_list(found_paths)
             else:
                 self._log('no_files_to_process', "WARNING")
-            
-    def on_dnd_drop(self, event) -> None:
-        """드래그 앤 드롭으로 파일을 추가합니다.
+
+    def on_dnd_drop(self, event: Any) -> None:
+        """파일 드래그 앤 드롭 목록 추가 이벤트 처리.
 
         Args:
-            event: Tkinter 드래그 앤 드롭 이벤트 객체.
+            event: 드롭된 파일 경로 데이터를 포함하는 Tkinter DnD 이벤트 객체.
         """
         if self.is_running:
             return
         paths = self._parse_dnd_paths(self.view.winfo_toplevel(), event.data)
-            
+
         found_paths = self._collect_files_from_paths(paths, SUPPORTED_EXTENSIONS)
-        # 폴더가 포함된 경우 base_input_path 설정
         for path in paths:
             if os.path.isdir(path):
                 self.base_input_path = path if not self.base_input_path else self.base_input_path
                 break
-                
+
         if found_paths:
             self._add_files_to_list(found_paths)
         else:
             self._log('no_files_to_process', "WARNING")
 
-    def _add_files_to_list(self, new_paths) -> None:
-        """주어진 파일 경로들을 내부 리스트와 UI 리스트박스에 추가합니다.
+    def _add_files_to_list(self, new_paths: Any) -> None:
+        """검증된 파일 경로를 대상 목록에 추가하고 Listbox 위젯 갱신.
 
         Args:
-            new_paths: 추가할 파일 경로 리스트.
+            new_paths: 추가할 파일 경로 시퀀스.
         """
         added = self._add_paths_to_file_list(new_paths, self.file_paths)
         added_count = len(added)
-        
+
         if added_count > 0:
             self.file_paths.sort()
             self.view.file_listbox.delete(0, tk.END)
             for path in self.file_paths:
                 self.view.file_listbox.insert(tk.END, os.path.basename(path))
             self._log('added_files', format_args={'count': added_count, 'total': len(self.file_paths)})
-            
-    def remove_selected_files(self, event=None) -> None:
-        """선택된 파일을 목록에서 제거합니다.
+
+    def remove_selected_files(self, event: Any = None) -> None:
+        """파일 목록 Listbox에서 선택된 항목 제거.
 
         Args:
-            event: Tkinter 이벤트 객체 (기본값: None).
+            event: Tkinter 이벤트 객체(선택 사항).
         """
         if self.is_running:
             return
@@ -365,9 +457,9 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             for path in self.file_paths:
                 self.view.file_listbox.insert(tk.END, os.path.basename(path))
             self._log('removed_selected_files', format_args={'count': count, 'total': len(self.file_paths)})
-        
+
     def remove_all_files(self) -> None:
-        """모든 파일을 목록에서 제거합니다."""
+        """가져온 전체 파일 목록 제거 및 초기화."""
         if self.is_running:
             return
         if not self.file_paths:
@@ -378,7 +470,7 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self._log('removed_all_files', format_args={'count': count})
 
     def open_asset_browser(self) -> None:
-        """선택된 파일의 에셋 브라우저를 엽니다."""
+        """선택된 번들 파일 대상 대화형 에셋 브라우저(AssetBrowserWindow) 모달 창 실행."""
         selection = self.view.file_listbox.curselection()
         if not selection or selection[0] >= len(self.file_paths):
             return
@@ -395,11 +487,11 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         )
 
     def select_output_dir(self) -> None:
-        """출력 폴더 선택 대화상자를 엽니다."""
+        """에셋 추출 결과 저장 대상 폴더 선택 대화상자 표시 및 경로 설정."""
         if self.is_running:
             return
         d = self.get_lang_dict()
-        path = filedialog.askdirectory(title=d['output_folder'])
+        path = filedialog.askdirectory(title=d.get('output_folder', 'Output Folder'))
         if path:
             self.output_path = path
             self.view.output_entry.config(state=tk.NORMAL)
@@ -409,82 +501,102 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
             self._log('output_dir_set', format_args={'path': path})
 
     def start_extraction(self) -> None:
-        """에셋 추출 작업을 시작합니다."""
+        """설정값 검증 후 백그라운드 에셋 추출 시작."""
         d = self.get_lang_dict()
-        if not self.file_paths:
-            messagebox.showwarning(d['warn_no_files_title'], d['warn_no_files_msg'], parent=self.view)
+        ok, reason = self._extraction_service.validate_start(self.file_paths, self.output_path)
+        if not ok:
+            if reason == "no_files":
+                messagebox.showwarning(
+                    d.get('warn_no_files_title', 'Cannot Start'),
+                    d.get('warn_no_files_msg', 'No files to extract in the list.'),
+                    parent=self.view,
+                )
+            elif reason == "no_output":
+                messagebox.showwarning(
+                    d.get('warn_no_output_title', 'Cannot Start'),
+                    d.get('warn_no_output_msg', 'Please specify an output folder.'),
+                    parent=self.view,
+                )
             return
-        if not self.output_path:
-            messagebox.showwarning(d['warn_no_output_title'], d['warn_no_output_msg'], parent=self.view)
-            return
-            
+
         self.is_running = True
+        self._resume_polling()
         self.cancel_token.reset()
         add_breadcrumb("conv", "Started asset extraction", {"files": len(self.file_paths), "output": self.output_path})
         self.view.toggle_controls(False)
         self.processed_files_count = 0
-        self.total_extracted_assets = 0
+        self.total_extracted_assets: int = 0
         self.failed_files: list[tuple[str, str]] = []
         self.view.progress_bar.config(maximum=len(self.file_paths))
         self.view.update_progress_bar()
-        self._current_enabled_types = self._get_enabled_types()
+        self._current_enabled_types: set[str] = self._get_enabled_types()
         unity_version = self.unity_version_var.get().strip()
         if not unity_version: unity_version = DEFAULT_UNITY_VERSION
-        self._current_unity_version = unity_version
+        self._current_unity_version: str = unity_version
         threading.Thread(target=self._run_process_pool, daemon=True).start()
 
     def _run_process_pool(self) -> None:
-        """프로세스 풀을 사용하여 파일을 병렬 처리합니다."""
-        num_workers = min(cpu_count(), len(self.file_paths))
+        """워커 스레드 진입점: ProcessPoolExecutor 배치 워커 풀 관리 및 취소 토큰 처리."""
+        batches = self._extraction_service.prepare_batches(self.file_paths)
+        if not batches:
+            batches = [list(self.file_paths)]
+        num_workers = len(batches)
         self.log_queue.put(LogEvent(target="", key='processing_started', level='INFO', kwargs={'num_workers': num_workers}))
-        
+
         unity_version = self._current_unity_version
         enabled_types = self._current_enabled_types
+        baseline_pids = {p.pid for p in multiprocessing.active_children()}
         try:
             with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-                future_to_path = {
-                    executor.submit(process_single_file, file_path, self.output_path, self.base_input_path, self.log_queue, self.completion_queue, unity_version, enabled_types): file_path 
-                    for file_path in self.file_paths
+                future_to_batch = {
+                    executor.submit(process_file_batch, batch, self.output_path, self.base_input_path, self.log_queue, self.completion_queue, unity_version, enabled_types): batch
+                    for batch in batches
                 }
-                for future in concurrent.futures.as_completed(future_to_path):
+                worker_pids = {p.pid for p in multiprocessing.active_children()} - baseline_pids
+                for future in concurrent.futures.as_completed(future_to_batch):
                     if self.cancel_token.is_cancelled:
                         self.log_queue.put(LogEvent(target="", key='extraction_cancelled', level='ERROR'))
-                        for p in getattr(executor, '_processes', {}).values():
-                            try:
-                                p.terminate()
-                            except Exception:
-                                pass
+                        for p in multiprocessing.active_children():
+                            if p.pid in worker_pids:
+                                try:
+                                    p.terminate()
+                                except (OSError, ProcessLookupError) as _exc:
+                                    logger.debug("Failed to terminate worker process: %s", _exc)
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
                     try:
                         exc = future.exception()
                         if exc:
-                            file_p = future_to_path[future]
-                            b_name = os.path.basename(file_p)
-                            self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(exc)}))
+                            batch = future_to_batch[future]
+                            for file_p in batch:
+                                b_name = os.path.basename(file_p)
+                                self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(exc)}))
+                                self.completion_queue.put(CompletionEvent(success=False, result=0))
+                    except (OSError, RuntimeError, ValueError, TypeError) as future_err:
+                        batch = future_to_batch.get(future, [])
+                        for file_p in (batch or ["unknown"]):
+                            b_name = os.path.basename(file_p) if file_p != "unknown" else "unknown"
+                            self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(future_err)}))
                             self.completion_queue.put(CompletionEvent(success=False, result=0))
-                    except Exception as future_err:
-                        file_p = future_to_path.get(future, "unknown")
-                        b_name = os.path.basename(file_p)
-                        self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(future_err)}))
-                        self.completion_queue.put(CompletionEvent(success=False, result=0))
-        except Exception as e:
-            logging.error("ProcessPoolExecutor encountered an unexpected failure: %s", e)
+        except Exception as e:  # noqa: BLE001
+            logger.error("ProcessPoolExecutor encountered an unexpected failure: %s", e)
         finally:
+            with contextlib.suppress(RuntimeError, AttributeError):
+                self.cancel_token.finish()
             self.completion_queue.put(CompletionEvent(target='__EXTRACTION_DONE__'))
 
     def _on_extraction_complete(self) -> None:
-        """추출 작업이 모두 완료되었을 때 호출되는 콜백입니다."""
+        """모든 워커 배치가 종료되었을 때 호출되는 콜백 예약."""
         self.frame.after(200, self._finalize_completion)
 
     def _finalize_completion(self) -> None:
-        """완료 상태를 정리하고 UI 컨트롤을 다시 활성화합니다."""
+        """오류 발생 시 에러 로그 리포트 생성 및 UI 조작 컨트롤 재활성화."""
         if hasattr(self, 'failed_files') and len(self.failed_files) > 0:
             self._generate_error_log(self.failed_files)
             from tkinter import messagebox
             d = self.get_lang_dict()
-            title = d.get('msgbox_error_log_saved_title', 'Error Log Created / 오류 로그 생성 안내')
-            text = d.get('msgbox_error_log_saved_msg', 'An error log has been created in the logs folder. / 작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다.')
+            title = d.get('msgbox_error_log_saved_title', 'Error Log Created')
+            text = d.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
             messagebox.showwarning(title, text, parent=self.view)
 
         self._log("raw_text", format_args={'text': "========================================"})
@@ -496,50 +608,10 @@ class AssetExtractorController(QueuePollingMixin, LogHistoryMixin, FileListMixin
         self.frame.after(0, lambda: self.view.toggle_controls(True))
 
     def _generate_error_log(self, failed_files: list[tuple[str, str]], context: str = "Asset Extraction") -> None:
-        import platform, multiprocessing
-        from datetime import datetime
-        from pathlib import Path
-        from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
-        from src.utils.base_path import get_application_base_path
-        
-        try:
-            if hasattr(self, 'base_path') and self.base_path:
-                exec_path = str(self.base_path)
-            else:
-                exec_path = str(get_application_base_path())
-            log_dir = Path(exec_path) / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            
-            now = datetime.now()
-            log_filename = log_dir / f"UnityConverterLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
-            
-            with open(log_filename, 'w', encoding='utf-8') as f:
-                f.write(f"{SEPARATOR_LONG}\n")
-                f.write(f"[SESSION] Unity Converter Task Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                f.write(f"{SEPARATOR_LONG}\n")
-                f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
-                f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
-                f.write(f"[ENGINE]  Python Version:  {platform.python_version()}\n")
-                f.write(f"[SYSTEM]  OS Version:      {platform.platform()}\n")
-                f.write(f"[SYSTEM]  Processor Count: {multiprocessing.cpu_count()} Cores\n")
-                f.write(f"[PATH]    Exec Path:       {exec_path}\n")
-                f.write(f"[REPORT]  Context:         {context}\n")
-                f.write(f"[REPORT]  Base Input:      {self.base_input_path if self.base_input_path else 'Files'}\n")
-                f.write(f"[REPORT]  Output Path:     {self.output_path if self.output_path else 'Temp/Preview'}\n")
-                f.write(f"[REPORT]  Total Failed:    {len(failed_files)}\n")
-                f.write(f"{SEPARATOR_LONG}\n\n")
-
-                for idx, (path, reason) in enumerate(failed_files, 1):
-                    f.write(f"[ERROR ITEM #{idx}]\n")
-                    f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                    f.write(f"Context   : {context}\n")
-                    f.write(f"File      : {path}\n")
-                    clean_reason = (reason or "").strip()
-                    if "\n" in clean_reason:
-                        f.write(f"Reason    :\n{clean_reason}\n")
-                    else:
-                        f.write(f"Reason    : {clean_reason}\n")
-                    f.write(f"{SEPARATOR_LONG}\n\n")
-        except Exception as e:
-            import logging
-            logging.error(f"Failed to write UnityConverterLog: {e}")
+        """추출 서비스로 오류 보고서 작성 위임."""
+        self._extraction_service.generate_error_log(
+            failed_files,
+            getattr(self, "base_input_path", None),
+            getattr(self, "output_path", None),
+            context,
+        )

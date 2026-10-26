@@ -1,43 +1,55 @@
+"""GUI 파일 목록 관리 및 드래그 앤 드롭(DnD) 경로 파싱 공통 믹스인 모듈.
+
+AV Converter 및 Unity Converter 등 다수의 대상 파일을 다루는 GUI 컨트롤러에서
+파일/폴더 드래그 앤 드롭 문자열 파싱, 지원 확장자 기반 재귀 파일 탐색,
+중복 추가 방지 및 항목 제거/클리어 로직 캡슐화 제공.
+"""
 from __future__ import annotations
+
+import logging
 import os
 import re
 import shlex
 import tkinter as tk
 
+logger = logging.getLogger(__name__)
+
 
 class FileListMixin:
-    """파일 리스트 추가/제거/클리어/DnD 파싱 공통 로직을 제공하는 Mixin.
+    """파일 목록 갱신 및 TkinterDnD 이벤트 경로 해석 공통 기능을 제공하는 믹스인 클래스.
 
-    AV Converter와 Unity Converter 등 파일 목록을 다루는
-    Controller에서 공통으로 상속하여 사용합니다.
-
-    Note:
-        이 Mixin은 단일 리스트 기준의 유틸리티 메서드를 제공합니다.
-        여러 리스트(예: video/audio)를 관리하는 Controller에서는
-        호출 시 적절한 리스트와 위젯을 인자로 전달해야 합니다.
+    Tkinter 드래그 앤 드롭 시 공백 포함 경로는 중괄호({path with space}) 묶음 전달되므로,
+    Tcl splitlist -> shlex.split -> 정규식 순서의 3중 폴백으로 안전하게 경로 분리.
     """
 
     @staticmethod
     def _parse_dnd_paths(tk_root: tk.Misc, data: str) -> list[str]:
-        """드래그 앤 드롭된 파일 경로 문자열을 파싱하여 리스트로 반환합니다.
+        """드래그 앤 드롭으로 전달된 파일 경로 문자열 파싱.
 
-        Tkinter의 ``tk.splitlist``를 우선 시도하고, 실패 시
-        ``shlex.split`` → 정규식 폴백 순서로 파싱합니다.
+        파싱 전략:
+        1. Tcl C-API 레벨의 tk.splitlist 우선 시도 (중괄호 공백 경로 기본 지원).
+        2. TclError 또는 AttributeError 발생 시 표준 라이브러리 shlex.split 시도.
+        3. 따옴표 불일치 등으로 실패 시 중괄호 매칭 정규식(\\{[^{}]*\\}|[^ ]+) 폴백 적용.
 
         Args:
-            tk_root: Tkinter 최상위 위젯 (splitlist 호출용).
-            data: 드래그 앤 드롭 이벤트로 전달된 파일 경로 문자열.
+            tk_root (tk.Misc): Tcl 인터프리터 컨텍스트 접근용 Tk 위젯 인스턴스.
+            data (str): 드롭 이벤트로 전달된 원시 문자열 (예: '{C:/My Files/a.usm} D:/b.usm').
 
         Returns:
-            파싱된 파일 경로 문자열 리스트.
+            list[str]: 파싱 완료된 개별 파일 경로 문자열 리스트.
         """
         try:
             return list(tk_root.tk.splitlist(data))
         except (AttributeError, tk.TclError):
             try:
                 return shlex.split(data)
-            except ValueError:
-                return [p.strip('{}') for p in re.findall(r'\{[^{}]*\}|[^ ]+', data) if p.strip()]
+            except (ValueError, OSError) as _exc:
+                logger.debug("shlex.split failed: %s", _exc)
+                try:
+                    return [p.strip('{}') for p in re.findall(r'\{[^{}]*\}|[^ ]+', data) if p.strip()]
+                except (re.error, ValueError) as _exc2:
+                    logger.debug("regex fallback failed: %s", _exc2)
+                    return [data]
 
     @staticmethod
     def _add_paths_to_file_list(
@@ -45,23 +57,25 @@ class FileListMixin:
         file_paths: list[str],
         supported_exts: tuple[str, ...] | None = None,
     ) -> list[str]:
-        """새 파일 경로들을 중복 검사 후 리스트에 추가합니다.
+        """확장자 검사 및 중복 제거 후 파일 목록에 추가.
 
         Args:
-            new_paths: 추가할 후보 파일 경로 리스트.
-            file_paths: 현재 유지 중인 전체 파일 경로 리스트 (in-place 수정).
-            supported_exts: 허용할 파일 확장자 튜플 (None이면 모든 파일 허용).
+            new_paths (list[str]): 추가를 시도할 대상 파일 경로 리스트.
+            file_paths (list[str]): 컨트롤러가 관리 중인 현재 파일 경로 리스트 (In-place 수정).
+            supported_exts (tuple[str, ...] | None): 허용할 확장자 튜플 (None이면 모든 파일 허용).
 
         Returns:
-            실제로 추가된 (중복 제외) 파일 경로 리스트.
+            list[str]: 실제로 새롭게 추가된 고유 파일 경로 리스트.
         """
         existing = set(file_paths)
         added: list[str] = []
         for p in new_paths:
             if p in existing:
                 continue
-            if supported_exts and not p.lower().endswith(supported_exts):
-                continue
+            if supported_exts:
+                _exts = tuple(e.lower() for e in supported_exts)
+                if not p.lower().endswith(_exts):
+                    continue
             file_paths.append(p)
             existing.add(p)
             added.append(p)
@@ -72,58 +86,82 @@ class FileListMixin:
         file_paths: list[str],
         selected_indices: tuple[int, ...],
     ) -> int:
-        """선택된 인덱스의 항목을 리스트에서 제거합니다.
+        """선택된 항목을 역순으로 순회하며 안전하게 제거.
+
+        인덱스 변위(Index Drift) 방지 목적의 내림차순(reverse=True) 정렬 삭제 적용.
 
         Args:
-            file_paths: 전체 파일 경로 리스트 (in-place 수정).
-            selected_indices: 제거할 인덱스 튜플 (Listbox.curselection() 결과).
+            file_paths (list[str]): 전체 파일 경로 리스트 (In-place 수정).
+            selected_indices (tuple[int, ...]): 제거할 항목 인덱스 튜플 (Listbox.curselection() 결과).
 
         Returns:
-            제거된 항목 수.
+            int: 실제로 리스트에서 제거된 항목 수.
         """
         if not selected_indices:
             return 0
+        removed = 0
         for i in sorted(selected_indices, reverse=True):
-            del file_paths[i]
-        return len(selected_indices)
+            if 0 <= i < len(file_paths):
+                del file_paths[i]
+                removed += 1
+        return removed
 
     @staticmethod
     def _clear_file_list(file_paths: list[str]) -> int:
-        """파일 리스트의 모든 항목을 제거합니다.
+        """파일 목록 전체 비우기 및 삭제된 항목 개수 반환.
 
         Args:
-            file_paths: 전체 파일 경로 리스트 (in-place 수정).
+            file_paths (list[str]): 전체 파일 경로 리스트 (In-place 수정).
 
         Returns:
-            제거된 항목 수.
+            int: 제거된 전체 항목 수.
         """
         count = len(file_paths)
         file_paths.clear()
         return count
 
+    _MAX_COLLECTED_FILES: int = 100_000
+
     @staticmethod
     def _collect_files_from_paths(
         paths: list[str],
         supported_exts: tuple[str, ...],
+        max_files: int = 100_000,
     ) -> list[str]:
-        """파일/폴더 경로 목록에서 지원 확장자 파일만 수집합니다.
+        """경로 목록을 검색하여 지원 확장자에 맞는 파일 수집.
 
-        파일이면 확장자 검사 후 추가, 폴더이면 재귀 탐색합니다.
+        폴더 포함 시 os.walk(followlinks=False) 기반 심볼릭 링크 루프 방어 재귀 탐색 및
+        메모리 고갈 방지 목적의 max_files 초과 시 즉시 탐색 중단 처리.
 
         Args:
-            paths: 파일 및 폴더 경로 혼합 리스트.
-            supported_exts: 허용할 파일 확장자 튜플.
+            paths (list[str]): 파일 및 디렉터리 경로가 혼합된 입력 리스트.
+            supported_exts (tuple[str, ...]): 수집할 허용 파일 확장자 튜플 (예: ('.usm',)).
+            max_files (int): 수집할 최대 파일 개수 제한 (기본값: 100,000).
 
         Returns:
-            매칭된 파일 경로 리스트.
+            list[str]: 조건에 부합하는 고유 파일 절대 경로 리스트.
         """
+        _exts = tuple(e.lower() for e in supported_exts)
         found: list[str] = []
+        seen: set[str] = set()
         for path in paths:
-            if os.path.isfile(path) and path.lower().endswith(supported_exts):
-                found.append(path)
+            if len(found) >= max_files:
+                break
+            if os.path.isfile(path) and path.lower().endswith(_exts):
+                if path not in seen:
+                    seen.add(path)
+                    found.append(path)
             elif os.path.isdir(path):
-                for root, _, files in os.walk(path):
+                for root, _, files in os.walk(path, followlinks=False):
+                    if len(found) >= max_files:
+                        break
                     for f in files:
-                        if f.lower().endswith(supported_exts):
-                            found.append(os.path.join(root, f))
+                        if len(found) >= max_files:
+                            break
+                        if f.lower().endswith(_exts):
+                            full = os.path.join(root, f)
+                            if full not in seen:
+                                seen.add(full)
+                                found.append(full)
         return found
+

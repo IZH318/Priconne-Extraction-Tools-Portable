@@ -1,14 +1,24 @@
+"""Story Viewer 비즈니스 로직 및 스토리 파싱/포맷팅 엔진 모듈.
+
+스토리 JSON 데이터의 유효성 검증(StoryDataLoader), 선택지 분기 및 합류 구조 분석
+(StoryBranchInfo, StoryBranchStructure), 씬 데이터 다중 조건 검색(SearchEngine),
+스토리 대사 텍스트/마크다운 렌더링 포맷터(StoryFormatter) 제공.
+"""
+
 from __future__ import annotations
-# src/story_viewer/logic.py
-from dataclasses import dataclass, field
+
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any, ClassVar
 
 from src.constants import SEPARATOR_MEDIUM
 
+
 @dataclass
 class StoryBranchInfo:
-    """단일 분기 경로의 메타데이터 및 포함된 씬 범위를 관리합니다."""
+    """단일 분기 경로의 메타데이터 및 포함된 씬 범위 관리."""
+
     choice_scene: str
     choice_idx: int
     tag: str
@@ -17,19 +27,24 @@ class StoryBranchInfo:
     scenes: list[str] = field(default_factory=list)
     destination: str | None = None
 
+
 @dataclass
 class StoryBranchStructure:
-    """스토리 전체의 분기 그룹, 씬 매핑, 합류점 구조를 캡슐화합니다."""
+    """스토리 전체 분기 그룹, 씬 매핑, 합류점 구조 캡슐화."""
+
     branch_groups: dict[str, list[StoryBranchInfo]]
     scene_to_branch: dict[str, StoryBranchInfo]
     merge_scenes: set[str]
     tag_to_scene: dict[str, str]
 
+
 class StoryDataLoader:
-    """스토리 데이터 JSON 파일의 유효성 검증 및 에셋 이름 추출을 담당합니다."""
+    """스토리 데이터 JSON 파일 유효성 검증 및 에셋 이름 추출 담당."""
+
     @staticmethod
     def is_valid_storydata(file_path: str, lang_dict: dict[str, str] | None = None) -> tuple[bool, dict[str, Any] | None, str | None]:
-        """스토리 데이터 JSON 파일이 유효한지 검사합니다.
+
+        """스토리 데이터 JSON 파일 유효성 검사.
 
         Args:
             file_path: 검사할 JSON 파일 경로.
@@ -41,24 +56,24 @@ class StoryDataLoader:
         if lang_dict is None:
             lang_dict = {}
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, encoding='utf-8') as f:
                 data = json.load(f)
             if not isinstance(data, dict) or not data:
-                return False, None, lang_dict.get('log_reason_empty', "File content is empty or not in dictionary format")
+                return False, None, lang_dict.get('log_reason_empty', "File content is empty or not in dictionary format.")
             if '0' in data and isinstance(data['0'], dict) and ('title' in data['0'] or 'outline' in data['0']):
                 return True, data, None
             else:
-                return False, None, lang_dict.get('log_reason_not_storydata', "Does not seem to be a storydata file (missing '0' key or title/outline)")
+                return False, None, lang_dict.get('log_reason_not_storydata', "Does not seem to be a storydata file (missing '0' key or title/outline).")
         except json.JSONDecodeError as e:
             return False, None, lang_dict.get('log_reason_json_error', "JSON format error: {e}").format(e=e)
         except OSError as e:
             return False, None, lang_dict.get('log_reason_os_error', "File read/other error: {e}").format(e=e)
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError) as e:
             return False, None, lang_dict.get('log_reason_unexpected_error', "Unexpected fatal error: {e}").format(e=e)
 
     @staticmethod
     def extract_asset_name(value: Any) -> str | None:
-        """스토리 데이터 값에서 에셋(배경, BGM 등)의 이름을 추출합니다.
+        """스토리 데이터 값에서 에셋(배경, BGM 등) 이름 추출.
 
         Args:
             value: 추출할 원본 값.
@@ -71,7 +86,7 @@ class StoryDataLoader:
         return None
 
 class SearchEngine:
-    """스토리 데이터에 대한 다중 조건 검색 기능을 제공합니다."""
+    """스토리 데이터 다중 조건 검색 기능 제공."""
     @staticmethod
     def check_scene(
         scene: dict[str, Any],
@@ -80,7 +95,7 @@ class SearchEngine:
         char_type_speaker: str | None = None,
         is_speaker: bool | None = None,
     ) -> bool:
-        """단일 씬(Scene) 데이터가 주어진 검색 조건과 일치하는지 확인합니다.
+        """단일 씬(Scene) 데이터의 주어진 검색 조건 일치 여부 확인.
 
         Args:
             scene: 씬 데이터 딕셔너리.
@@ -92,7 +107,10 @@ class SearchEngine:
         Returns:
             조건 일치 여부 (bool).
         """
-        if 'content' in criteria and not ('print' in scene and criteria['content'] in scene['print'].get('text', '').lower()):
+        if not isinstance(scene, dict):
+            return False
+        print_data = scene.get('print') if isinstance(scene.get('print'), dict) else {}
+        if 'content' in criteria and not (isinstance(print_data, dict) and criteria['content'] in print_data.get('text', '').lower()):
             return False
         if 'bgm' in criteria and not ('bgm' in scene and criteria['bgm'] in str(scene.get('bgm', '')).lower()):
             return False
@@ -102,11 +120,11 @@ class SearchEngine:
             char_name_crit = criteria['char_name']
             speaker_mode = is_speaker if is_speaker is not None else (char_type_search == char_type_speaker)
             char_found = False
-            if 'print' in scene:
-                if speaker_mode and char_name_crit in str(scene['print'].get('name', '')).lower():
-                    char_found = True
-                elif not speaker_mode and char_name_crit in scene['print'].get('text', '').lower():
-                    char_found = True
+            if isinstance(print_data, dict) and (
+                speaker_mode and char_name_crit in str(print_data.get('name', '')).lower()
+                or not speaker_mode and char_name_crit in print_data.get('text', '').lower()
+            ):
+                char_found = True
             if not char_found:
                 return False
         return True
@@ -119,7 +137,7 @@ class SearchEngine:
         char_type_speaker: str | None = None,
         is_speaker: bool | None = None,
     ) -> bool:
-        """파일 전체 내용이 주어진 검색 조건과 일치하는지 확인합니다.
+        """파일 전체 내용의 주어진 검색 조건 일치 여부 확인.
 
         Args:
             data: 스토리 데이터 전체 딕셔너리.
@@ -132,14 +150,16 @@ class SearchEngine:
             조건 일치 여부 (bool).
         """
         lower_criteria = {k: v.lower() for k, v in criteria.items()}
-        scene_0 = data.get('0', {})
-        
+        scene_0 = data.get('0', {}) if isinstance(data, dict) else {}
+        if not isinstance(scene_0, dict):
+            scene_0 = {}
+
         if 'title' in lower_criteria and lower_criteria['title'] not in scene_0.get('title', '').lower():
             return False
         if 'outline' in lower_criteria and lower_criteria['outline'] not in scene_0.get('outline', '').lower():
             return False
 
-        # BGM 및 배경은 파일 전체 범위에서 만족하는 씬이 존재하는지 개별 평가
+        # 배경음악(BGM) 및 배경은 파일 전체 범위에서 만족하는 씬이 존재하는지 개별 평가
         if 'bgm' in lower_criteria:
             bgm_crit = lower_criteria['bgm']
             if not any(isinstance(s, dict) and 'bgm' in s and bgm_crit in str(s.get('bgm', '')).lower() for s in data.values()):
@@ -169,7 +189,7 @@ class SearchEngine:
         all_files: dict[str, str] | None = None,
         is_speaker: bool | None = None,
     ) -> bool:
-        """파일 이름과 내용을 모두 포함하여 검색 조건과 일치하는지 확인합니다.
+        """파일 이름과 내용 모두 포함한 검색 조건 일치 여부 확인.
 
         Args:
             filename: 파일 이름.
@@ -184,7 +204,7 @@ class SearchEngine:
         """
         if 'filename' in criteria and criteria['filename'].lower() not in filename.lower():
             return False
-        
+
         if all_files is None:
             return False
         filepath = all_files.get(filename)
@@ -197,32 +217,32 @@ class SearchEngine:
         content_criteria = {k: v for k, v in criteria.items() if k != 'filename'}
         if not content_criteria:
             return True
-            
+
         return SearchEngine.check_file_content(data, content_criteria, char_type_search, char_type_speaker, is_speaker)
 
 class StoryFormatter:
-    """스토리 데이터를 UI에 표시하기 쉬운 텍스트 및 태그 포맷으로 변환하는 유틸리티 클래스입니다.
+    """스토리 데이터를 UI에 맞춘 텍스트 및 태그 포맷으로 변환하는 서식 유틸리티.
 
-    모든 메서드가 정적(stateless)이므로 인스턴스 생성 없이 클래스에서 직접 호출할 수 있습니다.
+    모든 메서드가 정적(stateless)이므로 클래스에서 직접 호출 가능.
     """
-    _FIELD_ORDER: list[str] = [
+    _FIELD_ORDER: ClassVar[list[str]] = [
         'title', 'outline', 'movie', 'shake_anime', 'place',
-        'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full', 
-        'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect', 
-        'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'emotion_end', 'se', 'fadein_all', 
-        'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag', 
-        'choice', 'goto', 'text_size', 'scale', 'ui_visible', 'transition', 'black_out', 'white_out', 'bright_change', 
-        'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color', 
-        'shake', 'sway', 'out_l', 'out_r', 'in_r', 'character_up_down', 'pan', 'camera_zoom', 
-        'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur', 
+        'vo', 'face', 'print', 'nod', 'wait', 'window_visible', 'change', 'chara_full',
+        'fadein', 'focus', 'jump', 'fadeout_all', 'fadeout', 'pop', 'voice_effect',
+        'change_window', 'ignore_bgm', 'eye_open', 'emotion', 'emotion_end', 'se', 'fadein_all',
+        'effect', 'effect_delete', 'se_pause', 'multi_lipsync', 'bgm', 'tag',
+        'choice', 'goto', 'text_size', 'scale', 'ui_visible', 'transition', 'black_out', 'white_out', 'bright_change',
+        'background', 'situation', 'bg_pan', 'env_stop', 'env', 'background_color',
+        'shake', 'sway', 'out_l', 'out_r', 'in_r', 'character_up_down', 'pan', 'camera_zoom',
+        'still', 'still_unit', 'still_move', 'still_normalize', 'background_blur',
         'unknown'
     ]
 
-    _DISPATCH_TABLE: dict[str, Callable[..., None]] | None = None
+    _DISPATCH_TABLE: ClassVar[dict[str, Callable[..., None]] | None] = None
 
     @classmethod
     def _get_dispatch_table(cls) -> dict[str, Callable[..., None]]:
-        """필드별 포매터 디스패치 테이블을 반환합니다 (최초 1회만 생성)."""
+        """필드별 포매터 디스패치 테이블 반환 (최초 1회만 생성)."""
         if cls._DISPATCH_TABLE is None:
             cls._DISPATCH_TABLE = {
                 'print': cls._format_print,
@@ -239,8 +259,8 @@ class StoryFormatter:
 
     @staticmethod
     def resolve_story_branches(data: dict[str, Any]) -> StoryBranchStructure:
-        """스토리 데이터의 선택지 분기, 연쇄 씬 묶음, goto 점프 및 공통 합류 지점을 계산합니다."""
-        scene_keys = sorted([k for k in data.keys() if k.isdigit()], key=int)
+        """스토리 데이터 선택지 분기, 연쇄 씬 묶음, goto 점프 및 공통 합류 지점 계산."""
+        scene_keys = sorted([k for k in data if isinstance(k, str) and k.isdigit()], key=int)
 
         tag_to_scene: dict[str, str] = {}
         for k in scene_keys:
@@ -286,10 +306,17 @@ class StoryFormatter:
 
         # 각 분기 그룹의 씬 범위, 목적지(goto) 및 합류 씬 계산
         for branches in branch_groups.values():
-            branches.sort(key=lambda b: int(b.start_scene))
+            def _safe_start_key(b: Any) -> int:
+                try:
+                    return int(b.start_scene)
+                except (ValueError, TypeError):
+                    return 0
+            branches.sort(key=_safe_start_key)
 
             merge_candidate: str | None = None
             for b in branches:
+                if b.start_scene not in scene_keys:
+                    continue
                 curr_idx = scene_keys.index(b.start_scene)
                 for look_k in scene_keys[curr_idx:curr_idx + 30]:
                     look_s = data.get(look_k, {})
@@ -297,15 +324,20 @@ class StoryFormatter:
                         g = str(look_s.get('goto', '') or '').strip()
                         if g and g in tag_to_scene:
                             g_sc = tag_to_scene[g]
-                            if int(g_sc) > int(b.start_scene):
-                                merge_candidate = g_sc
-                                break
+                            try:
+                                if int(g_sc) > int(b.start_scene):
+                                    merge_candidate = g_sc
+                                    break
+                            except (ValueError, TypeError):
+                                pass
                 if merge_candidate:
                     break
 
             for i, b in enumerate(branches):
+                if b.start_scene not in scene_keys:
+                    continue
                 start_idx = scene_keys.index(b.start_scene)
-                if i + 1 < len(branches):
+                if i + 1 < len(branches) and branches[i + 1].start_scene in scene_keys:
                     end_idx = scene_keys.index(branches[i + 1].start_scene)
                 else:
                     if merge_candidate and merge_candidate in scene_keys:
@@ -350,19 +382,19 @@ class StoryFormatter:
 
     @staticmethod
     def _format_script_mode(data: dict[str, Any], lang_dict: dict[str, str] | None = None) -> list[tuple[str, str | None]]:
-        """스토리 데이터를 대본/소설 형식으로 가독성 높게 변환합니다."""
+        """스토리 데이터를 대본/소설 형식으로 가독성 높게 변환."""
         content_list: list[tuple[str, str | None]] = []
-        scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
+        scene_keys = sorted(data.keys(), key=lambda x: int(x) if isinstance(x, str) and x.isdigit() else float('inf'))
 
         # 다국어 라벨 획득
-        place_prefix = lang_dict.get('script_place_prefix', '장소') if lang_dict else '장소'
-        branch_point_label = lang_dict.get('script_branch_point', '분기점') if lang_dict else '분기점'
-        branch_dialogue_label = lang_dict.get('script_branch_dialogue', '분기 대사') if lang_dict else '분기 대사'
-        choice_item_label = lang_dict.get('script_choice_item', '선택') if lang_dict else '선택'
-        outline_title = lang_dict.get('script_outline_title', '줄거리') if lang_dict else '줄거리'
-        no_dialogue_msg = lang_dict.get('script_no_dialogue', '대사 데이터가 없는 스토리입니다') if lang_dict else '대사 데이터가 없는 스토리입니다'
-        branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', '[Scene {scene}] (으)로 이어짐') if lang_dict else '[Scene {scene}] (으)로 이어짐'
-        branch_end_label = lang_dict.get('script_branch_end', '[스토리 종료]') if lang_dict else '[스토리 종료]'
+        place_prefix = lang_dict.get('script_place_prefix', 'Place') if lang_dict else 'Place'
+        branch_point_label = lang_dict.get('script_branch_point', 'Branch Point') if lang_dict else 'Branch Point'
+        branch_dialogue_label = lang_dict.get('script_branch_dialogue', 'Branch Dialogue') if lang_dict else 'Branch Dialogue'
+        choice_item_label = lang_dict.get('script_choice_item', 'Choice') if lang_dict else 'Choice'
+        outline_title = lang_dict.get('script_outline_title', 'Synopsis') if lang_dict else 'Synopsis'
+        no_dialogue_msg = lang_dict.get('script_no_dialogue', 'This story has no dialogue data') if lang_dict else 'This story has no dialogue data'
+        branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', 'Leads to [Scene {scene}]') if lang_dict else 'Leads to [Scene {scene}]'
+        branch_end_label = lang_dict.get('script_branch_end', '[End of Story]') if lang_dict else '[End of Story]'
 
         structure = StoryFormatter.resolve_story_branches(data)
         scene_to_branch = structure.scene_to_branch
@@ -417,8 +449,9 @@ class StoryFormatter:
 
             # 분기 씬 헤더
             if is_branch_start:
+                assert b is not None
                 scene_range_str = f"Scene {b.scenes[0]}~{b.scenes[-1]}" if len(b.scenes) > 1 else f"Scene {key}"
-                branch_fmt = lang_dict.get('script_branch_label_fmt', "{choice_label} {idx}번 {dialogue_label}") if lang_dict else "{choice_label} {idx}번 {dialogue_label}"
+                branch_fmt = lang_dict.get('script_branch_label_fmt', "{dialogue_label} for {choice_label} #{idx}") if lang_dict else "{dialogue_label} for {choice_label} #{idx}"
                 branch_label_str = branch_fmt.format(choice_label=choice_item_label, idx=b.choice_idx, dialogue_label=branch_dialogue_label)
                 tag_str = f" (Tag {b.tag})" if b.tag else ""
                 content_list.append((f"┌─ [ {scene_range_str} | {branch_label_str}{tag_str} ] ─┐\n", 'script_branch'))
@@ -455,9 +488,7 @@ class StoryFormatter:
                     for line in txt_lines:
                         content_list.append((f"{indent}{line}\n", dialogue_tag))
 
-                    if b is not None and ('choice' in scene and scene['choice']):
-                        content_list.append((f"{indent}\n", None))
-                    elif b is not None:
+                    if b is not None:
                         content_list.append((f"{indent}\n", None))
                     else:
                         content_list.append(("\n", None))
@@ -510,6 +541,7 @@ class StoryFormatter:
 
             # 분기 씬 박스 마감
             if is_branch_end:
+                assert b is not None
                 dest_scene = b.destination
                 if dest_scene:
                     label = branch_leads_to_fmt.format(scene=dest_scene)
@@ -529,7 +561,7 @@ class StoryFormatter:
 
     @staticmethod
     def format_story_data(data: dict[str, Any], view_mode: str, lang_dict: dict[str, str] | None = None) -> list[tuple[str, str | None]]:
-        """스토리 데이터를 UI에 표시할 수 있는 포맷된 텍스트 및 태그 리스트로 변환합니다.
+        """스토리 데이터를 지정된 뷰 모드의 서식화된 텍스트 및 태그 리스트로 변환.
 
         Args:
             data: 포맷팅할 스토리 데이터 딕셔너리.
@@ -544,22 +576,26 @@ class StoryFormatter:
 
         dispatch = StoryFormatter._get_dispatch_table()
         content_list: list[tuple[str, str | None]] = []
-        scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf')) 
-        
+        if not isinstance(data, dict):
+            return content_list
+        scene_keys = sorted(data.keys(), key=lambda x: int(x) if isinstance(x, str) and x.isdigit() else float('inf'))
+
         for key in scene_keys:
             scene = data[key]
+            if not isinstance(scene, dict):
+                continue
             content_list.append((f" S# {key} \n", 'scene_header'))
             if view_mode == 'simple':
                 keys_to_display = [k for k in ['title', 'outline', 'tag', 'vo', 'print', 'choice'] if k in scene]
             else:
                 existing_keys = [k for k in StoryFormatter._FIELD_ORDER if k in scene]
-                other_keys = sorted([k for k in scene.keys() if k not in StoryFormatter._FIELD_ORDER])
+                other_keys = sorted([k for k in scene if k not in StoryFormatter._FIELD_ORDER])
                 keys_to_display = existing_keys + other_keys
 
-            for field in keys_to_display:
-                value = scene[field]
-                content_list.append(("    " + f"{field}\n", 'key'))
-                formatter = dispatch.get(field, StoryFormatter._format_default)
+            for fld in keys_to_display:
+                value = scene[fld]
+                content_list.append(("    " + f"{fld}\n", 'key'))
+                formatter = dispatch.get(fld, StoryFormatter._format_default)
                 formatter(value, content_list)
                 content_list.append(("\n", None))
             content_list.append((SEPARATOR_MEDIUM + "\n\n", None))
@@ -586,7 +622,7 @@ class StoryFormatter:
 
     @staticmethod
     def _format_default(value: Any, content_list: list[tuple[str, str | None]]) -> None:
-        content_list.append(("        " + f"{str(value)}\n", 'value'))
+        content_list.append(("        " + f"{value!s}\n", 'value'))
 
     @staticmethod
     def _format_generic_id_list(value: Any, content_list: list[tuple[str, str | None]]) -> None:
@@ -597,13 +633,13 @@ class StoryFormatter:
         for item in value:
             if isinstance(item, list) and item:
                 details = ", ".join(map(str, item[1:]))
-                content_list.extend([(indent + f"- {str(item[0])}", 'value'), (f" ({details})\n" if details else "\n", 'value')])
+                content_list.extend([(indent + f"- {item[0]!s}", 'value'), (f" ({details})\n" if details else "\n", 'value')])
             else:
-                content_list.append((indent + f"- {str(item)}\n", 'value'))
+                content_list.append((indent + f"- {item!s}\n", 'value'))
 
     @staticmethod
     def _format_simple_id_list(value: Any, content_list: list[tuple[str, str | None]]) -> None:
         indent = "        "
         if not isinstance(value, list): value = [value]
         for item in value:
-            content_list.append((indent + f"- {str(item)}\n", 'value'))
+            content_list.append((indent + f"- {item!s}\n", 'value'))

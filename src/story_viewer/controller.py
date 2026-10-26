@@ -1,61 +1,74 @@
+"""Story Viewer 컨트롤러 모듈.
+
+추출 스토리 JSON 스크립트 로딩, 파싱, 다국어 master.db 메타데이터 조회,
+실시간 빠른 검색 필터, 다중 조건 검색 창 연동, 텍스트/마크다운 내보내기 및
+QueuePollingMixin 기반 백그라운드 태스크 통신 관리.
+"""
+
 from __future__ import annotations
-import os
-import logging
-import threading
-import queue
+
 import json
+import logging
+import os
+import queue
 import re
-from datetime import datetime
+import threading
 import tkinter as tk
+from collections import OrderedDict
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
-from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 from src.breadcrumbs import add_breadcrumb
-from src.utils.base_path import get_application_base_path
-from .windows_search import SearchWindow
-from .windows_export import ExportWindow, SingleExportWindow
-from .logic import StoryDataLoader, StoryFormatter
-from . import db_helper
+from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 from src.queue_events import ActionEvent
 from src.queue_polling import QueuePollingMixin
+from src.shared_state import SharedState
+from src.utils.base_path import get_application_base_path
+
 from .db_manager import StoryDBManager
+from .db_service import StoryDBService
 from .export_handler import StoryExportHandler
+from .file_list_service import StoryFileListService
+from .filter_service import StoryFilterService
+from .logic import StoryDataLoader, StoryFormatter
 from .view import StoryViewerView
+from .windows_export import ExportWindow, SingleExportWindow
+from .windows_search import SearchWindow
 
-
+logger = logging.getLogger(__name__)
 
 
 def _load_db_config() -> dict[str, dict[str, str]]:
-    """db_config.json에서 서버별 DB 테이블/컬럼 매핑 정보를 로드합니다.
+    """db_config.json 기반 서버별 DB 테이블/컬럼 매핑 정보 로드.
 
-    계층형 구조(common, servers, tables)를 기존 호환 딕셔너리로 자동 정규화합니다.
+    계층형 구조(common, servers, tables)를 기존 호환 딕셔너리로 자동 정규화.
 
     Returns:
-        dict: 서버 키('JP', 'KR') 및 'Common'을 키로 갖는 정규화된 DB 정보 딕셔너리.
+        dict[str, dict[str, str]]: 서버 키('JP', 'KR') 및 'Common'을 키로 갖는 정규화된 DB 정보 딕셔너리 반환.
     """
     config_path = os.path.join(os.path.dirname(__file__), 'db_config.json')
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with open(config_path, encoding='utf-8') as f:
+
             raw_cfg = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError) as e:
-        logging.warning("Failed to load db_config.json: %s. Using empty fallback.", e)
+        logger.warning("Failed to load db_config.json: %s. Using empty fallback.", e)
         return {}
 
-    # 신규 계층 구조(common, servers, tables)인 경우 정규화
     if "servers" in raw_cfg and "tables" in raw_cfg:
         common = raw_cfg.get("common", raw_cfg.get("Common", {}))
         raw_tables = raw_cfg.get("tables", {})
-        
+
         tables = {}
         for k, v in raw_tables.items():
-            if isinstance(v, dict) and "table" not in v and not any(k2.endswith("_col") or k2.endswith("_table") for k2 in v):
+            if isinstance(v, dict) and "table" not in v and not any(k2.endswith(("_col", "_table")) for k2 in v):
                 for sub_k, sub_v in v.items():
                     if isinstance(sub_v, dict):
                         tables[sub_k] = sub_v
             else:
                 tables[k] = v
-        
+
         flat_tables = {}
         if "event_story" in tables:
             ev = tables["event_story"]
@@ -152,11 +165,13 @@ def _load_db_config() -> dict[str, dict[str, str]]:
             merged[s_key] = s_dict
         return merged
 
-    return raw_cfg
+    return raw_cfg  # type: ignore[no-any-return]
 
 class StoryViewerController(QueuePollingMixin):
-    def __init__(self, app_wrapper: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None) -> None:
-        """StoryViewerController를 초기화합니다.
+    """Story Viewer 비즈니스 로직 및 서브 서비스 제어 컨트롤러."""
+
+    def __init__(self, app_wrapper: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str | int] | None = None) -> None:
+        """StoryViewerController 인스턴스 초기화.
 
         Args:
             app_wrapper: gui.py의 ttk.Frame 래퍼 (View의 부모 위젯).
@@ -167,54 +182,58 @@ class StoryViewerController(QueuePollingMixin):
         Note:
             다른 Controller(Renamer, AV, ResourceRemover)는 master 하나만 받지만,
             StoryViewer와 UnityConverter는 대화상자 위치 지정을 위해
-            별도의 master(최상위 윈도우)가 필요하여 2개의 위젯 인자를 받습니다.
+            별도 master(최상위 윈도우) 필요에 따른 2개 위젯 인자 수신.
         """
-        self.master = master
-        self.about_info = about_info or {}
-        self.base_path = get_application_base_path()
-        
-        self.all_files = {}
-        self.search_data = {}
-        self.file_titles = {}
-        self.raw_file_titles = {}
-        self.file_situations = {}
-        self.file_outlines = {}
-        self.file_voice_adv_ids = {}
-        self.file_speakers = {}
-        self.display_name_to_filename = {}
-        self.current_filenames_in_list = []
-        self.loaded_filenames = []
-        self.current_file_path = None
-        self.is_loading = False
-        self.task_queue = queue.Queue()
+        self.master: tk.Tk | tk.Toplevel = master
+        self.about_info: dict[str, str | int] = about_info or {}
+        self.base_path: Path = get_application_base_path()
+
+        self.all_files: dict[str, Any] = {}
+        self.search_data: dict[str, Any] = {}
+        self.file_titles: dict[str, str] = {}
+        self.raw_file_titles: dict[str, str] = {}
+        self.file_situations: dict[str, Any] = {}
+        self.file_outlines: dict[str, Any] = {}
+        self.file_voice_adv_ids: dict[str, Any] = {}
+        self.file_speakers: dict[str, Any] = {}
+        self.display_name_to_filename: dict[str, str] = {}
+        self.current_filenames_in_list: list[str] = []
+        self.loaded_filenames: list[str] = []
+        self.current_file_path: Path | str | None = None
+        self._story_data_cache: OrderedDict[Any, Any] = OrderedDict()
+        self._story_data_cache_max: int = 50
+        self.is_loading: bool = False
+        self._loading_thread: threading.Thread | None = None
+        self._loading_cancel_requested: bool = False
+        self.task_queue: queue.Queue[Any] = queue.Queue()
+        self._state_lock: threading.RLock = threading.RLock()
 
         if app_lang_var:
-            self.lang_var = app_lang_var
+            self.lang_var: tk.StringVar = app_lang_var
         else:
             self.lang_var = tk.StringVar(value='ko')
 
-        self.display_mode_var = tk.StringVar(value="original")
-        self.view_mode_var = tk.StringVar(value="script")
-        self.server_var = tk.StringVar(value='JP')
+        self.display_mode_var: tk.StringVar = tk.StringVar(value="original")
+        self.view_mode_var: tk.StringVar = tk.StringVar(value="script")
+        self.server_var: tk.StringVar = tk.StringVar(value='JP')
         self._kr_notice_shown: bool = False
-        
-        self.filter_var = tk.StringVar(value="")
+
+        self.filter_var: tk.StringVar = tk.StringVar(value="")
         self.filter_timer: str | None = None
         self.base_search_files: list[str] = []
         self._populate_generation: int = 0
-        
-        self.db_analyzed = False
+
+        self.db_analyzed: bool = False
         self._server_titles_cache: dict[str, dict[str, str]] = {'JP': {}, 'KR': {}}
         self._pending_json_results: dict[str, Any] | None = None
         self._pending_invalid_files: list[tuple[str, str]] = []
         self._db_ready: bool = False
 
-        # 서버별 DB 테이블/컬럼 해시 매핑 정보. (외부 db_config.json에서 로드)
-        self.server_db_info = _load_db_config()
+        self.server_db_info: dict[str, Any] = _load_db_config()
 
-        self.view = StoryViewerView(app_wrapper, self)
+        self.view: StoryViewerView = StoryViewerView(app_wrapper, self)
 
-        self._db_manager = StoryDBManager(
+        self._db_manager: StoryDBManager = StoryDBManager(
             master=self.master,
             server_db_info=self.server_db_info,
             get_lang_dict=self.get_lang_dict,
@@ -222,7 +241,61 @@ class StoryViewerController(QueuePollingMixin):
             view=self.view,
             get_all_files=lambda: self.all_files,
         )
-        self._export_handler = StoryExportHandler(
+        self.shared_state: SharedState = SharedState()
+        self.shared_state.get_lang_dict = self.get_lang_dict
+        self.shared_state.get_view = lambda: self.view
+        self.shared_state.get_base_path = lambda: self.base_path
+        self._db_service: StoryDBService = StoryDBService(
+            shared_state=self.shared_state,
+            view=self.view,
+            master=self.master,
+            base_path=self.base_path,
+            server_db_info=self.server_db_info,
+            server_var=self.server_var,
+            task_queue=self.task_queue,
+            db_manager=self._db_manager,
+            get_lang_dict=self.get_lang_dict,
+            # 가변 상태 접근자 (Mutable state accessors)
+            get_all_files=lambda: self.all_files,
+            set_all_files=lambda v: setattr(self, 'all_files', v),
+            get_file_titles=lambda: self.file_titles,
+            set_file_titles=lambda v: setattr(self, 'file_titles', v),
+            get_is_loading=lambda: self.is_loading,
+            set_is_loading=lambda v: setattr(self, 'is_loading', v),
+            get_pending_json=lambda: self._pending_json_results,
+            set_pending_json=lambda v: setattr(self, '_pending_json_results', v),
+            get_pending_invalid=lambda: self._pending_invalid_files,
+            set_pending_invalid=lambda v: setattr(self, '_pending_invalid_files', v),
+            get_db_analyzed=lambda: self.db_analyzed,
+            set_db_analyzed=lambda v: setattr(self, 'db_analyzed', v),
+            get_db_ready=lambda: self._db_ready,
+            set_db_ready=lambda v: setattr(self, '_db_ready', v),
+            get_kr_notice_shown=lambda: self._kr_notice_shown,
+            set_kr_notice_shown=lambda v: setattr(self, '_kr_notice_shown', v),
+            get_raw_file_titles=lambda: self.raw_file_titles,
+            set_raw_file_titles=lambda v: setattr(self, 'raw_file_titles', v),
+            get_file_situations=lambda: self.file_situations,
+            set_file_situations=lambda v: setattr(self, 'file_situations', v),
+            get_file_outlines=lambda: self.file_outlines,
+            set_file_outlines=lambda v: setattr(self, 'file_outlines', v),
+            get_file_voice_adv_ids=lambda: self.file_voice_adv_ids,
+            set_file_voice_adv_ids=lambda v: setattr(self, 'file_voice_adv_ids', v),
+            get_file_speakers=lambda: self.file_speakers,
+            set_file_speakers=lambda v: setattr(self, 'file_speakers', v),
+            get_server_titles_cache=lambda: self._server_titles_cache,
+            set_server_titles_cache=lambda v: setattr(self, '_server_titles_cache', v),
+            get_loaded_filenames=lambda: self.loaded_filenames,
+            set_loaded_filenames=lambda v: setattr(self, 'loaded_filenames', v),
+            get_base_search_files=lambda: self.base_search_files,
+            set_base_search_files=lambda v: setattr(self, 'base_search_files', v),
+            get_search_data=lambda: self.search_data,
+            set_search_data=lambda v: setattr(self, 'search_data', v),
+            # 콜백 함수 (Callbacks)
+            apply_filter=self._apply_filter,
+            clear_workspace=self._clear_workspace,
+        )
+        self._export_handler: StoryExportHandler = StoryExportHandler(
+            shared_state=self.shared_state,
             get_lang_dict=self.get_lang_dict,
             task_queue=self.task_queue,
             master=self.master,
@@ -236,7 +309,56 @@ class StoryViewerController(QueuePollingMixin):
             view=self.view,
             get_file_titles=lambda: self.file_titles,
         )
-        
+        self._file_list_service: StoryFileListService = StoryFileListService(
+            shared_state=self.shared_state,
+            view=self.view,
+            display_mode_var=self.display_mode_var,
+            get_is_loading=lambda: self.is_loading,
+            get_current_filenames_in_list=lambda: self.current_filenames_in_list,
+            set_current_filenames_in_list=lambda v: setattr(self, 'current_filenames_in_list', v),
+            get_loaded_filenames=lambda: self.loaded_filenames,
+            set_loaded_filenames=lambda v: setattr(self, 'loaded_filenames', v),
+            get_all_files=lambda: self.all_files,
+            set_all_files=lambda v: setattr(self, 'all_files', v),
+            get_file_titles=lambda: self.file_titles,
+            set_file_titles=lambda v: setattr(self, 'file_titles', v),
+            get_raw_file_titles=lambda: self.raw_file_titles,
+            set_raw_file_titles=lambda v: setattr(self, 'raw_file_titles', v),
+            get_file_situations=lambda: self.file_situations,
+            set_file_situations=lambda v: setattr(self, 'file_situations', v),
+            get_file_outlines=lambda: self.file_outlines,
+            set_file_outlines=lambda v: setattr(self, 'file_outlines', v),
+            get_file_voice_adv_ids=lambda: self.file_voice_adv_ids,
+            set_file_voice_adv_ids=lambda v: setattr(self, 'file_voice_adv_ids', v),
+            get_file_speakers=lambda: self.file_speakers,
+            set_file_speakers=lambda v: setattr(self, 'file_speakers', v),
+            get_display_name_to_filename=lambda: self.display_name_to_filename,
+            set_display_name_to_filename=lambda v: setattr(self, 'display_name_to_filename', v),
+            get_base_search_files=lambda: self.base_search_files,
+            set_base_search_files=lambda v: setattr(self, 'base_search_files', v),
+            get_search_data=lambda: self.search_data,
+            set_search_data=lambda v: setattr(self, 'search_data', v),
+            get_server_titles_cache=lambda: self._server_titles_cache,
+            set_server_titles_cache=lambda v: setattr(self, '_server_titles_cache', v),
+            get_story_data_cache=lambda: self._story_data_cache,
+            set_story_data_cache=lambda v: setattr(self, '_story_data_cache', v),
+            get_current_file_path=lambda: self.current_file_path,
+            set_current_file_path=lambda v: setattr(self, 'current_file_path', v),
+            get_populate_generation=lambda: self._populate_generation,
+            set_populate_generation=lambda v: setattr(self, '_populate_generation', v),
+        )
+        self._filter_service: StoryFilterService = StoryFilterService(
+            shared_state=self.shared_state,
+            view=self.view,
+            get_lang_dict=self.get_lang_dict,
+            get_base_search_files=lambda: self.base_search_files,
+            set_base_search_files=lambda v: setattr(self, 'base_search_files', v),
+            get_loaded_filenames=lambda: self.loaded_filenames,
+            get_file_titles=lambda: self.file_titles,
+            update_file_list=self._file_list_service.update_file_list,
+            filter_var=self.filter_var,
+        )
+
         self.lang_var.trace_add('write', self._on_language_change)
         self.filter_var.trace_add('write', self._on_filter_changed)
 
@@ -246,11 +368,11 @@ class StoryViewerController(QueuePollingMixin):
         self.view.show_filter_placeholder()
 
     def get_lang_dict(self) -> dict[str, str]:
-        """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
+        """현재 선택된 언어의 다국어 딕셔너리 반환."""
+        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))  # type: ignore[no-any-return]
 
     def _on_language_change(self, *args: Any) -> None:
-        """언어 변경 이벤트를 처리하고 UI 텍스트 및 뷰 모드를 업데이트합니다.
+        """언어 변경 이벤트 처리 및 UI 텍스트/뷰 모드 갱신.
 
         Args:
             *args: 가변 인자 리스트.
@@ -263,161 +385,30 @@ class StoryViewerController(QueuePollingMixin):
             pass
 
     def start_db_analysis(self) -> None:
-        """DB 체크 및 스키마 분석을 수행하고 UI를 활성화합니다."""
-        self.view.update_status_bar('db_checking_msg')
-        
-        def _on_ready():
-            self.task_queue.put(ActionEvent(action=self._on_db_analyzed))
-            
-        self._db_manager.check_and_cache_db_status(on_ready=_on_ready)
+        """DB 검사 및 스키마 분석 후 UI 활성화."""
+        self._db_service.start_db_analysis()
 
     def _on_db_analyzed(self) -> None:
-        """DB 분석이 완료된 후 관련 UI 요소들을 활성화하고 로딩 완료를 시도합니다."""
-        self.db_analyzed = True
-        self._db_ready = True
-
-        # DB 분석 후 요소 활성화
-        has_files = bool(self.all_files or (self._pending_json_results and self._pending_json_results.get('all_files')))
-        self.view.display_mode_combo.config(state="readonly" if has_files else tk.DISABLED)
-        self.view.search_button.config(state=tk.NORMAL if has_files else tk.DISABLED)
-        self.view.btn_export.config(state=tk.NORMAL if has_files else tk.DISABLED)
-        for child in self.view.server_frame.winfo_children():
-            child.config(state=tk.NORMAL if has_files else tk.DISABLED)
-            
-        if self._pending_json_results is not None:
-            self._try_finalize_loading()
-        elif self.all_files:
-            self.on_server_change()
-            self.view.update_status_bar('status_bar_initial')
-        else:
-            self.view.update_status_bar('status_bar_initial')
+        """DB 분석 완료 후 관련 UI 요소 활성화 및 로딩 완료 시도."""
+        self._db_service.on_db_analyzed()
 
     def on_server_change(self, force_fetch: bool = False, skip_filter: bool = False) -> None:
-        """게임 서버 라디오 버튼 변경 시 호출되어 DB에서 타이틀을 조회하여 갱신합니다.
-        
+        """게임 서버 라디오 버튼 변경 이벤트 처리 (DB 타이틀 조회 및 갱신).
+
         Args:
             force_fetch: 캐시를 무시하고 DB에서 강제로 새로 조회할지 여부.
             skip_filter: 필터링 및 리스트 갱신 호출을 생략할지 여부.
         """
-        if not self.db_analyzed or not self.all_files:
-            return
-            
-        server = self.server_var.get()
-
-        # 한국 서버(KR) 최초 선택 시 2024-07-25 기준일 안내 (세션당 1회)
-        if server == 'KR' and not self._kr_notice_shown:
-            self._kr_notice_shown = True
-            lang_dict = self.get_lang_dict()
-            title = lang_dict.get('msgbox_kr_server_notice_title') or 'Korean Server Data Notice'
-            msg = lang_dict.get('msgbox_kr_server_notice_msg') or (
-                'Data for the Korean server (KR) is only processed up to July 25, 2024.\n\n'
-                'Stories added after this date may not display official titles or metadata.'
-            )
-            messagebox.showinfo(title, msg, parent=self.view)
-
-        # 1. 캐시 확인: force_fetch가 False이고 캐시에 저장된 타이틀이 있다면 0ms 즉시 복원
-        if not force_fetch and server in self._server_titles_cache and self._server_titles_cache[server]:
-            self.file_titles = dict(self._server_titles_cache[server])
-            if not skip_filter:
-                self._apply_filter()
-            return
-
-        db_info = self.server_db_info.get(server, {})
-        
-        # 2. adv_id 목록 수집
-        filename_to_adv_id = {}
-        for filename in self.all_files:
-            match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
-            if match:
-                filename_to_adv_id[filename] = match.group(1)
-        
-        # 3. 일괄 조회 (우선순위: story_detail -> dear_story_detail -> tower_story_detail -> alchemy -> sekai -> birthday -> quest -> event_top_adv)
-        fetched_titles = {}
-        if filename_to_adv_id:
-            adv_ids = list(filename_to_adv_id.values())
-            if 'story_detail_table' in db_info:
-                fetched_titles.update(db_helper.fetch_story_detail_titles_batch(db_info, adv_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if 'dear_story_detail_table' in db_info and remaining_ids:
-                fetched_titles.update(db_helper.fetch_dear_story_detail_titles_batch(db_info, remaining_ids))
-                remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-                dear_fallback_ids = [aid for aid in remaining_ids if aid.startswith('6')]
-                if dear_fallback_ids:
-                    meta_dict = {
-                        aid: (self.file_voice_adv_ids.get(fn), self.file_situations.get(fn))
-                        for fn, aid in filename_to_adv_id.items() if aid in dear_fallback_ids
-                    }
-                    fetched_titles.update(db_helper.fetch_dear_story_detail_fallback_titles_batch(db_info, meta_dict))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if 'tower_story_detail_table' in db_info and remaining_ids:
-                fetched_titles.update(db_helper.fetch_tower_story_detail_titles_batch(db_info, remaining_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if 'alchemy_story_detail_table' in db_info and remaining_ids:
-                fetched_titles.update(db_helper.fetch_alchemy_story_detail_titles_batch(db_info, remaining_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if 'sekai_top_data_table' in db_info and remaining_ids:
-                fetched_titles.update(db_helper.fetch_sekai_story_titles_batch(db_info, remaining_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if 'birthday_table' in db_info and remaining_ids:
-                fetched_titles.update(db_helper.fetch_birthday_titles_batch(db_info, remaining_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if 'quest_table' in db_info and remaining_ids:
-                fetched_titles.update(db_helper.fetch_quest_titles_batch(db_info, remaining_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if 'event_top_adv_table' in db_info and remaining_ids:
-                eta_meta = {
-                    aid: (self.file_voice_adv_ids.get(fn), self.file_situations.get(fn))
-                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
-                }
-                fetched_titles.update(db_helper.fetch_event_top_adv_titles_batch(db_info, remaining_ids, eta_meta))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if ('hatsune_boss_table' in db_info or 'hatsune_special_battle_table' in db_info or 'event_list_table' in db_info) and remaining_ids:
-                fetched_titles.update(db_helper.fetch_event_boss_battle_titles_batch(db_info, remaining_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if ('legion_special_battle_table' in db_info or 'byway_battle_quest_data_table' in db_info or 'baseline_dbs' in db_info or 'baseline_db_path' in db_info) and remaining_ids:
-                fetched_titles.update(db_helper.fetch_legion_and_byway_battle_titles_batch(db_info, remaining_ids))
-            remaining_ids = [aid for aid in adv_ids if aid not in fetched_titles]
-            if remaining_ids:
-                speaker_meta = {
-                    aid: self.file_speakers.get(fn)
-                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
-                }
-                raw_titles_meta = {
-                    aid: self.raw_file_titles.get(fn, "")
-                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
-                }
-                situation_meta = {
-                    aid: self.file_situations.get(fn)
-                    for fn, aid in filename_to_adv_id.items() if aid in remaining_ids
-                }
-                fetched_titles.update(db_helper.fetch_event_minigame_and_sub_scenes_batch(
-                    db_info, remaining_ids, speaker_meta, raw_titles_meta, situation_meta
-                ))
-            
-        # 4. 타이틀 갱신: DB 결과 우선, 미존재 시 JSON 원본 타이틀(또는 파일명) 유지
-        for filename in self.all_files:
-            adv_id = filename_to_adv_id.get(filename)
-            title = fetched_titles.get(adv_id) if adv_id else None
-            
-            if title:
-                self.file_titles[filename] = title
-            else:
-                self.file_titles[filename] = self.raw_file_titles.get(filename, filename)
-                
-        # 5. 캐시에 보관
-        self._server_titles_cache[server] = dict(self.file_titles)
-
-        if not skip_filter:
-            self._apply_filter()
+        self._db_service.on_server_change(force_fetch=force_fetch, skip_filter=skip_filter)
 
     def _on_poll_cycle(self) -> None:
-        """태스크 큐에 쌓인 액션 이벤트들을 메인 스레드에서 처리합니다."""
+        """태스크 큐 액션 이벤트 메인 스레드 순차 처리."""
         for event in self._drain_queue(self.task_queue):
-            if isinstance(event, ActionEvent):
+            if isinstance(event, ActionEvent) and event.action is not None:
                 event.action()
 
     def _clear_workspace(self) -> None:
-        """작업 공간을 초기화하여 모든 로드된 데이터와 UI 상태를 초기 상태로 되돌립니다."""
+        """작업 공간 초기화 (모든 로드 데이터 및 UI 상태 초기화)."""
         self._populate_generation += 1
         self.view.update_story_text([])
         self.all_files.clear()
@@ -436,13 +427,14 @@ class StoryViewerController(QueuePollingMixin):
         self.filter_var.set("")
         self.view.show_filter_placeholder()
         self.current_file_path = None
+        self._story_data_cache.clear()
         self.view.search_button.config(state=tk.DISABLED)
         self.view.btn_export.config(state=tk.DISABLED)
         self.view.btn_copy.config(state=tk.DISABLED)
         self.view.display_mode_combo.config(state=tk.DISABLED)
         self.view.jp_radio.config(state=tk.DISABLED)
         self.view.kr_radio.config(state=tk.DISABLED)
-        
+
         self._server_titles_cache = {'JP': {}, 'KR': {}}
         self._pending_json_results = None
         self._pending_invalid_files = []
@@ -456,35 +448,39 @@ class StoryViewerController(QueuePollingMixin):
             self._db_ready = True
 
     def _start_loading_task(self, paths: tuple[str, ...] | list[str] | None = None, folder_path: str | None = None) -> None:
-        """스토리 데이터 파일 로딩 작업을 백그라운드 스레드로 시작합니다."""
+        """스토리 데이터 파일 로딩 작업 백그라운드 스레드 시작."""
         lang_dict = self.get_lang_dict()
         if self.is_loading:
-            messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
+            messagebox.showwarning(
+                lang_dict.get('msgbox_loading_title', 'In Progress'),
+                lang_dict.get('msgbox_loading_msg', 'Currently loading other files.'),
+                parent=self.view,
+            )
             return
 
         self._clear_workspace()
         self.is_loading = True
+        self._resume_polling()
         self.view.update_status_bar('status_bar_loading_start')
         self.view.btn_open_file.config(state=tk.DISABLED)
         self.view.btn_open_folder.config(state=tk.DISABLED)
-        
-        # 병렬 동기화 상태 초기화
+
         self._pending_json_results = None
         self._pending_invalid_files = []
         self._db_ready = bool(self.db_analyzed)
 
-        # 1. JSON 파일 파싱 스레드 시작
         lang_dict = self.get_lang_dict()
+        self._loading_cancel_requested = False
         thread = threading.Thread(target=self._load_and_analyze_thread, args=(paths, folder_path, lang_dict))
         thread.daemon = True
+        self._loading_thread = thread
         thread.start()
 
-        # 2. DB 분석이 아직 안 된 경우, 백그라운드에서 동시에 DB 분석 시작 (방안 A: 병렬 실행)
         if not self.db_analyzed:
             self.start_db_analysis()
 
     def open_files(self) -> None:
-        """파일 선택 대화상자를 열고 스토리 데이터 파일을 로드합니다."""
+        """파일 선택 대화상자 오픈 및 스토리 데이터 파일 로드."""
         lang_dict = self.get_lang_dict()
         file_paths = filedialog.askopenfilenames(
             title=lang_dict.get('dialog_title_open_files', "Select storydata file(s)"),
@@ -495,7 +491,7 @@ class StoryViewerController(QueuePollingMixin):
             self._start_loading_task(paths=file_paths)
 
     def open_folder(self) -> None:
-        """폴더 선택 대화상자를 열고 내부 스토리 데이터 파일을 로드합니다."""
+        """폴더 선택 대화상자 오픈 및 내부 스토리 데이터 파일 로드."""
         lang_dict = self.get_lang_dict()
         folder_path = filedialog.askdirectory(title=lang_dict.get('dialog_title_open_folder', "Select the folder with storydata files"))
         if folder_path:
@@ -503,251 +499,50 @@ class StoryViewerController(QueuePollingMixin):
             self._start_loading_task(folder_path=folder_path)
 
     def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None, lang_dict: dict) -> None:
-        """선택된 파일/폴더 내의 스토리 데이터를 백그라운드에서 로드하고 분석합니다.
+        """선택된 파일/폴더의 스토리 데이터 백그라운드 로드 및 분석.
 
         Args:
             paths: 로드할 파일 경로들의 튜플 또는 리스트.
             folder_path: 로드할 폴더 경로.
             lang_dict: 오류 메시지 다국어 처리 딕셔너리.
         """
-        import re
-        temp_all_files, invalid_files = {}, []
-        file_candidates = {}
-        pattern = re.compile(r'^storydata_\d+\.json$')
-
-        if paths:
-            for path in paths:
-                filename = os.path.basename(path)
-                if pattern.match(filename):
-                    if filename not in file_candidates:
-                        file_candidates[filename] = []
-                    file_candidates[filename].append(path)
-
-        if folder_path:
-            for dirpath, _, filenames in os.walk(folder_path):
-                for filename in filenames:
-                    if pattern.match(filename):
-                        full_path = os.path.join(dirpath, filename)
-                        if filename not in file_candidates:
-                            file_candidates[filename] = []
-                        file_candidates[filename].append(full_path)
-        
-        file_list_to_process = []
-        for filename, path_list in file_candidates.items():
-            if len(path_list) > 1:
-                try:
-                    winner_path = max(path_list, key=os.path.getsize)
-                    file_list_to_process.append(winner_path)
-                except FileNotFoundError:
-                    pass 
-            elif path_list:
-                file_list_to_process.append(path_list[0])
-        
-        file_list_to_process.sort()
-        total_files = len(file_list_to_process)
-        unique_char_names, unique_bgms, unique_bgs, unique_voices = set(), set(), set(), set()
-        temp_file_titles, temp_raw_titles = {}, {}
-        temp_file_situations, temp_file_outlines = {}, {}
-        temp_file_voice_adv_ids = {}
-        temp_file_speakers = {}
-
-        for i, path in enumerate(file_list_to_process):
-            def _update_status(idx=i, total=total_files):
-                self.view.update_status_bar('status_bar_analyzing', i=idx+1, t=total)
-            self.task_queue.put(ActionEvent(action=_update_status))
-            is_valid, data, error_reason = StoryDataLoader.is_valid_storydata(path, lang_dict)
-            
-            if is_valid:
-                filename = os.path.basename(path)
-                temp_all_files[filename] = path
-
-                # 1. Frame 0 우선 확인
-                frame0 = data.get('0', {}) if isinstance(data, dict) else {}
-                json_title = str(frame0.get('title', '') or '').strip()
-                situation = str(frame0.get('situation', '') or '').strip()
-                outline = str(frame0.get('outline', '') or '').strip()
-
-                # 2. 씬 루프: 화자, 보이스, BGM/BG 및 프레임 0 누락 메타데이터 보강
-                for scene in data.values():
-                    if isinstance(scene, dict):
-                        if not situation and (s := str(scene.get('situation', '') or '').strip()):
-                            if s != 'null':
-                                situation = s
-                        if not outline and (o := str(scene.get('outline', '') or '').strip()):
-                            if o != 'null':
-                                outline = o
-                        if not json_title and (t := str(scene.get('title', '') or '').strip()):
-                            if not t.isdigit() and not t.startswith('storydata_'):
-                                json_title = t
-
-                        if 'print' in scene and 'name' in scene['print'] and (name := str(scene['print']['name']).strip()):
-                            unique_char_names.add(name)
-                            if filename not in temp_file_speakers and name not in ['主人公', '{player_name}', '{0}', '???', '？？？', 'ナレーション', ''] and not (name.startswith('{') and name.endswith('}')):
-                                temp_file_speakers[filename] = name
-                        if 'bgm' in scene and (bgm_name := StoryDataLoader.extract_asset_name(scene['bgm'])): unique_bgms.add(bgm_name)
-                        if 'background' in scene and (bg_name := StoryDataLoader.extract_asset_name(scene['background'])): unique_bgs.add(bg_name)
-                        if 'vo' in scene and (vo_name := StoryDataLoader.extract_asset_name(scene['vo'])):
-                            unique_voices.add(vo_name)
-                            if filename not in temp_file_voice_adv_ids:
-                                m = re.search(r'vo_adv_(\d+)_', vo_name)
-                                if m:
-                                    temp_file_voice_adv_ids[filename] = m.group(1)
-
-                if situation:
-                    temp_file_situations[filename] = situation
-                if outline:
-                    temp_file_outlines[filename] = outline
-                base_title = json_title if json_title else (situation if situation else filename)
-                temp_raw_titles[filename] = base_title
-                temp_file_titles[filename] = base_title
-            else:
-                invalid_files.append((path, error_reason))
-        
-        if not temp_all_files:
-            self.task_queue.put(ActionEvent(action=lambda: self._finish_loading(None, invalid_files)))
-            return
-
-        temp_search_data = {
-            'filenames': sorted(list(temp_all_files.keys())), 
-            'character_names': sorted(list(unique_char_names)), 
-            'bgms': sorted(list(unique_bgms)), 
-            'backgrounds': sorted(list(unique_bgs)),
-            'voices': sorted(list(unique_voices))
-        }
-        results = {
-            "all_files": temp_all_files,
-            "titles": temp_file_titles,
-            "raw_titles": temp_raw_titles,
-            "file_situations": temp_file_situations,
-            "file_outlines": temp_file_outlines,
-            "file_voice_adv_ids": temp_file_voice_adv_ids,
-            "file_speakers": temp_file_speakers,
-            "search_data": temp_search_data
-        }
-        self.task_queue.put(ActionEvent(action=lambda: self._finish_loading(results, invalid_files)))
+        self._db_service.load_and_analyze_thread(paths, folder_path, lang_dict)
 
     def _finish_loading(self, results: dict[str, Any] | None, invalid_files: list[tuple[str, str]]) -> None:
-        """파일 로딩 작업을 완료하고 결과를 임시 보관한 뒤 최종 확정을 시도합니다.
+        """파일 로딩 작업 완료 처리 (결과 임시 보관 및 최종 확정 시도).
 
         Args:
             results: 파싱된 데이터 딕셔너리 (all_files, titles, search_data) 또는 실패 시 None.
             invalid_files: 로드에 실패한 (파일경로, 에러사유) 튜플 리스트.
         """
-        lang_dict = self.get_lang_dict()
-        if not results:
-            self.is_loading = False
-            self.view.btn_open_file.config(state=tk.NORMAL)
-            self.view.btn_open_folder.config(state=tk.NORMAL)
-            self.view.update_status_bar('status_bar_loading_done', loaded=0, failed=len(invalid_files))
-            messagebox.showwarning(lang_dict['msgbox_no_valid_files_title'], lang_dict['msgbox_no_valid_files_msg'], parent=self.view)
-            if invalid_files:
-                self._handle_invalid_files_log(invalid_files)
-            self._pending_json_results = None
-            self._pending_invalid_files = []
-            return
-
-        self._pending_json_results = results
-        self._pending_invalid_files = invalid_files
-        self._try_finalize_loading()
+        self._db_service.finish_loading(results, invalid_files)
 
     def _try_finalize_loading(self) -> None:
-        """JSON 파싱과 DB 분석이 모두 완료되었을 때 최종 DB 타이틀로 단 1회 렌더링을 수행합니다."""
-        if self._pending_json_results is None or not self._db_ready:
-            return
-
-        results = self._pending_json_results
-        invalid_files = self._pending_invalid_files
-        self._pending_json_results = None
-        self._pending_invalid_files = []
-
-        self.is_loading = False
-        self.view.btn_open_file.config(state=tk.NORMAL)
-        self.view.btn_open_folder.config(state=tk.NORMAL)
-
-        self.all_files = results['all_files']
-        self.file_titles = results['titles']
-        self.raw_file_titles = results.get('raw_titles', {})
-        self.file_situations = results.get('file_situations', {})
-        self.file_outlines = results.get('file_outlines', {})
-        self.file_voice_adv_ids = results.get('file_voice_adv_ids', {})
-        self.file_speakers = results.get('file_speakers', {})
-        self.search_data = results['search_data']
-        self.loaded_filenames = sorted(list(self.all_files.keys()))
-        self.base_search_files = list(self.loaded_filenames)
-
-        # UI 요소 활성화
-        self.view.display_mode_combo.config(state="readonly")
-        self.view.search_button.config(state=tk.NORMAL if self.all_files else tk.DISABLED)
-        self.view.btn_export.config(state=tk.NORMAL if self.all_files else tk.DISABLED)
-        self.view.jp_radio.config(state=tk.NORMAL)
-        self.view.kr_radio.config(state=tk.NORMAL)
-
-        # DB 분석 완료 상태이므로 DB에서 타이틀 일괄 조회 및 캐싱 (skip_filter=True로 필터 중복 호출 방지)
-        self.on_server_change(force_fetch=True, skip_filter=True)
-
-        # 완성된 공식 DB 타이틀로 단 1회 렌더링
-        self._apply_filter()
-
-        self.view.update_status_bar('status_bar_loading_done', loaded=len(self.all_files), failed=len(invalid_files))
-
-        if invalid_files:
-            self._handle_invalid_files_log(invalid_files)
+        """JSON 파싱 및 DB 분석 완료 시 DB 타이틀 기반 렌더링."""
+        self._db_service.try_finalize_loading()
 
     def _handle_invalid_files_log(self, invalid_files: list[tuple[str, str]]) -> None:
-        """손상되거나 유효하지 않은 파일들에 대한 오류 로그를 자동 저장하고 알립니다."""
-        lang_dict = self.get_lang_dict()
-        try:
-            import platform
-            import multiprocessing
-            from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
-            
-            python_ver = platform.python_version()
-            os_ver = platform.platform()
-            cpu_cores = multiprocessing.cpu_count()
-            
-            exec_path = str(self.base_path)
-            now = datetime.now()
-            
-            log_dir = self.base_path / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_filename = log_dir / f"StoryViewerLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
-
-            with open(log_filename, 'w', encoding='utf-8') as f:
-                f.write(f"{SEPARATOR_LONG}\n")
-                f.write(f"[SESSION] Invalid Storydata Load Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                f.write(f"{SEPARATOR_LONG}\n")
-                f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
-                f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
-                f.write(f"[ENGINE]  Python Version:  {python_ver}\n")
-                f.write(f"[SYSTEM]  OS Version:      {os_ver}\n")
-                f.write(f"[SYSTEM]  Processor Count: {cpu_cores} Cores\n")
-                f.write(f"[PATH]    Exec Path:       {exec_path}\n")
-                f.write(f"[REPORT]  Total Failed:    {len(invalid_files)}\n")
-                f.write(f"{SEPARATOR_LONG}\n\n")
-
-                for idx, (path, reason) in enumerate(invalid_files, 1):
-                    f.write(f"[ERROR ITEM #{idx}]\n")
-                    f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                    f.write(f"Context   : Storydata Validation\n")
-                    f.write(f"File      : {path}\n")
-                    f.write(f"Reason    : {reason}\n")
-                    f.write(f"{SEPARATOR_LONG}\n\n")
-
-            msg = lang_dict['msgbox_load_fail_msg'].format(count=len(invalid_files), filename=str(log_filename))
-            messagebox.showwarning(lang_dict['msgbox_load_fail_title'], msg, parent=self.view)
-        except OSError as e:
-            messagebox.showerror(lang_dict['msgbox_log_save_error_title'], lang_dict['msgbox_log_save_error_msg'].format(e=e), parent=self.view)
+        """손상/비정상 파일 대상 오류 로그 자동 저장 및 알림."""
+        self._db_service.handle_invalid_files_log(invalid_files)
 
 
 
     def open_search_window(self) -> None:
-        """검색 창을 엽니다. DB 상태를 사전 확인하고 누락 시 다운로드를 안내합니다."""
+        """검색 창 오픈 (DB 상태 사전 확인 및 누락 시 다운로드 안내)."""
         lang_dict = self.get_lang_dict()
         if self.is_loading:
-            messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
+            messagebox.showwarning(
+                lang_dict.get('msgbox_loading_title', 'In Progress'),
+                lang_dict.get('msgbox_loading_msg', 'Currently loading other files.'),
+                parent=self.view,
+            )
             return
         if not self.all_files:
-            messagebox.showinfo(lang_dict['msgbox_search_before_load_title'], lang_dict['msgbox_search_before_load_msg'], parent=self.view)
+            messagebox.showinfo(
+                lang_dict.get('msgbox_search_before_load_title', 'Notice'),
+                lang_dict.get('msgbox_search_before_load_msg', 'Please open a storydata file or folder first.'),
+                parent=self.view,
+            )
             return
         SearchWindow(
             master=self.master,
@@ -765,13 +560,21 @@ class StoryViewerController(QueuePollingMixin):
         )
 
     def open_export_window(self) -> None:
-        """내보내기 창을 엽니다. DB 상태를 사전 확인하고 누락 시 다운로드를 안내합니다."""
+        """내보내기 창 오픈 (DB 상태 사전 확인 및 누락 시 다운로드 안내)."""
         lang_dict = self.get_lang_dict()
         if self.is_loading:
-            messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
+            messagebox.showwarning(
+                lang_dict.get('msgbox_loading_title', 'In Progress'),
+                lang_dict.get('msgbox_loading_msg', 'Currently loading other files.'),
+                parent=self.view,
+            )
             return
         if not self.all_files:
-            messagebox.showinfo(lang_dict['msgbox_no_export_files_title'], lang_dict['msgbox_no_export_files_msg'], parent=self.view)
+            messagebox.showinfo(
+                lang_dict.get('msgbox_no_export_files_title', 'Notice'),
+                lang_dict.get('msgbox_no_export_files_msg', 'There are no files to export.'),
+                parent=self.view,
+            )
             return
         ExportWindow(
             master=self.master,
@@ -785,10 +588,14 @@ class StoryViewerController(QueuePollingMixin):
         )
 
     def open_single_export_window(self) -> None:
-        """선택한 단일 스토리 파일의 전용 내보내기 창을 엽니다."""
+        """선택한 단일 스토리 파일의 전용 내보내기 창 열기."""
         lang_dict = self.get_lang_dict()
         if self.is_loading:
-            messagebox.showwarning(lang_dict['msgbox_loading_title'], lang_dict['msgbox_loading_msg'], parent=self.view)
+            messagebox.showwarning(
+                lang_dict.get('msgbox_loading_title', 'In Progress'),
+                lang_dict.get('msgbox_loading_msg', 'Currently loading other files.'),
+                parent=self.view,
+            )
             return
         sel = self.view.file_listbox.curselection()
         if not sel:
@@ -807,7 +614,6 @@ class StoryViewerController(QueuePollingMixin):
         if not filename or filename not in self.all_files:
             return
 
-        # 타이틀 및 ID 추출
         match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
         adv_id = match.group(1) if match else ""
         raw_title = self.file_titles.get(filename, "")
@@ -833,137 +639,25 @@ class StoryViewerController(QueuePollingMixin):
         )
 
     def remove_selected_files(self, event: Any = None) -> None:
-        """선택된 파일(들)을 파일 목록에서 제거합니다."""
-        if self.is_loading:
-            return
-        selected_indices = self.view.file_listbox.curselection()
-        if not selected_indices:
-            return
-
-        to_remove = set()
-        for idx in selected_indices:
-            if 0 <= idx < len(self.current_filenames_in_list):
-                to_remove.add(self.current_filenames_in_list[idx])
-            else:
-                try:
-                    display_name = self.view.file_listbox.get(idx)
-                    if fn := self.display_name_to_filename.get(display_name):
-                        to_remove.add(fn)
-                except tk.TclError:
-                    continue
-
-        if not to_remove:
-            return
-
-        self.current_filenames_in_list = [f for f in self.current_filenames_in_list if f not in to_remove]
-        self.loaded_filenames = [f for f in self.loaded_filenames if f not in to_remove]
-        for fn in to_remove:
-            self.all_files.pop(fn, None)
-
-        if self.current_filenames_in_list:
-            self.update_file_list(
-                self.current_filenames_in_list,
-                status_key='removed_selected_files',
-                count=len(to_remove),
-                total=len(self.current_filenames_in_list)
-            )
-        else:
-            self._populate_generation += 1
-            self.display_name_to_filename.clear()
-            self.current_file_path = None
-            self.view.file_listbox.delete(0, tk.END)
-            self.view.update_story_text([])
-            self.view.btn_export.config(state=tk.DISABLED)
-            self.view.btn_copy.config(state=tk.DISABLED)
-            self.view.update_status_bar('removed_selected_files', count=len(to_remove), total=0)
+        """선택된 파일 목록에서 제거."""
+        self._file_list_service.remove_selected_files(event)
 
     def remove_all_files(self, event: Any = None) -> None:
-        """모든 파일을 파일 목록에서 제거합니다."""
-        if self.is_loading:
-            return
-        if not self.current_filenames_in_list and not self.all_files:
-            return
-
-        total_removed = len(self.all_files) or len(self.current_filenames_in_list)
-        self._populate_generation += 1
-        self.all_files.clear()
-        self.loaded_filenames.clear()
-        self.current_filenames_in_list.clear()
-        self.display_name_to_filename.clear()
-        self.current_file_path = None
-
-        self.view.file_listbox.delete(0, tk.END)
-        self.view.update_story_text([])
-        self.view.btn_export.config(state=tk.DISABLED)
-        self.view.btn_copy.config(state=tk.DISABLED)
-        self.view.update_status_bar('removed_all_files', count=total_removed)
+        """전체 파일 목록 비우기."""
+        self._file_list_service.remove_all_files(event)
 
     def update_file_list(self, filenames: list[str], status_key: str | None = None, **status_kwargs: Any) -> None:
-        """파일 목록 뷰를 업데이트합니다."""
-        self._populate_generation += 1
-        current_gen = self._populate_generation
-        self.view.update_story_text([])
-        self.current_file_path = None
-        self.current_filenames_in_list = sorted(filenames)
-        target_files = list(self.current_filenames_in_list)
-        self.display_name_to_filename.clear()
-        self.view.file_listbox.delete(0, tk.END)
-        total, chunk_size = len(target_files), 200
-        display_mode = self.display_mode_var.get()
-        duplicate_titles: set[str] = set()
-        if display_mode == 'title':
-            title_counts: dict[str, int] = {}
-            for fn in target_files:
-                t = self.file_titles.get(fn, fn)
-                title_counts[t] = title_counts.get(t, 0) + 1
-            duplicate_titles = {t for t, count in title_counts.items() if count > 1}
-        
-        def _populate_list(index=0):
-            if current_gen != self._populate_generation:
-                return
-            if index >= total:
-                if status_key:
-                    self.view.update_status_bar(status_key, **status_kwargs)
-                else:
-                    self.view.update_status_bar('status_bar_list_updated', count=total)
-                if total > 0:
-                    self.view.file_listbox.selection_set(0)
-                    self.view.file_listbox.event_generate("<<ListboxSelect>>")
-                else:
-                    self.view.update_status_bar('status_bar_ready')
-                return
-            self.view.update_status_bar('status_bar_list_updating', i=index + 1, t=total)
-            end_index = min(index + chunk_size, total)
-            display_chunk = []
-            for i in range(index, end_index):
-                filename = target_files[i]
-                display_name = filename
-                match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
-                adv_id = match.group(1) if match else ""
-
-                if display_mode == 'title':
-                    title = self.file_titles.get(filename, filename)
-                    if title:
-                        if title in duplicate_titles and adv_id:
-                            display_name = f"{title} ({adv_id})"
-                        else:
-                            display_name = f"{title}"
-                elif display_mode == 'id_title':
-                    title = self.file_titles.get(filename, filename)
-                    display_name = f"[{adv_id}] {title}" if adv_id else f"{title}"
-                display_chunk.append(display_name)
-                self.display_name_to_filename[display_name] = filename
-            self.view.file_listbox.insert(tk.END, *display_chunk)
-            self.view.after(1, lambda: _populate_list(end_index))
-        _populate_list()
+        """파일 목록 갱신."""
+        self._file_list_service.update_file_list(filenames, status_key=status_key, **status_kwargs)
 
     def set_search_results(self, filenames: list[str]) -> None:
-        """고급 검색 결과로 기본 파일 목록을 설정하고 현재 필터를 적용합니다."""
-        self.base_search_files = list(filenames)
-        self._apply_filter()
+        """고급 검색 결과 기반 기본 파일 목록 설정 및 현재 필터 적용."""
+        self._filter_service.set_search_results(filenames)
 
     def _on_filter_changed(self, *args: Any) -> None:
-        """빠른 필터 입력값 변경 시 150ms 디바운스로 필터링을 실행합니다."""
+        """빠른 필터 입력값 변경 처리 (150ms 디바운스 필터링 실행)."""
+        if getattr(self.view, "_placeholder_active", False):
+            return
         if self.filter_timer:
             try:
                 self.view.after_cancel(self.filter_timer)
@@ -975,41 +669,15 @@ class StoryViewerController(QueuePollingMixin):
             self._apply_filter()
 
     def _apply_filter(self) -> None:
-        """현재 filter_var 값에 따라 base_search_files를 필터링하여 목록을 업데이트합니다."""
-        query = self.filter_var.get().strip().lower()
-        placeholder = self.get_lang_dict().get('filter_placeholder', '').strip().lower()
-        source_files = self.base_search_files if self.base_search_files else list(self.loaded_filenames)
-        
-        if not query or query == placeholder:
-            self.update_file_list(source_files)
-            return
-        
-        matched = []
-        for fname in source_files:
-            if query in fname.lower():
-                matched.append(fname)
-                continue
-            match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', fname)
-            if match and query in match.group(1):
-                matched.append(fname)
-                continue
-            title = self.file_titles.get(fname, "")
-            if query in title.lower():
-                matched.append(fname)
-                continue
-        
-        self.update_file_list(matched)
+        """현재 filter_var 값 기준 base_search_files 필터링 및 목록 갱신."""
+        self._filter_service.apply_filter()
 
     def clear_filter(self) -> None:
-        """빠른 필터 입력값을 초기화합니다."""
-        self.filter_var.set("")
-        try:
-            self.view.show_filter_placeholder()
-        except tk.TclError:
-            pass
+        """빠른 필터 입력값 초기화."""
+        self._filter_service.clear_filter()
 
     def on_file_select(self, event: Any = None) -> None:
-        """파일 목록에서 항목을 선택했을 때 스토리 내용을 표시합니다."""
+        """파일 목록 항목 선택 이벤트 처리 (스토리 내용 표시)."""
         sel = self.view.file_listbox.curselection()
         if not sel:
             return
@@ -1023,19 +691,28 @@ class StoryViewerController(QueuePollingMixin):
                 filename = self.display_name_to_filename.get(display_name)
             except tk.TclError:
                 return
-        
+
         if filename:
             self.current_file_path = self.all_files.get(filename)
             if self.current_file_path:
-                is_valid, data, _ = StoryDataLoader.is_valid_storydata(self.current_file_path)
-                if is_valid:
+                cached = self._story_data_cache.get(self.current_file_path)
+                if cached is None:
+                    is_valid, data, _ = StoryDataLoader.is_valid_storydata(str(self.current_file_path))
+                    self._story_data_cache[self.current_file_path] = (is_valid, data)
+                    self._story_data_cache.move_to_end(self.current_file_path)
+                    while len(self._story_data_cache) > self._story_data_cache_max:
+                        self._story_data_cache.popitem(last=False)
+                else:
+                    is_valid, data = cached
+                    self._story_data_cache.move_to_end(self.current_file_path)
+                if is_valid and data is not None:
                     self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get(), self.get_lang_dict()))
                     self.view.update_status_bar('status_bar_displaying', filename=filename)
                 else:
                     self.view.update_status_bar('status_bar_cache_error', filename=filename)
 
     def on_display_mode_change(self, event: Any = None, force_update: bool = False) -> None:
-        """리스트박스의 파일명 표시 모드(원본 이름/스토리 제목/[ID] + 제목)를 변경합니다.
+        """리스트박스 파일명 표시 모드(원본 이름/스토리 제목/[ID] + 제목) 변경 처리.
 
         Args:
             event: Tkinter 이벤트 객체 (기본값: None).
@@ -1056,7 +733,7 @@ class StoryViewerController(QueuePollingMixin):
         self.update_file_list(self.current_filenames_in_list)
 
     def on_view_mode_change(self, event: Any = None, force_update: bool = False) -> None:
-        """스토리 내용 표시 모드(대본/심플/상세)를 변경합니다.
+        """스토리 내용 표시 모드(대본/심플/상세) 변경 처리.
 
         Args:
             event: 이벤트 객체 (ComboboxSelected 등).
@@ -1075,11 +752,16 @@ class StoryViewerController(QueuePollingMixin):
         except (tk.TclError, AttributeError):
             pass
         if self.current_file_path:
-            is_valid, data, _ = StoryDataLoader.is_valid_storydata(self.current_file_path)
-            if is_valid:
+            cached = self._story_data_cache.get(self.current_file_path)
+            if cached is None:
+                is_valid, data, _ = StoryDataLoader.is_valid_storydata(str(self.current_file_path))
+                self._story_data_cache[self.current_file_path] = (is_valid, data)
+            else:
+                is_valid, data = cached
+            if is_valid and data is not None:
                 self.view.update_story_text(StoryFormatter.format_story_data(data, self.view_mode_var.get(), self.get_lang_dict()))
 
-    # Export functionality helper methods
+    # 내보내기 헬퍼 메서드 (Export functionality helper methods)
     def export_master_thread(
         self,
         selected_options: dict[str, Any],
@@ -1088,7 +770,7 @@ class StoryViewerController(QueuePollingMixin):
         check_cancelled: Any = None,
         on_finish: Any = None,
     ) -> None:
-        """선택된 여러 유형의 데이터들을 백그라운드 스레드에서 파일로 내보냅니다.
+        """선택된 데이터를 백그라운드 스레드에서 파일로 내보내기.
 
         Args:
             selected_options: 사용자가 선택한 내보내기 옵션 딕셔너리.
@@ -1106,7 +788,7 @@ class StoryViewerController(QueuePollingMixin):
         )
 
     def copy_script_to_clipboard(self) -> None:
-        """현재 화면에 표시된 대본 텍스트를 클립보드에 복사합니다."""
+        """현재 대본을 클립보드에 복사."""
         text = self.view.story_text.get("1.0", tk.END).strip()
         if not text:
             return
@@ -1115,13 +797,18 @@ class StoryViewerController(QueuePollingMixin):
             self.master.clipboard_append(text)
             lang_dict = self.get_lang_dict()
             messagebox.showinfo(
-                lang_dict.get('btn_copy_script', '대본 복사'),
-                lang_dict.get('msgbox_copy_complete', '대본이 클립보드에 복사되었습니다.'),
+                lang_dict.get('btn_copy_script', 'Copy Script'),
+                lang_dict.get('msgbox_copy_complete', 'Script copied to clipboard.'),
                 parent=self.view
             )
         except tk.TclError:
             pass
 
     def cleanup(self) -> None:
-        """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다."""
+        """앱 종료 시 리소스 정리 및 폴링 중지."""
+        self._loading_cancel_requested = True
+        t = self._loading_thread
+        if t is not None and t.is_alive():
+            t.join(timeout=5)
+        self._loading_thread = None
         self._stop_polling()

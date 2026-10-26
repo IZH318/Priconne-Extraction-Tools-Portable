@@ -1,93 +1,169 @@
+"""AV Converter 컨트롤러 모듈.
+
+비디오(.usm) 및 오디오(.awb/.acb/.hca) 파일 변환 서브 도구의 전반적인 제어 흐름,
+툴체인 감지 및 다운로드, 비동기 변환 스레드 수명주기,
+QueuePollingMixin 기반의 IPC 큐 폴링 및 안전한 리소스 정리(Cleanup) 담당.
+"""
+
 from __future__ import annotations
-import logging
-import queue
+
 import os
+import queue
 import shutil
 import tempfile
 import threading
 import tkinter as tk
-from datetime import datetime
+from collections.abc import Callable
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
-from typing import Any, Callable
+from tkinter import filedialog, ttk
+from typing import Any
 
 from src.cancellation_token import CancellationToken
 from src.constants import (
-    APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER,
-    APP_WEBSITE, GUI_POLLING_INTERVAL_MS, SENTINEL_VIDEO_DONE, TabType,
-    AV_VIDEO_SUPPORTED_EXTENSIONS, AV_AUDIO_SUPPORTED_EXTENSIONS,
+    APP_DEVELOPER,
+    APP_LAST_UPDATE,
+    APP_VERSION,
+    APP_WEBSITE,
+    AV_AUDIO_SUPPORTED_EXTENSIONS,
+    AV_VIDEO_SUPPORTED_EXTENSIONS,
+    GUI_POLLING_INTERVAL_MS,
+    TabType,
 )
 from src.languages import AV_CONVERTER_LANGUAGES as LANGUAGES
-from src.breadcrumbs import add_breadcrumb
-from src.queue_events import (
-    QueueEvent, LogEvent, LogBlockEvent, ProgressEvent, CompletionEvent
-)
-from src.subprocess_runner import SubprocessRunner
-from .logic import ConversionLogic, ToolPipelineManager
-from .log_renderer import AVLogRenderer
-from .preview_handler import AVPreviewHandler
-from .view import AVConverterView
+from src.queue_events import CompletionEvent, LogEvent, ProgressEvent
 from src.queue_polling import QueuePollingMixin
-from src.log_history import LogHistoryMixin
+from src.shared_state import SharedState
 from src.utils.file_list_mixin import FileListMixin
 
-class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
-    def __init__(self, frame: ttk.Frame, master: tk.Tk | tk.Toplevel, app_lang_var: tk.StringVar | None = None, about_info: dict[str, str] | None = None, app_temp_dir: str | None = None) -> None:
-        """AVConverterController 객체를 초기화합니다.
+from .conversion_service import AVConversionService
+from .log_renderer import AVLogRenderer
+from .log_service import AVLogService
+from .logic import ConversionLogic, ToolPipelineManager
+from .preview_handler import AVPreviewHandler
+from .preview_service import AVPreviewService
+from .tooling_service import AVToolingService
+from .view import AVConverterView
+
+
+class AVConverterController(QueuePollingMixin, FileListMixin):
+    """AV Converter 컨트롤러 클래스.
+
+    QueuePollingMixin을 상속받아 주기적으로 백그라운드 스레드의 로그/진행률 이벤트를 소비하고,
+    FileListMixin을 통해 DnD 및 파일/폴더 추가, 중복 제거, 정렬 등 파일 목록 조작 담당.
+
+    Attributes:
+        master (tk.Misc): 상위 Tkinter 윈도우 객체.
+        lang_var (tk.StringVar): 활성 언어 식별자 추적 StringVar.
+        base_path (Path): 애플리케이션 실행 기준 경로.
+        log_queue (queue.Queue[Any]): 작업 스레드 간 이벤트 통신용 큐.
+        logic (ConversionLogic): 미디어 변환 엔진 인스턴스.
+        view (AVConverterView): 바인딩된 GUI 프레임 인스턴스.
+        tool_pipeline (ToolPipelineManager): 외부 툴체인 다운로드/준비 매니저.
+        shared_state (SharedState): 세부 서비스 계층 간 상태 공유 컨테이너.
+    """
+
+    def __init__(
+        self,
+        frame: ttk.Frame,
+        master: tk.Misc,
+        app_lang_var: tk.StringVar | None = None,
+        about_info: dict[str, str | int] | None = None,
+        app_temp_dir: Path | str | None = None,
+    ) -> None:
+        """AVConverterController 인스턴스 초기화 및 서브 서비스 바인딩.
 
         Args:
-            frame: gui.py의 ttk.Frame 래퍼 (View의 부모 위젯).
-            master: 최상위 Tk 윈도우 (다이얼로그 위치 기준용).
-            app_lang_var: 전역 언어 설정 StringVar.
-            about_info: About 대화상자에 표시될 정보 딕셔너리.
-            app_temp_dir: 미리보기 등을 위한 임시 폴더 경로.
+            frame (ttk.Frame): View가 배치될 부모 탭 프레임.
+            master (tk.Misc): 최상위 애플리케이션 윈도우.
+            app_lang_var (tk.StringVar | None): 전역 언어 설정 StringVar.
+            about_info (dict[str, str | int] | None): 프로그램 정보 딕셔너리.
+            app_temp_dir (Path | str | None): 미리보기용 임시 폴더 경로.
         """
-        self.master = master
-        
+        self.master: tk.Misc = master
+
         if app_lang_var:
-            self.lang_var = app_lang_var
+            self.lang_var: tk.StringVar = app_lang_var
         else:
             self.lang_var = tk.StringVar(value='ko')
         self.lang_var.trace_add("write", self._on_language_change)
-        
+
         from src.utils.base_path import get_application_base_path
-        self.base_path = get_application_base_path()
-        self.log_queue = queue.Queue()
-        self.video_cancel_token = CancellationToken()
-        self.audio_cancel_token = CancellationToken()
-        self.logic = ConversionLogic(self.log_queue, self.base_path)
-        
-        self.view = AVConverterView(frame, self)
-        
-        self.about_info = about_info or {
+        self.base_path: Path = get_application_base_path()
+        self.log_queue: queue.Queue[Any] = queue.Queue()
+        self._state_lock: threading.RLock = threading.RLock()
+        self._conversion_threads: dict[str, threading.Thread | None] = {
+            'video': None,
+
+            'audio': None,
+        }
+        self.video_cancel_token: CancellationToken = CancellationToken()
+        self.audio_cancel_token: CancellationToken = CancellationToken()
+        self.logic: ConversionLogic = ConversionLogic(self.log_queue, self.base_path)
+
+        self.view: AVConverterView = AVConverterView(frame, self)
+
+        self.about_info: dict[str, str | int] = about_info or {
             'program': "AV Converter", 'version': APP_VERSION, 'updated': APP_LAST_UPDATE,
             'developer': APP_DEVELOPER, 'website': APP_WEBSITE
         }
-        
+
         if app_temp_dir:
-            self._preview_temp_dir = app_temp_dir
-            self._owns_temp_dir = False
+            self._preview_temp_dir: Path | str = app_temp_dir
+            self._owns_temp_dir: bool = False
         else:
             self._preview_temp_dir = tempfile.mkdtemp(prefix='priconne_preview_')
             self._owns_temp_dir = True
-        
-        self.usmtoolkit_path = None
-        self.vgmstream_path = None
-        self.video_full_paths = []
-        self.audio_full_paths = []
-        self.video_log_history = []
-        self.audio_log_history = []
 
-        self._find_tools()
-        self.tool_pipeline = ToolPipelineManager(
+        self.usmtoolkit_path: Path | None = None
+        self.vgmstream_path: Path | None = None
+        self.video_full_paths: list[str] = []
+        self.audio_full_paths: list[str] = []
+        self.video_log_history: list[Any] = []
+        self.audio_log_history: list[Any] = []
+        self.video_total_files: int = 0
+        self.audio_total_files: int = 0
+
+        self.tool_pipeline: ToolPipelineManager = ToolPipelineManager(
             log_queue=self.log_queue,
             base_path=self.base_path,
             on_tools_updated_callback=self._find_tools,
         )
-        self.ffmpeg_downloader = self.tool_pipeline.ffmpeg_downloader
-        self.last_log_timestamp = {'video': None, 'audio': None}
+        self.shared_state: SharedState = SharedState()
+        self.shared_state.get_lang_dict = self.get_lang_dict
+        self.shared_state.get_lang_data = self.get_lang_dict
+        self.shared_state.get_base_path = lambda: self.base_path
+        self.shared_state.get_view = lambda: self.view
+        self.shared_state.log_queue = self.log_queue
+        self.shared_state.tool_pipeline = self.tool_pipeline
+        self.shared_state.get_usmtoolkit_path = lambda: self.usmtoolkit_path
+        self.shared_state.set_usmtoolkit_path = lambda p: setattr(self, 'usmtoolkit_path', p)
+        self.shared_state.get_vgmstream_path = lambda: self.vgmstream_path
+        self.shared_state.set_vgmstream_path = lambda p: setattr(self, 'vgmstream_path', p)
+        self._tooling: AVToolingService = AVToolingService(
+            shared_state=self.shared_state,
+        )
+        self.shared_state.add_log_entry = self._add_log_entry
+        self.shared_state.add_spacing = self._add_spacing
+        self.shared_state.get_video_full_paths = lambda: self.video_full_paths
+        self.shared_state.get_audio_full_paths = lambda: self.audio_full_paths
+        self.shared_state.get_video_cancel_token = lambda: self.video_cancel_token
+        self.shared_state.get_audio_cancel_token = lambda: self.audio_cancel_token
+        self.shared_state.start_tool_preparation = self._start_tool_preparation
+        self.shared_state.set_conversion_thread = lambda tab_type, t: self._conversion_threads.__setitem__(tab_type, t)
+        self.shared_state.resume_polling = self._resume_polling
+        self.shared_state.is_dotnet_runtime_available = self._is_dotnet_runtime_available
+        self.shared_state.logic = self.logic
+        self._conversion: AVConversionService = AVConversionService(
+            shared_state=self.shared_state,
+        )
+        self._find_tools()
+        self.ffmpeg_downloader: Any = self.tool_pipeline.ffmpeg_downloader
+        self.last_log_timestamp: dict[str, str | None] = {'video': None, 'audio': None}
 
-        self._log_renderer = AVLogRenderer(
+        self.shared_state.get_tool_paths = lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path}
+        self.shared_state.get_ffmpeg_downloader = lambda: self.ffmpeg_downloader
+        self._log_renderer: AVLogRenderer = AVLogRenderer(
+            shared_state=self.shared_state,
             get_lang_data=self.get_lang_dict,
             add_log_entry=self._add_log_entry,
             add_spacing=self._add_spacing,
@@ -96,27 +172,72 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             get_tool_paths=lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path},
             get_ffmpeg_downloader=lambda: self.ffmpeg_downloader,
         )
-        self._preview = AVPreviewHandler(
+        self.shared_state.get_conversion_thread = lambda: next((t for t in (self._conversion_threads.get('video'), self._conversion_threads.get('audio')) if t is not None and t.is_alive()), self._conversion_threads.get('video') or self._conversion_threads.get('audio'))
+        self.shared_state.get_video_total_files = lambda: self.video_total_files if hasattr(self, 'video_total_files') else 0
+        self.shared_state.set_video_total_files = lambda v: setattr(self, 'video_total_files', v)
+        self.shared_state.get_audio_total_files = lambda: self.audio_total_files if hasattr(self, 'audio_total_files') else 0
+        self.shared_state.set_audio_total_files = lambda v: setattr(self, 'audio_total_files', v)
+        self.shared_state.get_converting_state = self.is_converting
+        self.shared_state.set_ui_state = self.view.set_ui_state
+        self.shared_state.reset_ui_state = self.view.reset_ui_state
+        self.shared_state.get_video_widgets = lambda: self.view.video_widgets
+        self.shared_state.get_audio_widgets = lambda: self.view.audio_widgets
+        self._log_service: AVLogService = AVLogService(
+            shared_state=self.shared_state,
+            view=self.view,
+            log_queue=self.log_queue,
+            get_lang_dict=self.get_lang_dict,
+            video_log_history=self.video_log_history,
+            audio_log_history=self.audio_log_history,
+            last_log_timestamp=self.last_log_timestamp,
+            render_cache={},
+            redraw_logs_fn=self._log_renderer.redraw_logs,
+            render_log_entry_fn=self._log_renderer.render_log_entry,
+            handle_completion_callback=lambda msg: None,
+            generate_error_log_fn=self._generate_error_log,
+            get_base_path=lambda: self.base_path,
+            get_conversion_thread=lambda: self.shared_state.get_conversion_thread(),
+            get_video_total_files=lambda: self.video_total_files if hasattr(self, 'video_total_files') else 0,
+            set_video_total_files=lambda v: setattr(self, 'video_total_files', v),
+            get_audio_total_files=lambda: self.audio_total_files if hasattr(self, 'audio_total_files') else 0,
+            set_audio_total_files=lambda v: setattr(self, 'audio_total_files', v),
+            get_video_cancel_token=lambda: self.video_cancel_token,
+            get_audio_cancel_token=lambda: self.audio_cancel_token,
+            get_converting_state=self.is_converting,
+            set_ui_state=self.view.set_ui_state,
+            reset_ui_state=self.view.reset_ui_state,
+            get_video_widgets=lambda: self.view.video_widgets,
+            get_audio_widgets=lambda: self.view.audio_widgets,
+            polling_interval_ms=GUI_POLLING_INTERVAL_MS,
+        )
+        self.shared_state.get_paths = lambda tab_type: self.audio_full_paths if tab_type == 'audio' else self.video_full_paths
+        self.shared_state.preview_temp_dir = str(self._preview_temp_dir)
+        self.shared_state.generate_error_log = self._generate_error_log
+        self.shared_state.prepare_tools = lambda tab_type, on_success: self._preview_service.prepare_tools_for_preview(tab_type, on_success)
+        self._preview: AVPreviewHandler = AVPreviewHandler(
+            shared_state=self.shared_state,
             get_lang_data=self.get_lang_dict,
             get_paths=lambda tab_type: self.audio_full_paths if tab_type == 'audio' else self.video_full_paths,
             logic=self.logic,
             view=self.view,
-            preview_temp_dir=self._preview_temp_dir,
+            preview_temp_dir=str(self._preview_temp_dir),
             get_tool_paths=lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path},
             generate_error_log=self._generate_error_log,
-            prepare_tools=self._prepare_tools_for_preview,
+            prepare_tools=lambda tab_type, on_success: self._preview_service.prepare_tools_for_preview(tab_type, on_success),
         )
-
-        # 참고: video_log_history, audio_log_history는 73-74행에서 이미 초기화됨
-        self._log_renderer.log_initial_status()
+        self.shared_state.find_tools = self._find_tools
+        self.shared_state.preview_selected_fn = lambda lb, tt: self._preview.preview_selected(lb, tt)
+        self._preview_service: AVPreviewService = AVPreviewService(
+            shared_state=self.shared_state,
+        )
         self._init_queue_polling(self.view)
 
     def get_lang_dict(self) -> dict[str, str]:
-        """현재 선택된 언어의 다국어 딕셔너리를 반환합니다."""
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
+        """현재 선택된 언어의 다국어 딕셔너리 반환."""
+        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))  # type: ignore[no-any-return]
 
     def _on_language_change(self, *args: Any) -> None:
-        """언어 변경 이벤트를 처리하고 UI 텍스트 및 로그를 다시 그립니다.
+        """언어 변경 이벤트 처리 및 UI 텍스트/로그 재렌더링 수행.
 
         Args:
             *args: 가변 인자 리스트.
@@ -126,71 +247,51 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             self.view.update_ui_text()
             self.redraw_all_logs()
 
-    def _get_log_configs(self) -> list[tuple[list, Any]]:
-        """재렌더링 대상 (히스토리 리스트, Text 위젯) 쌍의 리스트를 반환합니다."""
-        return [
-            (self.video_log_history, self.view.video_log_text),
-            (self.audio_log_history, self.view.audio_log_text),
-        ]
-
     def redraw_all_logs(self) -> None:
-        """모든 로그 위젯의 내용을 히스토리 기반으로 재렌더링합니다."""
-        configs_with_tabs = [
-            ('video', self.video_log_history, self.view.video_log_text),
-            ('audio', self.audio_log_history, self.view.audio_log_text),
-        ]
-        self._log_renderer.redraw_logs(configs_with_tabs, self.last_log_timestamp)
+        """모든 로그 위젯의 내용 히스토리 기반 재렌더링."""
+        self._log_service.redraw_all_logs()
 
     def _find_tools(self) -> None:
-        """usmtoolkit 폴더 및 vgmstream 하위 폴더에서 도구 실행 파일 경로를 설정합니다."""
-        usm_dir = self.base_path / "usmtoolkit"
-        vgm_dir = usm_dir / "vgmstream"
+        """usmtoolkit 폴더 및 vgmstream 하위 폴더 대상 도구 실행 파일 경로 탐색 및 설정."""
+        self._tooling.find_tools()
 
-        cand_usm = usm_dir / "UsmToolkit.exe"
-        if cand_usm.is_file():
-            self.usmtoolkit_path = cand_usm
+    def _start_tool_preparation(self, tab_type: TabType, output_dir: str, next_func: Callable[[str], None]) -> None:
+        """변환 전 필수 도구 존재 여부 확인 및 필요 시 다운로드 시작.
 
-        cand_vgm = vgm_dir / "vgmstream-cli.exe"
-        if cand_vgm.is_file():
-            self.vgmstream_path = cand_vgm
-
-        # 도구 탐색 완료 후 호환성 패치 수행
-        self._ensure_usmtoolkit_compatibility()
+        Args:
+            tab_type: 탭 타입 ('video' 또는 'audio').
+            output_dir: 변환된 파일이 저장될 출력 디렉터리 경로.
+            next_func: 도구 준비 완료 후 실행할 콜백 함수.
+        """
+        self._tooling.start_tool_preparation(tab_type, output_dir, next_func)
 
     def _ensure_usmtoolkit_compatibility(self) -> None:
-        """UsmToolkit 구버전의 하드코딩된 'test.exe' 참조를 위한 호환성 패치를 수행합니다.
+        """UsmToolkit 구버전의 하드코딩된 'test.exe' 참조 호환성 패치 수행.
 
-        UsmToolkit의 일부 구버전은 vgmstream을 'test.exe'라는 고정된 이름으로
-        호출하므로, vgmstream-cli.exe를 test.exe로 복사하여 호환성을 보장합니다.
+        UsmToolkit 구버전의 vgmstream 'test.exe' 고정 호출 대응을 위해
+        vgmstream-cli.exe를 test.exe로 복사하여 호환성 보장.
         """
-        if self.vgmstream_path and self.vgmstream_path.exists():
-            test_exe_path = self.vgmstream_path.parent / "test.exe"
-            if not test_exe_path.exists():
-                try:
-                    shutil.copy2(self.vgmstream_path, test_exe_path)
-                except OSError:
-                    pass
+        self._tooling._ensure_usmtoolkit_compatibility()
 
     def _is_dotnet_runtime_available(self) -> bool:
-        """UsmToolkit.exe를 실행할 수 있는 .NET Runtime이 시스템에 존재하는지 사전 검증합니다."""
-        if self.usmtoolkit_path and self.usmtoolkit_path.exists():
-            try:
-                res = SubprocessRunner.run([str(self.usmtoolkit_path), '--version'], timeout=3)
-                return res.returncode == 0
-            except Exception:
-                return False
-        runtimes = self.logic.get_installed_dotnet_runtimes()
-        return len(runtimes) > 0
+        """.NET Runtime 설치 여부 확인."""
+        return self._tooling.is_dotnet_runtime_available()
 
+    def _prepare_tools_for_preview(self, tab_type: TabType, on_success: Callable[[], None]) -> None:
+        """미리보기 실행 전 누락 도구 자동 준비.
+
+        Args:
+            tab_type: 탭 타입 ('video' 또는 'audio').
+            on_success: 도구 준비 성공 시 실행할 미리보기 콜백.
+        """
+        self._preview_service.prepare_tools_for_preview(tab_type, on_success)
 
     def is_converting(self, tab_type: TabType) -> bool:
-        """해당 탭이 현재 도구 다운로드 또는 변환 작업 중인지 확인합니다."""
-        widgets = self.view.video_widgets if tab_type == 'video' else self.view.audio_widgets
-        add_btn = widgets.get('add_files_btn')
-        return bool(add_btn and (str(add_btn.cget('state')) == 'disabled' or add_btn.instate(['disabled'])))
+        """해당 탭의 현재 도구 다운로드 또는 변환 작업 진행 여부 확인."""
+        return self._conversion.is_converting(tab_type) or self._tooling.is_preparing(tab_type)
 
     def add_files_cmd(self, tab_type: TabType) -> None:
-        """파일 선택 대화상자를 열어 변환 대상 파일을 목록에 추가합니다.
+        """파일 선택 대화상자 표시 후 변환 대상 파일 목록 추가.
 
         Args:
             tab_type: 탭 타입 ('video' 또는 'audio').
@@ -202,7 +303,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self._add_paths_to_list(self._select_files(file_types), full_paths, filenames_var, tab_type)
 
     def add_folder_cmd(self, tab_type: TabType) -> None:
-        """폴더 선택 대화상자를 열어 폴더 내 변환 대상 파일을 목록에 추가합니다.
+        """폴더 선택 대화상자 표시 후 폴더 내 변환 대상 파일 목록 추가.
 
         Args:
             tab_type: 탭 타입 ('video' 또는 'audio').
@@ -214,7 +315,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self._add_paths_to_list(self._select_folder_and_search(file_types), full_paths, filenames_var, tab_type)
 
     def on_dnd_drop(self, event: Any, listbox: tk.Listbox, tab_type: TabType) -> None:
-        """드래그 앤 드롭 이벤트를 처리하여 파일을 목록에 추가합니다.
+        """드래그 앤 드롭 이벤트 처리 및 파일 목록 추가.
 
         Args:
             event: Tkinter 드래그 앤 드롭 이벤트.
@@ -243,7 +344,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
 
 
     def _select_files(self, file_types: list[tuple[str, str]]) -> list[str]:
-        """파일 선택 대화상자를 띄우고 선택된 파일 경로 리스트를 반환합니다.
+        """파일 선택 대화상자 표시 및 선택된 파일 경로 리스트 반환.
 
         Args:
             file_types: 파일 필터 유형 리스트.
@@ -254,7 +355,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         return list(filedialog.askopenfilenames(title=self.get_lang_dict().get('dialog_select_files', 'Select files'), filetypes=file_types) or [])
 
     def _select_folder_and_search(self, file_types: list[tuple[str, str]]) -> list[str]:
-        """폴더 선택 대화상자를 띄우고 선택된 폴더 내 모든 파일 경로 리스트를 반환합니다.
+        """폴더 선택 대화상자 표시 및 폴더 내 검색된 파일 경로 리스트 반환.
 
         Args:
             file_types: 검색할 파일 필터 유형 리스트.
@@ -274,16 +375,16 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         return found_files
 
     def _update_listbox(self, fp: list[str], fv: tk.Variable) -> None:
-        """파일 경로 리스트를 받아 파일명만 추출하여 리스트박스를 업데이트합니다.
+        """전체 파일 경로 리스트에서 파일명만 추출하여 리스트박스 갱신.
 
         Args:
             fp: 전체 파일 경로 리스트.
             fv: 리스트박스와 연결된 StringVar 변수.
         """
         fv.set([os.path.basename(p) for p in fp])
-        
+
     def _add_paths_to_list(self, new_paths: list[str], full_paths: list[str], filenames_var: tk.Variable, tab_type: TabType) -> None:
-        """선택된 파일 경로들을 중복 검사 후 목록에 추가하고 UI를 갱신합니다.
+        """선택된 파일 경로 중복 검사 후 목록 추가 및 UI 갱신.
 
         Args:
             new_paths: 새로 추가할 파일 경로 리스트.
@@ -309,7 +410,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
         self._add_spacing(tab_type)
 
     def remove_selected_from_list(self, listbox: tk.Listbox, tab_type: TabType) -> None:
-        """목록에서 선택된 항목들을 제거합니다.
+        """목록에서 선택된 항목 제거.
 
         Args:
             listbox: 항목을 제거할 Listbox 위젯.
@@ -319,7 +420,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             return
         full_paths = self.audio_full_paths if tab_type == 'audio' else self.video_full_paths
         filenames_var = self.view.audio_filenames_var if tab_type == 'audio' else self.view.video_filenames_var
-        
+
         sel_idx = listbox.curselection()
         count = self._remove_selected_from_file_list(full_paths, sel_idx)
         if count > 0:
@@ -329,7 +430,7 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             self._add_spacing(tab_type)
 
     def clear_list(self, tab_type: TabType) -> None:
-        """목록의 모든 항목을 제거하여 초기화합니다.
+        """목록의 모든 항목 제거 및 초기화.
 
         Args:
             tab_type: 탭 타입 ('video' 또는 'audio').
@@ -338,359 +439,121 @@ class AVConverterController(QueuePollingMixin, LogHistoryMixin, FileListMixin):
             return
         full_paths = self.audio_full_paths if tab_type == 'audio' else self.video_full_paths
         filenames_var = self.view.audio_filenames_var if tab_type == 'audio' else self.view.video_filenames_var
-        
+
         count = self._clear_file_list(full_paths)
         if count == 0:
             return
-        
+
         self._update_listbox(full_paths, filenames_var)
         self._add_spacing(tab_type)
         self._add_log_entry(tab_type, 'log_all_files_removed', count=count)
         self._add_spacing(tab_type)
 
     def start_video_conversion(self, output_dir: str) -> None:
-        """비디오 변환 작업을 백그라운드 스레드로 시작합니다.
+        """비디오 변환 작업 백그라운드 스레드 시작.
 
-        Workflow: start_video_conversion → _start_tool_preparation → _start_actual_video_conversion
+        Workflow: start_video_conversion -> _start_tool_preparation -> _start_actual_video_conversion
 
         Args:
             output_dir: 변환된 파일이 저장될 출력 디렉터리 경로.
         """
-        if not self.video_full_paths:
-            self._add_log_entry('video', 'error_no_files')
-            return
-        if not output_dir:
-            self._add_log_entry('video', 'error_no_output_video')
-            return
-        if not self._is_dotnet_runtime_available():
-            lang_dict = self.get_lang_dict()
-            messagebox.showwarning(
-                lang_dict.get('dotnet_runtime_missing_title', '.NET Runtime Required'),
-                lang_dict.get('dotnet_runtime_missing_msg', 'A .NET Runtime is required to convert video (.usm) files.'),
-                parent=self.view
-            )
-            return
-        add_breadcrumb("conv", "Started video conversion", {"files": len(self.video_full_paths), "output": output_dir})
-        self._start_tool_preparation('video', output_dir, self._start_actual_video_conversion)
+        self._conversion.start_video_conversion(output_dir)
 
-    def _start_tool_preparation(self, tab_type: TabType, output_dir: str, next_func: Callable[[str], None]) -> None:
-        """변환 전 필수 도구들의 존재 여부를 점검하고 필요시 다운로드하는 작업을 시작합니다.
+    def _start_actual_video_conversion(self, output_dir: str) -> None:
+        """도구 준비 완료 후 실제 비디오 변환 로직 스레드 시작.
 
         Args:
-            tab_type: 탭 타입 ('video' 또는 'audio').
             output_dir: 변환된 파일이 저장될 출력 디렉터리 경로.
-            next_func: 도구 준비 완료 후 실행할 콜백 함수.
         """
-        self.view.set_ui_state(tab_type, 'disabled')
-        self._add_log_entry(tab_type, 'tools_preparing')
+        self._conversion._start_actual_video_conversion(output_dir)
 
-        download_future = self.tool_pipeline.ensure_tools_ready(tab_type)
+    def start_audio_conversion(self, output_dir: str, overwrite: bool) -> None:
+        """오디오 변환 작업 백그라운드 스레드 시작."""
+        self._conversion.start_audio_conversion(output_dir, overwrite)
 
-        def check_tool_status():
-            if download_future.done():
-                try:
-                    if download_future.result():
-                        self._find_tools()
-                        next_func(output_dir)
-                    else:
-                        self.view.reset_ui_state(tab_type, reset_status=True)
-                except Exception as e:
-                    self._add_log_entry(tab_type, 'conv_log_error_exception', error=str(e))
-                    self.view.reset_ui_state(tab_type, reset_status=True)
-            else:
-                self.view.after(GUI_POLLING_INTERVAL_MS, check_tool_status)
-
-        self.view.after(GUI_POLLING_INTERVAL_MS, check_tool_status)
-
-    def _prepare_tools_for_preview(self, tab_type: TabType, on_success: Callable[[], None]) -> None:
-        """미리보기 실행 전 누락된 도구를 자동 준비합니다.
-
-        Args:
-            tab_type: 탭 타입 ('video' 또는 'audio').
-            on_success: 도구 준비 성공 시 실행할 미리보기 콜백.
-        """
-        if tab_type == 'video' and not self._is_dotnet_runtime_available():
-            lang_dict = self.get_lang_dict()
-            messagebox.showwarning(
-                lang_dict.get('dotnet_runtime_missing_title', '.NET Runtime Required'),
-                lang_dict.get('dotnet_runtime_missing_msg', 'A .NET Runtime is required to convert video (.usm) files.'),
-                parent=self.view
-            )
-            return
-
-        self._add_log_entry(tab_type, 'tools_preparing')
-        download_future = self.tool_pipeline.ensure_tools_ready(tab_type)
-
-        def check_status():
-            if download_future.done():
-                try:
-                    if download_future.result():
-                        self._find_tools()
-                        on_success()
-                    else:
-                        lang_dict = self.get_lang_dict()
-                        fail_msg = lang_dict.get(
-                            'usmtoolkit_prepare_fail' if tab_type == 'video' else 'vgmstream_prepare_fail',
-                            'Tool preparation failed.'
-                        )
-                        messagebox.showwarning(lang_dict.get('preview_menu', 'Preview'), fail_msg, parent=self.view)
-                except Exception as e:
-                    self._add_log_entry(tab_type, 'conv_log_error_exception', error=str(e))
-            else:
-                self.view.after(GUI_POLLING_INTERVAL_MS, check_status)
-
-        self.view.after(GUI_POLLING_INTERVAL_MS, check_status)
-    
     def _start_conversion_thread(self, tab_type: TabType, target_func: Any, args: tuple) -> None:
-        """실제 변환 로직을 실행할 백그라운드 스레드를 생성하고 시작합니다.
+        """실제 변환 로직 실행용 백그라운드 스레드 생성 및 시작.
 
         Args:
             tab_type: 탭 타입 ('video' 또는 'audio').
             target_func: 백그라운드 스레드에서 실행할 변환 함수.
             args: 변환 함수에 전달할 인자 튜플.
         """
-        self._add_spacing(tab_type)
-        widgets = self.view.video_widgets if tab_type == 'video' else self.view.audio_widgets
-        cancel_token = self.video_cancel_token if tab_type == 'video' else self.audio_cancel_token
-        
-        self.view.set_ui_state(tab_type, 'disabled')
-        cancel_token.reset()
-        
-        widgets['action_btn'].config(
-            state=tk.NORMAL, 
-            text=self.get_lang_dict().get('cancel_conversion', 'Cancel'),
-            command=cancel_token.cancel
-        )
-        
-        thread = threading.Thread(target=target_func, daemon=True, args=args)
-        thread.start()
-
-    def _start_actual_video_conversion(self, output_dir: str) -> None:
-        """준비가 완료된 후 실제 비디오 변환 로직 스레드를 시작합니다.
-
-        Args:
-            output_dir: 변환된 파일이 저장될 출력 디렉터리 경로.
-        """
-        self._start_conversion_thread(
-            'video',
-            self.logic.run_video_conversion,
-            (self.video_full_paths[:], output_dir, self.usmtoolkit_path, self.video_cancel_token)
-        )
-
-    def start_audio_conversion(self, output_dir: str, overwrite: bool) -> None:
-        """오디오 변환 작업을 백그라운드 스레드로 시작합니다."""
-        if not self.audio_full_paths:
-            self._add_log_entry('audio', 'error_no_files')
-            return
-        if not output_dir:
-            self._add_log_entry('audio', 'error_no_output_audio')
-            return
-
-        add_breadcrumb("conv", "Started audio conversion", {"files": len(self.audio_full_paths), "output": output_dir})
-
-        def _do_start_audio(out_dir: str) -> None:
-            self._start_conversion_thread(
-                'audio',
-                self.logic.run_audio_conversion,
-                (self.audio_full_paths[:], out_dir, self.vgmstream_path, overwrite, self.audio_cancel_token)
-            )
-
-        self._start_tool_preparation('audio', output_dir, _do_start_audio)
+        self._conversion.start_conversion_thread(tab_type, target_func, args)
 
     def _add_log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
-        """새로운 로그 이벤트를 큐에 추가합니다.
+        """신규 로그 이벤트 큐 추가.
 
         Args:
             target_tab: 로그를 출력할 탭 ('video' 또는 'audio').
             log_key: 다국어 딕셔너리의 로그 메시지 키.
             **kwargs: 메시지 포매팅에 사용할 추가 인자.
         """
-        self.log_queue.put(LogEvent(target=target_tab, key=log_key, kwargs=kwargs))
+        if hasattr(self, '_log_service'):
+            self._log_service.add_log_entry(target_tab, log_key, **kwargs)
+        else:
+            self.log_queue.put(LogEvent(target=target_tab, key=log_key, kwargs=kwargs))
 
     def log_system_message(self, target_tab: TabType, message: str) -> None:
-        """시스템 레벨의 메시지(에러 등)를 로그에 직접 추가합니다.
-        
+        """시스템 레벨 메시지(오류 등) 로그 직접 추가.
+
         Args:
             target_tab: 로그를 출력할 탭 ('video' 또는 'audio').
             message: 출력할 문자열 메시지.
         """
-        self.log_queue.put(LogEvent(target=target_tab, key='raw', kwargs={'text': message}))
+        if hasattr(self, '_log_service'):
+            self._log_service.log_system_message(target_tab, message)
+        else:
+            self.log_queue.put(LogEvent(target=target_tab, key='raw', kwargs={'text': message}))
 
     def _add_spacing(self, target_tab: TabType) -> None:
-        """로그에 빈 줄(간격)을 추가하는 이벤트를 큐에 넣습니다.
-
-        연속된 spacing 이벤트를 방지하여 이중 줄바꿈이 발생하지 않습니다.
+        """로그 빈 줄(간격) 추가 이벤트 큐 전송. 연속된 spacing 이벤트 방지로 이중 줄바꿈 차단.
 
         Args:
             target_tab: 빈 줄을 추가할 탭 ('video' 또는 'audio').
         """
-        history = self.video_log_history if target_tab == 'video' else self.audio_log_history
-        if history and history[-1][1] == 'spacing':
-            return
-        self.log_queue.put(LogEvent(target=target_tab, is_spacing=True))
+        if hasattr(self, '_log_service'):
+            self._log_service.add_spacing(target_tab)
+        else:
+            history = self.video_log_history if target_tab == 'video' else self.audio_log_history
+            if history and history and len(history) > 0 and history[-1][1] == 'spacing':
+                return
+            self.log_queue.put(LogEvent(target=target_tab, is_spacing=True))
 
     def _on_poll_cycle(self) -> None:
-        """로그 큐에 쌓인 메시지들을 가져와 UI 업데이트 및 이벤트를 처리합니다."""
-        for msg in self._drain_queue(self.log_queue):
-            if not isinstance(msg, QueueEvent):
-                continue
+        self._log_service.on_poll_cycle()
 
-            if isinstance(msg, ProgressEvent) or isinstance(msg, CompletionEvent):
-                if isinstance(msg, ProgressEvent): 
-                    self._handle_progress_update(msg)
-                else: 
-                    self._handle_completion_signal(msg)
-                continue
-
-            target_tab, log_widget, history = (msg.target, self.view.video_log_text, self.video_log_history) if msg.target == 'video' else (msg.target, self.view.audio_log_text, self.audio_log_history)
-            log_widget.config(state=tk.NORMAL)
-
-            if isinstance(msg, LogEvent):
-                if msg.is_spacing:
-                    history.append((None, 'spacing', {}))
-                    log_widget.insert(tk.END, '\n')
-                else:
-                    timestamp = None if msg.un_timestamped else datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                    log_key = msg.key
-                    kwargs = msg.kwargs
-                    last_ts = self.last_log_timestamp[target_tab]
-                    history.append((timestamp, log_key, kwargs))
-                    log_widget.insert(tk.END, self._log_renderer.render_log_entry(timestamp, log_key, kwargs, last_ts))
-                    
-                    logging.info("[AV_%s] %s %s", target_tab.upper(), log_key, kwargs)
-                    
-                    if timestamp: 
-                        self.last_log_timestamp[target_tab] = timestamp
-                        
-            elif isinstance(msg, LogBlockEvent):
-                log_entries = msg.entries
-                block_timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                last_ts_before_block = self.last_log_timestamp[target_tab]
-
-                for i, (l_key, l_kwargs) in enumerate(log_entries):
-                    last_ts_for_render = last_ts_before_block if i == 0 else block_timestamp
-                    history.append((block_timestamp, l_key, l_kwargs))
-                    log_widget.insert(tk.END, self._log_renderer.render_log_entry(block_timestamp, l_key, l_kwargs, last_ts_for_render))
-                    logging.info("[AV_%s] %s %s", target_tab.upper(), l_key, l_kwargs)
-
-                if log_entries:
-                    self.last_log_timestamp[target_tab] = block_timestamp
-            
-            log_widget.see(tk.END)
-            log_widget.config(state=tk.DISABLED)
-    
     def _handle_progress_update(self, msg: ProgressEvent) -> None:
-        """진행 상황 업데이트 이벤트를 처리하여 프로그레스 바와 상태 텍스트를 갱신합니다.
+        self._log_service.handle_progress_update(msg)
 
-        Args:
-            msg: 처리할 ProgressEvent 객체.
-        """
-        d = self.get_lang_dict()
-        target_tab = msg.target
-        widgets = self.view.video_widgets if target_tab == 'video' else self.view.audio_widgets
-        
-        if msg.is_start:
-            total = msg.total
-            setattr(self, f'{target_tab}_total_files', total)
-            widgets['progress'].config(maximum=total, value=0)
-            widgets['status_label'].config(text=d['status_starting'].format(total=total))
-        else:
-            value = msg.current
-            total = getattr(self, f'{target_tab}_total_files')
-            widgets['progress']['value'] = value
-            widgets['status_label'].config(text=d['status_processing'].format(current=value, total=total))
-    
     def _handle_completion_signal(self, msg: CompletionEvent) -> None:
-        """변환 완료 이벤트를 처리하여 UI 상태를 복구하고 완료 메시지를 표시합니다.
-
-        Args:
-            msg: 처리할 CompletionEvent 객체.
-        """
-        d = self.get_lang_dict()
-        tab_type = 'video' if msg.target == SENTINEL_VIDEO_DONE else 'audio'
-        widgets = self.view.video_widgets if tab_type == 'video' else self.view.audio_widgets
-        cancel_token = self.video_cancel_token if tab_type == 'video' else self.audio_cancel_token
-        total = getattr(self, f'{tab_type}_total_files')
-        current = widgets['progress']['value']
-
-        failed_files = msg.result if msg.result is not None else []
-        if len(failed_files) > 0:
-            self._generate_error_log(tab_type, failed_files)
-            title = d.get('msgbox_error_log_saved_title', 'Error Log Created / 오류 로그 생성 안내')
-            text = d.get('msgbox_error_log_saved_msg', 'An error log has been created in the logs folder. / 작업 중 오류가 발생하여 logs 폴더에 오류 로그가 생성되었습니다.')
-            messagebox.showwarning(title, text, parent=self.view)
-            
-        self.view.reset_ui_state(tab_type, reset_status=False)
-        if cancel_token and cancel_token.is_cancelled:
-            widgets['status_label'].config(text=d['status_cancelled'])
-        else:
-            widgets['status_label'].config(text=d['status_complete'].format(current=current, total=total))
-            widgets['progress']['value'] = total
+        self._log_service.handle_completion_signal(msg)
 
     def _generate_error_log(self, tab_type: str, failed_files: list[tuple[str, str]]) -> None:
-        import platform, multiprocessing, sys, os
-        from datetime import datetime
-        from pathlib import Path
-        from src.constants import SEPARATOR_LONG, APP_VERSION, APP_LAST_UPDATE, APP_DEVELOPER
-        
-        try:
-            if hasattr(self, 'base_path') and self.base_path:
-                exec_path = str(self.base_path)
-            elif sys.argv and sys.argv[0]:
-                exec_path = os.path.dirname(os.path.abspath(sys.argv[0]))
-            else:
-                exec_path = os.path.abspath(os.getcwd())
-            log_dir = Path(exec_path) / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            
-            now = datetime.now()
-            log_filename = log_dir / f"AVConverterLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
-            
-            with open(log_filename, 'w', encoding='utf-8') as f:
-                f.write(f"{SEPARATOR_LONG}\n")
-                f.write(f"[SESSION] AV Converter Task Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                f.write(f"{SEPARATOR_LONG}\n")
-                f.write(f"[TOOL]    App Version:     {APP_VERSION} ({APP_LAST_UPDATE})\n")
-                f.write(f"[TOOL]    Developer:       {APP_DEVELOPER}\n")
-                f.write(f"[ENGINE]  Python Version:  {platform.python_version()}\n")
-                f.write(f"[SYSTEM]  OS Version:      {platform.platform()}\n")
-                f.write(f"[SYSTEM]  Processor Count: {multiprocessing.cpu_count()} Cores\n")
-                f.write(f"[PATH]    Exec Path:       {exec_path}\n")
-                f.write(f"[REPORT]  Target Type:     {tab_type.upper()}\n")
-                f.write(f"[REPORT]  Total Failed:    {len(failed_files)}\n")
-                f.write(f"{SEPARATOR_LONG}\n\n")
-
-                for idx, (path, reason) in enumerate(failed_files, 1):
-                    f.write(f"[ERROR ITEM #{idx}]\n")
-                    f.write(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-                    f.write(f"Context   : {tab_type.capitalize()} Conversion\n")
-                    f.write(f"File      : {path}\n")
-                    clean_reason = (reason or "").strip()
-                    if "\n" in clean_reason:
-                        f.write(f"Reason    :\n{clean_reason}\n")
-                    else:
-                        f.write(f"Reason    : {clean_reason}\n")
-                    f.write(f"{SEPARATOR_LONG}\n\n")
-        except Exception as e:
-            import logging
-            logging.error(f"Failed to write AVConverterLog: {e}")
+        self._log_service.generate_error_log(tab_type, failed_files)
 
     def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
-        """리스트박스에서 선택된 파일의 미리보기를 실행합니다.
+        """리스트박스 선택 파일 미리보기 실행.
 
         Args:
             listbox: 선택된 항목이 있는 Listbox 위젯.
             tab_type: 탭 타입 ('video' 또는 'audio').
         """
-        self._preview.preview_selected(listbox, tab_type)
+        self._preview_service.preview_selected(listbox, tab_type)
 
     def cleanup(self) -> None:
-        """앱 종료 시 메인 프로그램에서 호출되는 정리 메서드입니다.
+        """앱 종료 시 호출되는 리소스 및 스레드 정리.
 
-        전역 임시 폴더(app_temp_dir)가 주입된 경우에는
-        AppContainer.cleanup_shared()에서 통합 관리합니다.
-        자체 생성한 임시 폴더인 경우에만 직접 삭제합니다.
+        전역 임시 폴더(app_temp_dir) 주입 시 AppContainer.cleanup_shared()에서 통합 관리하며,
+        자체 생성 임시 폴더인 경우에만 직접 삭제.
         """
         self._stop_polling()
+        self.tool_pipeline.cleanup()
+        for _tab in ('video', 'audio'):
+            _token = self.video_cancel_token if _tab == 'video' else self.audio_cancel_token
+            _token.cancel()
+            _thread = self._conversion_threads.get(_tab)
+            if _thread is not None and _thread.is_alive():
+                _thread.join(timeout=3.0)
         if self._owns_temp_dir and os.path.exists(self._preview_temp_dir):
             shutil.rmtree(self._preview_temp_dir, ignore_errors=True)

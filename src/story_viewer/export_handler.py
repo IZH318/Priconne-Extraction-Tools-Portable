@@ -1,20 +1,42 @@
+"""Story Viewer 텍스트/마크다운/JSON 내보내기 핸들러 모듈.
+
+단일/다중 스토리 스크립트 파일을 텍스트(.txt) 또는 마크다운(.md)으로 변환 내보내기,
+선택지 포함 여부 및 화자 서식 지정, 파일 명명 규칙(원본/제목/ID_제목),
+데이터베이스 부가 데이터(캐릭터 프로필, 음성 대사, 이벤트 목록) 일괄 내보내기 전담.
+"""
+
 from __future__ import annotations
+
+import contextlib
 import json
 import os
+import queue
 import re
 import sqlite3
 import tkinter as tk
-from typing import Any, Callable, TYPE_CHECKING
-import queue
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from src.queue_events import ActionEvent
 from src.utils.platform_open import open_with_default_app
-from .logic import StoryDataLoader, StoryFormatter
+
 from . import db_helper
+from .logic import StoryDataLoader, StoryFormatter
 
 if TYPE_CHECKING:
-    from .view import StoryViewerView
     from .db_manager import StoryDBManager
+    from .view import StoryViewerView
+
+
+class OtherExportTask(TypedDict):
+    """데이터베이스 부가 정보 내보내기 작업 정의 TypedDict."""
+
+    type: str
+    name_key: str
+    data_func: Callable[[], list[str]]
+    file_suffix: str
+    header_key: str
+
 
 
 FILENAME_SANITIZE_MAP = str.maketrans({
@@ -31,7 +53,7 @@ FILENAME_SANITIZE_MAP = str.maketrans({
 
 
 def sanitize_filename(name: str) -> str:
-    """윈도우 파일 시스템 금지 문자를 전각 문자로 1:1 치환합니다."""
+    """윈도우 파일 시스템 금지 문자를 전각 문자로 1:1 치환."""
     return name.translate(FILENAME_SANITIZE_MAP).strip()
 
 
@@ -42,7 +64,7 @@ def resolve_export_filename(
     ext: str = ".txt",
     duplicate_titles: set[str] | None = None,
 ) -> str:
-    """선택된 명명 규칙에 따라 안전한 내보내기 파일명을 생성합니다.
+    """선택된 명명 규칙에 따라 안전한 내보내기 파일명 생성.
 
     Args:
         filename: 원본 파일명 (예: storydata_5136000.json).
@@ -88,18 +110,18 @@ def resolve_export_filename(
 
 
 def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]) -> str:
-    """대본(script) 모드 데이터를 마크다운 문법에 완벽히 맞춰 포매팅합니다."""
+    """대본(script) 모드 데이터를 마크다운 문법에 완벽히 맞춰 포매팅."""
     scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
 
-    outline_title = lang_dict.get('script_outline_title', '줄거리')
-    branch_point_label = lang_dict.get('script_branch_point', '분기점')
-    choice_item_label = lang_dict.get('script_choice_item', '선택')
-    branch_dialogue_label = lang_dict.get('script_branch_dialogue', '분기 대사')
-    branch_label_fmt = lang_dict.get('script_branch_label_fmt', '{choice_label} {idx}번 {dialogue_label}')
-    branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', '[Scene {scene}] (으)로 이어짐')
-    branch_end_label = lang_dict.get('script_branch_end', '[스토리 종료]')
-    place_prefix = lang_dict.get('script_place_prefix', '장소')
-    no_dialogue_msg = lang_dict.get('script_no_dialogue', '대사 데이터가 없는 스토리입니다')
+    outline_title = lang_dict.get('script_outline_title', 'Synopsis')
+    branch_point_label = lang_dict.get('script_branch_point', 'Branch Point')
+    choice_item_label = lang_dict.get('script_choice_item', 'Choice')
+    branch_dialogue_label = lang_dict.get('script_branch_dialogue', 'Branch Dialogue')
+    branch_label_fmt = lang_dict.get('script_branch_label_fmt', '{dialogue_label} for {choice_label} #{idx}')
+    branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', 'Leads to [Scene {scene}]')
+    branch_end_label = lang_dict.get('script_branch_end', '[End of Story]')
+    place_prefix = lang_dict.get('script_place_prefix', 'Place')
+    no_dialogue_msg = lang_dict.get('script_no_dialogue', 'This story has no dialogue data')
 
     structure = StoryFormatter.resolve_story_branches(data)
     scene_to_branch = structure.scene_to_branch
@@ -143,6 +165,7 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
         is_branch_end = bool(b and b.scenes and b.scenes[-1] == key)
 
         if is_branch_start:
+            assert b is not None
             r_str = f"Scene {b.scenes[0]}~{b.scenes[-1]}" if len(b.scenes) > 1 else f"Scene {key}"
             tag_str = f" (Tag {b.tag})" if b.tag else ""
             lbl = branch_label_fmt.format(choice_label=choice_item_label, idx=b.choice_idx, dialogue_label=branch_dialogue_label)
@@ -201,6 +224,7 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
                 md_out.append(f"{b_prefix}1. {c_text}{tag_str}{target_dest}  \n{b_prefix}\n")
 
         if is_branch_end:
+            assert b is not None
             dest_scene = b.destination
             label = branch_leads_to_fmt.format(scene=dest_scene) if dest_scene else branch_end_label
             md_out.append(f">\n> └── ▶ **{label}**\n\n")
@@ -212,7 +236,7 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
 
 
 def _format_generic_mode_markdown(rendered: list[tuple[str, str | None]]) -> str:
-    """심플/상세 모드 태그 텍스트를 마크다운 헤딩 및 리스트로 변환합니다."""
+    """심플/상세 모드 태그 텍스트를 마크다운 헤딩 및 리스트로 변환."""
     md_lines: list[str] = []
     for text, tag in rendered:
         if tag == 'scene_header':
@@ -244,7 +268,7 @@ def format_content_for_export(
     lang_dict: dict[str, str],
     file_format: str = "txt",
 ) -> str:
-    """스토리 데이터를 선택된 형식(txt/md)과 서식 모드(script/simple/detailed)로 렌더링합니다."""
+    """스토리 데이터를 선택된 형식(txt/md)과 서식 모드(script/simple/detailed)로 렌더링."""
     if file_format != 'md':
         rendered = StoryFormatter.format_story_data(data, view_mode, lang_dict)
         return "".join([text for text, _ in rendered])
@@ -257,7 +281,7 @@ def format_content_for_export(
 
 
 class StoryExportHandler:
-    """Story Viewer의 데이터 내보내기 기능을 전담하는 핸들러 클래스입니다."""
+    """Story Viewer 데이터 내보내기 처리 핸들러."""
 
     def __init__(
         self,
@@ -273,6 +297,7 @@ class StoryExportHandler:
         get_db_manager: Callable[[], StoryDBManager],
         view: StoryViewerView,
         get_file_titles: Callable[[], dict[str, str]] | None = None,
+        shared_state: Any = None,
     ) -> None:
         self._get_lang_dict = get_lang_dict
         self._task_queue = task_queue
@@ -285,7 +310,8 @@ class StoryExportHandler:
         self._get_server_db_info = get_server_db_info
         self._get_db_manager = get_db_manager
         self._view = view
-        self._get_file_titles = get_file_titles or (lambda: {})
+        self._get_file_titles = get_file_titles or (dict)
+        self.shared_state = shared_state
 
     @staticmethod
     def _save_list_to_file(data_list: list[str], filename_suffix: str, output_folder: str, header: str = "", empty_msg: str | None = None) -> tuple[bool, Exception | None]:
@@ -295,8 +321,7 @@ class StoryExportHandler:
                 if data_list:
                     if header:
                         f.write(f"--- {header} ---\n\n")
-                    for item in data_list:
-                        f.write(f"{item}\n")
+                    f.writelines(f"{item}\n" for item in data_list)
                 else:
                     if empty_msg is None:
                         empty_msg = f"(No data found for {filename_suffix})"
@@ -313,7 +338,7 @@ class StoryExportHandler:
         check_cancelled: Callable[[], bool] | None = None,
         on_finish: Callable[[], None] | None = None,
     ) -> None:
-        """선택된 여러 유형의 데이터들을 백그라운드 스레드에서 파일로 내보냅니다."""
+        """선택된 여러 유형의 데이터를 백그라운드 스레드에서 파일로 내보내기 실행."""
         lang_dict = self._get_lang_dict()
         export_results = {}
         total_exported_count = 0
@@ -346,7 +371,7 @@ class StoryExportHandler:
             def _get_voices() -> list[str]:
                 voices = search_data.get('voices', [])
                 if voices:
-                    return sorted(list(voices))
+                    return sorted(voices)
                 collected = set()
                 all_files_map = self._get_all_files()
                 for fp in all_files_map.values():
@@ -357,10 +382,10 @@ class StoryExportHandler:
                                 v_name = StoryDataLoader.extract_asset_name(sc['vo'])
                                 if v_name:
                                     collected.add(v_name)
-                return sorted(list(collected))
+                return sorted(collected)
 
-            other_export_types = [
-                {'type': 'filenames', 'name_key': 'export_type_filenames', 'data_func': lambda: sorted(list(loaded_filenames)), 'file_suffix': 'filenames', 'header_key': 'export_type_filenames'},
+            other_export_types: list[OtherExportTask] = [
+                {'type': 'filenames', 'name_key': 'export_type_filenames', 'data_func': lambda: sorted(loaded_filenames), 'file_suffix': 'filenames', 'header_key': 'export_type_filenames'},
                 {'type': 'character_names', 'name_key': 'export_type_character_names', 'data_func': lambda: sorted(search_data.get('character_names', [])), 'file_suffix': 'character_names', 'header_key': 'export_type_character_names'},
                 {'type': 'bgm_names', 'name_key': 'export_type_bgm_names', 'data_func': lambda: sorted(search_data.get('bgms', [])), 'file_suffix': 'bgm_names', 'header_key': 'export_type_bgm_names'},
                 {'type': 'background_names', 'name_key': 'export_type_background_names', 'data_func': lambda: sorted(search_data.get('backgrounds', [])), 'file_suffix': 'background_names', 'header_key': 'export_type_background_names'},
@@ -394,10 +419,10 @@ class StoryExportHandler:
             # --- A. 스토리 데이터 추출 진행 ---
             if selected_options.get('story_data'):
                 if not filenames_to_export:
-                    no_files_msg = lang_dict.get('msgbox_no_export_files_msg', 'No story data files selected for export.')
+                    no_files_msg = lang_dict.get('msgbox_no_export_files_msg', 'There are no files to export.')
                     export_results['story_data'] = {'success': 0, 'failed': 0, 'details': [no_files_msg]}
                 else:
-                    type_name = lang_dict.get('export_type_story_data', '스토리 데이터')
+                    type_name = lang_dict.get('export_type_story_data', 'Story Data')
                     success_count = 0
                     fail_count = 0
                     current_failed_details = []
@@ -421,7 +446,7 @@ class StoryExportHandler:
                         if progress_callback:
                             progress_callback(current_step, total_items, type_name)
 
-                        def _update_status(tn=type_name, s=success_count, f=fail_count, step=current_step, tot=total_items):
+                        def _update_status(tn: str = type_name, s: int = success_count, f: int = fail_count, step: int = current_step, tot: int = total_items) -> None:
                             self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=s, failed=f, i=step, t=tot)
                         self._task_queue.put(ActionEvent(action=_update_status))
 
@@ -464,8 +489,8 @@ class StoryExportHandler:
                             success_count += 1
                         except (OSError, json.JSONDecodeError) as e:
                             fail_count += 1
-                            err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
-                            current_failed_details.append(err_fmt.format(item=filename, err=e))
+                            err_fmt = lang_dict.get('export_err_detail_format', '{name} (Error: {e})')
+                            current_failed_details.append(err_fmt.format(name=filename, e=e, item=filename, err=e))
 
                     export_results['story_data'] = {'success': success_count, 'failed': fail_count, 'details': current_failed_details}
                     total_exported_count += success_count
@@ -486,7 +511,9 @@ class StoryExportHandler:
                     if progress_callback:
                         progress_callback(current_step, total_items, type_name)
 
-                    self._task_queue.put(ActionEvent(action=lambda tn=type_name: self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=0, failed=0)))
+                    def _make_status_action(tn: str = type_name) -> Callable[[], None]:
+                        return lambda: self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=0, failed=0)
+                    self._task_queue.put(ActionEvent(action=_make_status_action(type_name)))
                     try:
                         data_list = task['data_func']()
                         if not data_list:
@@ -494,7 +521,7 @@ class StoryExportHandler:
                             export_results[task_type] = {'success': 0, 'failed': 0, 'details': [no_data_msg]}
                             continue
 
-                        empty_list_msg = lang_dict.get('export_empty_list_content', '(No data found for {name})').format(name=task['file_suffix'])
+                        empty_list_msg = lang_dict.get('export_empty_list_content', '(No data found for {name})\n').format(name=task['file_suffix'])
                         success, error = self._save_list_to_file(
                             data_list, task['file_suffix'], output_folder,
                             lang_dict.get(task['header_key'], type_name) if 'event_list' in task_type else "",
@@ -504,19 +531,19 @@ class StoryExportHandler:
                             total_exported_count += 1
                         else:
                             total_failed_count += 1
-                            err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
-                            all_failed_details.append(err_fmt.format(item=type_name, err=error))
+                            err_fmt = lang_dict.get('export_err_detail_format', '{name} (Error: {e})')
+                            all_failed_details.append(err_fmt.format(name=type_name, e=error, item=type_name, err=error))
                     except (sqlite3.Error, OSError) as e:
                         total_failed_count += 1
-                        err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
-                        all_failed_details.append(err_fmt.format(item=type_name, err=e))
-        except Exception as e:
+                        err_fmt = lang_dict.get('export_err_detail_format', '{name} (Error: {e})')
+                        all_failed_details.append(err_fmt.format(name=type_name, e=e, item=type_name, err=e))
+        except Exception as e:  # noqa: BLE001
             total_failed_count += 1
-            err_fmt = lang_dict.get('export_err_detail_format', '{item} (Error: {err})')
-            all_failed_details.append(err_fmt.format(item="Export", err=e))
+            err_fmt = lang_dict.get('export_err_detail_format', '{name} (Error: {e})')
+            all_failed_details.append(err_fmt.format(name="Export", e=e, item="Export", err=e))
         finally:
             # 4. 종료 처리
-            def _on_complete_ui():
+            def _on_complete_ui() -> None:
                 if on_finish:
                     on_finish()
                 self._finish_export(
@@ -537,43 +564,44 @@ class StoryExportHandler:
         open_folder_after: bool = False,
         output_folder: str = "",
     ) -> None:
-        """데이터 내보내기 작업 완료 후 결과를 UI와 사용자에게 알립니다."""
+        """데이터 내보내기 작업 완료 후 결과를 UI 및 사용자에게 통지."""
         from tkinter import messagebox
         lang_dict = self._get_lang_dict()
 
         if was_cancelled:
             messagebox.showinfo(
-                lang_dict.get('msgbox_export_cancelled_title', '추출 취소'),
-                lang_dict.get('msgbox_export_cancelled_msg', '데이터 내보내기 작업이 사용자에 의해 취소되었습니다.'),
+                lang_dict.get('msgbox_export_cancelled_title', 'Export Cancelled'),
+                lang_dict.get('msgbox_export_cancelled_msg', 'Data export operation was cancelled by the user.'),
                 parent=self._master
             )
             self._view.update_status_bar('status_bar_initial')
             return
 
         if exported_count > 0:
+            msg_fmt = lang_dict.get('msgbox_export_complete_msg', 'Successfully exported {exported_count} files/lists.')
             messagebox.showinfo(
-                lang_dict['msgbox_export_complete_title'],
-                lang_dict['msgbox_export_complete_msg'].format(exported_count=exported_count),
+                lang_dict.get('msgbox_export_complete_title', 'Export Complete'),
+                msg_fmt.format(exported_count=exported_count),
                 parent=self._master
             )
             self._view.update_status_bar('status_bar_export_summary', success_total=exported_count, failed_total=failed_count)
             if open_folder_after and output_folder and os.path.exists(output_folder):
-                try:
+                with contextlib.suppress(OSError):
                     open_with_default_app(output_folder)
-                except Exception:
-                    pass
         else:
+            msg_fmt = lang_dict.get('msgbox_export_failed_msg', 'No files/lists were exported. An error occurred in {failed_count} items.')
             messagebox.showwarning(
-                lang_dict['msgbox_export_failed_title'],
-                lang_dict['msgbox_export_failed_msg'].format(failed_count=failed_count),
+                lang_dict.get('msgbox_export_failed_title', 'Export Failed'),
+                msg_fmt.format(failed_count=failed_count),
                 parent=self._master
             )
             self._view.update_status_bar('status_bar_export_summary', success_total=exported_count, failed_total=failed_count)
 
         if failed_list:
             error_msg = "\n".join(failed_list[:10]) + ("\n..." if len(failed_list) > 10 else "")
+            err_details_fmt = lang_dict.get('msgbox_export_error_details_msg', 'Error occurred while exporting the following files/lists:\n{errors}')
             messagebox.showerror(
-                lang_dict['msgbox_export_error_details_title'],
-                lang_dict['msgbox_export_error_details_msg'].format(errors=error_msg),
+                lang_dict.get('msgbox_export_error_details_title', 'Export Error Details'),
+                err_details_fmt.format(errors=error_msg),
                 parent=self._master
             )

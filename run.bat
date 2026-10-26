@@ -3,6 +3,10 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 chcp 65001 > nul
 
+set "IS_ARM64="
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "IS_ARM64=1"
+if /i "%PROCESSOR_ARCHITEW6432%"=="ARM64" set "IS_ARM64=1"
+
 echo ======================================================================
 echo  Language Variables
 echo ======================================================================
@@ -16,6 +20,7 @@ set "MSG_ERROR_CHECK_PYTHON=- Please ensure Python 3.14.9 is installed."
 set "MSG_ERROR_HOW_TO_CHECK=-(How to check: Run 'py -3.14 --version' in your terminal)"
 set "MSG_ERROR_ADMIN=- Try running this script as an administrator."
 set "MSG_RUNNING_MAIN=[Running main.py inside virtual environment...]"
+set "MSG_ARM_NOTICE=[Notice] Windows on ARM: Running with 64-bit Compatibility Layer."
 set "MSG_EXIT_PROMPT=Program finished. Press any key to exit."
 
 :main_install
@@ -74,7 +79,7 @@ if not exist ".venv\Scripts\python.exe" (
         if /i "!SYS_ARCH!"=="AMD64" (
             set "PY_INSTALLER=python-3.14.9-amd64.exe"
         ) else if /i "!SYS_ARCH!"=="ARM64" (
-            set "PY_INSTALLER=python-3.14.9-arm64.exe"
+            set "PY_INSTALLER=python-3.14.9-amd64.exe"
         ) else if /i "!SYS_ARCH!"=="x86" (
             set "PY_INSTALLER=python-3.14.9.exe"
         ) else (
@@ -129,6 +134,7 @@ goto :handle_success
 echo.
 echo ======================================================================
 echo  %MSG_RUNNING_MAIN%
+if defined IS_ARM64 echo  %MSG_ARM_NOTICE%
 echo ======================================================================
 echo.
 .venv\Scripts\python.exe main.py

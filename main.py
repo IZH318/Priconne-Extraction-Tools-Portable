@@ -1,62 +1,95 @@
-from __future__ import annotations
-import sys
-import multiprocessing
-import logging
-import tkinter as tk
-from tkinter import ttk
-from pathlib import Path
-from tkinterdnd2 import TkinterDnD
+"""Priconne Extraction Tools 메인 런처.
 
-# 모듈 및 컨테이너 임포트
-from src.renamer import FileRenamerGUI
-from src.unity_converter import AssetExtractorApp
+5개 서브 도구(Manifest Renamer, Unity Converter, AV Converter, Story Viewer,
+Resource Remover) 탭을 통합 제공하며, 다국어 설정 및 앱 수명주기를 관리.
+"""
+
+from __future__ import annotations
+
+import logging
+import multiprocessing
+import sys
+import tkinter as tk
+from pathlib import Path
+from tkinter import ttk
+from typing import Any
+
+from tkinterdnd2 import TkinterDnD  # type: ignore[import-untyped]
+
 from src.av_converter import AVConverterApp
-from src.story_viewer import StoryViewerApp
-from src.resource_remover import ResourceRemoverApp
 from src.container import AppContainer, SharedDependencies
-from src.protocols import ModuleController
 from src.languages import MAIN_MENU_LANGUAGES
+from src.protocols import ModuleController, validate_module_controller
+
+# 서브 도구 모듈 임포트
+from src.renamer import FileRenamerGUI
+from src.resource_remover import ResourceRemoverApp
+from src.story_viewer import StoryViewerApp
+from src.unity_converter import AssetExtractorApp
 from src.utils.about_dialog import show_about_dialog
+
+logger = logging.getLogger(__name__)
 
 
 class _MenuBarIndex:
-    """메인 메뉴바의 cascade 인덱스 (Tkinter Menu는 0-based)."""
+    """메인 메뉴바 cascade 인덱스."""
+
     FILE = 0
     LANGUAGE = 1
 
 
 class _FileMenuIndex:
-    """파일 메뉴 내 항목 인덱스 (0-based)."""
+    """파일 메뉴 항목 인덱스."""
+
     ABOUT = 0
-    # SEPARATOR = 1
+    SEPARATOR = 1
     EXIT = 2
 
 
 class _LangMenuIndex:
-    """언어 메뉴 내 항목 인덱스 (0-based)."""
+    """언어 메뉴 항목 인덱스."""
+
     KOREAN = 0
     ENGLISH = 1
     JAPANESE = 2
 
 
 class _TabIndex:
-    """노트북 탭 인덱스 (0-based)."""
+    """노트북 탭 인덱스."""
+
     RENAMER = 0
     UNITY = 1
     AV = 2
     STORY = 3
     REMOVER = 4
 
+
 class MainLauncher(TkinterDnD.Tk):
+    """Priconne Extraction Tools 메인 윈도우 런처.
+
+    드래그 앤 드롭 이벤트를 지원하며, AppContainer를 통해
+    공유 의존성(언어 설정, 프로그램 정보, 임시 디렉터리)을
+    각 서브 모듈에 주입하고 통합 탭 뷰를 구성.
+
+    Attributes:
+        container (AppContainer): DI 컨테이너 인스턴스.
+        app_lang_var (tk.StringVar): 공용 활성 언어 변수.
+        about_info (dict[str, str | int]): 프로그램 버전 및 정보.
+        notebook (ttk.Notebook): 서브 도구 배치용 탭 컨테이너.
+        apps (list[Any]): 서브 도구 인스턴스 목록.
+    """
+
     def __init__(self) -> None:
+        """MainLauncher 초기화 및 서브 도구 구성."""
         super().__init__()
         self.withdraw()
+
         
-        # 1. 의존성 주입(DI) 컨테이너 초기화 및 핵심 서비스 가동
+        # 1. DI 컨테이너 및 핵심 서비스 초기화
         self.container = AppContainer(self)
         self.container.initialize_core_services()
         
-        # 2. 컨테이너로부터 공유 인스턴스(의존성) 참조 획득
+        # 2. 공유 의존성 참조 획득
         deps = self.container.get_shared_dependencies()
         self.app_lang_var = deps.app_lang_var
         self.about_info = deps.about_info
@@ -74,7 +107,7 @@ class MainLauncher(TkinterDnD.Tk):
         self.deiconify()
 
     def _configure_window(self) -> None:
-        """메인 윈도우의 크기와 위치를 설정합니다."""
+        """메인 윈도우 크기 설정 및 화면 중앙 배치."""
         width, height = 800, 600
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
@@ -92,15 +125,15 @@ class MainLauncher(TkinterDnD.Tk):
                 pass
 
     def _create_main_menu(self) -> None:
-        """런처의 글로벌 메인 메뉴 바를 생성합니다."""
-        self.menu_bar = tk.Menu(self)
+        """메인 메뉴바 생성."""
+        self.menu_bar = tk.Menu(self, tearoff=0)
         self.config(menu=self.menu_bar)
         
         # 파일 메뉴
         self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
         self.file_menu.add_command(label="", command=self._show_about_info) # 0번 (About)
         self.file_menu.add_separator()                                        # 1번
-        self.file_menu.add_command(label="", command=self.quit)               # 2번 (Exit)
+        self.file_menu.add_command(label="", command=self.on_closing)          # 2번 (Exit)
         
         # 언어 메뉴
         self.lang_menu = tk.Menu(self.menu_bar, tearoff=0)
@@ -113,13 +146,13 @@ class MainLauncher(TkinterDnD.Tk):
         self.menu_bar.add_cascade(label="", menu=self.lang_menu)
 
     def _create_tabs(self, deps: SharedDependencies) -> None:
-        """각 툴 모듈을 담을 노트북 탭 구조를 생성하고, 컨테이너 리소스를 주입합니다."""
+        """서브 도구 탭 생성 및 의존성 주입."""
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # 모듈 생성 시 생성자 주입(Constructor Injection) 방식으로 공유 객체 전달
+        # 각 서브 도구에 공유 의존성 주입
         
-        self.apps = []
+        self.apps: list[Any] = []
 
         # 1. Manifest File Renamer
         self.tab1 = ttk.Frame(self.notebook)
@@ -146,27 +179,32 @@ class MainLauncher(TkinterDnD.Tk):
         self.apps.append(ResourceRemoverApp(self.tab5, app_lang_var=deps.app_lang_var, about_info=deps.about_info))
         self.notebook.add(self.tab5, text="")
 
-        # 모든 모듈의 Controller가 ModuleController 프로토콜을 준수하는지 시작 시점에 검증
+        # 서브 도구의 ModuleController 프로토콜 준수 여부 검증
         for app in self.apps:
             controller = getattr(app, 'controller', None)
             if controller is not None and not isinstance(controller, ModuleController):
-                logging.warning(
+                logger.warning(
                     "%s.controller does not implement ModuleController protocol. "
                     "cleanup() may be skipped on exit.",
                     type(app).__name__,
                 )
+            if controller is not None and isinstance(controller, ModuleController) and not validate_module_controller(controller):
+                logger.warning(
+                    "%s.controller implements ModuleController but fails signature validation.",
+                    type(app).__name__,
+                )
 
     def _on_language_change(self, *args: str) -> None:
-        """언어 변수가 변경될 때 런처 UI 요소 텍스트를 업데이트합니다."""
+        """언어 변경 시 UI 텍스트 갱신."""
         self._update_launcher_ui_text()
 
     def _update_launcher_ui_text(self) -> None:
-        """현재 선택된 언어에 맞춰 런처 메뉴와 탭 이름을 변경합니다."""
+        """현재 언어에 맞춰 메뉴와 탭 명칭 갱신."""
         lang_dict = MAIN_MENU_LANGUAGES.get(self.app_lang_var.get(), MAIN_MENU_LANGUAGES.get('ko', {}))
         
-        self.title(lang_dict.get('window_title', 'Priconne Extraction Tools'))
+        self.title(lang_dict.get('window_title', 'Priconne Extraction Tools (Portable)'))
         
-        self.menu_bar.entryconfig(_MenuBarIndex.FILE, label=lang_dict.get('menu_file', 'File'))
+        self.menu_bar.entryconfig(_MenuBarIndex.FILE, label=lang_dict.get('menu_file', 'Menu'))
         self.menu_bar.entryconfig(_MenuBarIndex.LANGUAGE, label=lang_dict.get('menu_lang', 'Language'))
         
         self.file_menu.entryconfig(_FileMenuIndex.ABOUT, label=lang_dict.get('menu_info', 'About'))
@@ -182,21 +220,21 @@ class MainLauncher(TkinterDnD.Tk):
         self.notebook.tab(_TabIndex.REMOVER, text=lang_dict.get('tab_remover', "Original Resource Remover"))
 
     def _show_about_info(self) -> None:
-        """프로그램 정보 대화상자를 표시합니다."""
+        """프로그램 정보 대화상자 표시."""
         lang_dict = MAIN_MENU_LANGUAGES.get(self.app_lang_var.get(), MAIN_MENU_LANGUAGES.get('ko', {}))
         show_about_dialog(lang_dict, self.about_info, self)
         
     def on_closing(self) -> None:
-        """앱 종료 시 등록된 모든 모듈의 자원을 해제합니다."""
+        """앱 종료 시 서브 도구 자원 정리 및 창 닫기."""
         for app in self.apps:
             controller = getattr(app, 'controller', None)
             if isinstance(controller, ModuleController):
                 try:
                     controller.cleanup()
-                except (AttributeError, RuntimeError) as e:
-                    logging.warning("Error during cleanup: %s", e)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Error during cleanup: %s", e)
                     
-        # 앱 전체 공유 자원 해제 (앱 전역 임시 폴더 삭제 등)
+        # 앱 공용 임시 폴더 등 공유 자원 정리
         if hasattr(self, 'container') and hasattr(self.container, 'cleanup_shared'):
             self.container.cleanup_shared()
                     

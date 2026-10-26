@@ -1,15 +1,40 @@
-from __future__ import annotations
-import tkinter as tk
-from tkinter import ttk, font
-from typing import TYPE_CHECKING
+"""Story Viewer 탭의 Tkinter GUI 뷰 모듈.
 
+좌우 2단 분할창(PanedWindow) 구조로, 좌측에는 파일/폴더 열기, 서버 라디오버튼(JP/KR),
+표시 모드 콤보박스, 인라인 검색 필터, 다중 선택 리스트박스를 배치하고,
+우측에는 에피소드 제목/개요 프레임과 컬러 텍스트 태그가 적용된 스토리 대사 뷰어 렌더링.
+"""
+
+from __future__ import annotations
+
+import tkinter as tk
+from tkinter import font, ttk
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .controller import StoryViewerController
 
 
 class StoryViewerView(ttk.Frame):
+    """Story Viewer 그래픽 사용자 인터페이스(View) 클래스.
+
+    ttk.PanedWindow 2단 분할 레이아웃과 ScrolledText 컬러 텍스트 하이라이팅 태그
+    (header, speaker, dialogue, choice, system_comment) 관리.
+
+    Attributes:
+        controller (StoryViewerController): 상위 컨트롤러 인스턴스.
+        paned_window (ttk.PanedWindow): 좌우 수평 분할 컨테이너.
+        file_listbox (tk.Listbox): 스토리 파일 목록 위젯.
+        story_text (tk.Text): 대사 및 씬 텍스트 출력 영역.
+    """
+
     def __init__(self, master: ttk.Frame, controller: StoryViewerController) -> None:
+        """StoryViewerView 인스턴스 초기화 및 UI 컴포넌트/텍스트 태그 설정.
+
+        Args:
+            master (ttk.Frame): 상위 탭 컨테이너 프레임.
+            controller (StoryViewerController): 이벤트 제어 컨트롤러.
+        """
         super().__init__(master)
         self.controller = controller
         self.pack(fill=tk.BOTH, expand=True)
@@ -20,10 +45,11 @@ class StoryViewerView(ttk.Frame):
     def setup_ui(self) -> None:
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
-        
+
         self.paned_window = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         self.paned_window.grid(row=0, column=0, sticky="nsew", padx=10, pady=(10, 5))
-        
+
+
         left_weight, right_weight = 35, 65
 
         left_pane = ttk.Frame(self.paned_window)
@@ -42,28 +68,28 @@ class StoryViewerView(ttk.Frame):
 
         self.options_frame = ttk.Frame(self.left_group)
         self.options_frame.pack(fill=tk.X, padx=5, pady=(5, 0))
-        
+
         self.options_frame.columnconfigure(1, weight=1)
-        
-        # Row 0: Server selection
+
+        # 0행: 서버 선택 (Server selection)
         self.server_label = ttk.Label(self.options_frame, text="")
         self.server_label.grid(row=0, column=0, sticky="w", padx=(0, 5), pady=(0, 5))
-        
+
         self.server_frame = ttk.Frame(self.options_frame)
         self.server_frame.grid(row=0, column=1, sticky="w", pady=(0, 5))
         self.jp_radio = ttk.Radiobutton(self.server_frame, text="", variable=self.controller.server_var, value="JP", command=self.controller.on_server_change, state=tk.DISABLED)
         self.jp_radio.pack(side=tk.LEFT, padx=(0, 5))
         self.kr_radio = ttk.Radiobutton(self.server_frame, text="", variable=self.controller.server_var, value="KR", command=self.controller.on_server_change, state=tk.DISABLED)
         self.kr_radio.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Row 1: Display mode selection
+
+        # 1행: 표시 모드 선택 (Display mode selection)
         self.display_mode_label = ttk.Label(self.options_frame, text="")
         self.display_mode_label.grid(row=1, column=0, sticky="w", padx=(0, 5), pady=(0, 5))
-        
+
         self.display_mode_combo = ttk.Combobox(self.options_frame, state=tk.DISABLED)
         self.display_mode_combo.grid(row=1, column=1, sticky="ew", pady=(0, 5))
         self.display_mode_combo.bind("<<ComboboxSelected>>", self.controller.on_display_mode_change)
-        
+
         self.search_button = ttk.Button(self.left_group, text="", command=self.controller.open_search_window, state=tk.DISABLED)
         self.search_button.pack(fill=tk.X, padx=5, pady=(5, 3))
 
@@ -76,19 +102,19 @@ class StoryViewerView(ttk.Frame):
 
         self._placeholder_active = False
 
-        def _on_focus_in(event=None):
+        def _on_focus_in(event: Any = None) -> None:
             if self._placeholder_active:
                 self._placeholder_active = False
                 self.controller.filter_var.set("")
                 self.filter_entry.config(foreground="")
 
-        def _on_focus_out(event=None):
+        def _on_focus_out(event: Any = None) -> None:
             if not self.controller.filter_var.get():
                 self.show_filter_placeholder()
 
         self.filter_entry.bind("<FocusIn>", _on_focus_in)
         self.filter_entry.bind("<FocusOut>", _on_focus_out)
-        
+
         list_scrollbar = ttk.Scrollbar(self.left_group, orient=tk.VERTICAL)
         list_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=(0, 5))
         self.file_listbox = tk.Listbox(self.left_group, selectmode=tk.EXTENDED, yscrollcommand=list_scrollbar.set)
@@ -97,7 +123,7 @@ class StoryViewerView(ttk.Frame):
         self.file_listbox.bind("<<ListboxSelect>>", self.controller.on_file_select)
 
         # 키보드 방향키 이동 시 실시간 선택/갱신 지원
-        def _on_nav_key_release(event=None):
+        def _on_nav_key_release(event: Any = None) -> None:
             self.file_listbox.after_idle(self.controller.on_file_select)
 
         for _nav_key in ("<KeyRelease-Up>", "<KeyRelease-Down>", "<KeyRelease-Prior>", "<KeyRelease-Next>", "<KeyRelease-Home>", "<KeyRelease-End>"):
@@ -113,16 +139,16 @@ class StoryViewerView(ttk.Frame):
         self.file_listbox.bind("<Button-3>", self._show_listbox_menu)
         self.file_listbox.bind("<Button-2>", self._show_listbox_menu)
         self.file_listbox.bind("<Delete>", self.controller.remove_selected_files)
-        
+
         right_pane = ttk.Frame(self.paned_window)
         self.paned_window.add(right_pane, weight=right_weight)
-        
+
         self.detail_options_group = ttk.LabelFrame(right_pane, text="")
         self.detail_options_group.pack(fill=tk.X, pady=(0, 5))
         self.view_mode_combo = ttk.Combobox(self.detail_options_group, state="readonly")
         self.view_mode_combo.pack(fill=tk.X, padx=5, pady=7)
         self.view_mode_combo.bind("<<ComboboxSelected>>", self.controller.on_view_mode_change)
-        
+
         self.right_group = ttk.LabelFrame(right_pane, text="")
         self.right_group.pack(fill=tk.BOTH, expand=True)
         text_scrollbar = ttk.Scrollbar(self.right_group, orient=tk.VERTICAL)
@@ -133,17 +159,17 @@ class StoryViewerView(ttk.Frame):
 
         self.bottom_frame = ttk.Frame(self)
         self.bottom_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 5))
-        
+
         self.status_bar = ttk.Label(self.bottom_frame, text="", anchor=tk.W, padding=5)
         self.status_bar.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
+
         self.btn_export = ttk.Button(self.bottom_frame, text="", command=self.controller.open_export_window, state=tk.DISABLED)
         self.btn_export.pack(side=tk.RIGHT, padx=(5, 0))
 
         self.btn_copy = ttk.Button(self.bottom_frame, text="", command=self.controller.copy_script_to_clipboard, state=tk.DISABLED)
         self.btn_copy.pack(side=tk.RIGHT, padx=(5, 0))
-        
-        def reapply_weights(event=None):
+
+        def reapply_weights(event: Any = None) -> None:
             try:
                 total_width = self.paned_window.winfo_width()
                 sash_position = int(total_width * left_weight / (left_weight + right_weight))
@@ -173,23 +199,23 @@ class StoryViewerView(ttk.Frame):
         self.story_text.tag_configure('script_branch', font=(default_font_family, 10, 'bold'), foreground='#9C4221')
         self.story_text.tag_configure('script_outline_header', font=(default_font_family, 10, 'bold'), foreground='#2C5282')
         self.story_text.tag_configure('script_divider', font=(default_font_family, 9), foreground='#A0AEC0')
-    
+
     def update_ui_text(self) -> None:
-        """현재 선택된 언어에 맞춰 UI 텍스트를 업데이트합니다."""
+        """현재 언어 설정에 맞춰 UI 텍스트 일괄 갱신."""
         lang_dict = self.controller.get_lang_dict()
-            
-        self.btn_open_file.config(text=lang_dict['file_open'])
-        self.btn_open_folder.config(text=lang_dict['folder_open'])
-        self.btn_export.config(text=lang_dict['export'])
-        self.btn_copy.config(text=lang_dict.get('btn_copy_script', '대본 복사'))
+
+        self.btn_open_file.config(text=lang_dict.get('file_open', 'Open File(s)'))
+        self.btn_open_folder.config(text=lang_dict.get('folder_open', 'Open Folder'))
+        self.btn_export.config(text=lang_dict.get('export', 'Export'))
+        self.btn_copy.config(text=lang_dict.get('btn_copy_script', 'Copy Script'))
 
         self.open_frame.config(text=lang_dict.get('open_frame_title', 'Open'))
-        self.detail_options_group.config(text=lang_dict['detail_options_group'])
-        
+        self.detail_options_group.config(text=lang_dict.get('detail_options_group', 'Story Detail Options'))
+
         self.display_mode_label.config(text=lang_dict.get('display_mode_label', 'Display Filename As:'))
-        val1 = lang_dict['display_original_filename']
-        val2 = lang_dict['display_title']
-        val3 = lang_dict.get('display_id_and_title', '[ID] + title 정보')
+        val1 = lang_dict.get('display_original_filename', 'Original Filename')
+        val2 = lang_dict.get('display_title', 'Title Info')
+        val3 = lang_dict.get('display_id_and_title', '[ID] + Title Info')
         self.display_mode_combo.config(values=[val1, val2, val3])
         cur_mode = self.controller.display_mode_var.get()
         if cur_mode == "original":
@@ -198,11 +224,11 @@ class StoryViewerView(ttk.Frame):
             self.display_mode_combo.current(1)
         elif cur_mode == "id_title":
             self.display_mode_combo.current(2)
-        
+
         view_modes = [
-            lang_dict.get('view_script', '대본 모드 (대사·지문·선택지 위주의 읽기 쉬운 형식)'),
-            lang_dict.get('view_simple', '간단히 표시 (주요 연출, 대사 및 선택지 분기 요약)'),
-            lang_dict.get('view_detailed', '자세히 표시 (모든 씬 번호, 오프코드 및 원본 파라미터 전체)'),
+            lang_dict.get('view_script', 'Script Mode (Clean reading focused on dialogues, scenes & choices)'),
+            lang_dict.get('view_simple', 'Simple View (Summary of key scenes, dialogues & choice branches)'),
+            lang_dict.get('view_detailed', 'Detailed View (All scene numbers, opcodes & full raw parameters)'),
         ]
         self.view_mode_combo.config(values=view_modes)
         cur_view_mode = self.controller.view_mode_var.get()
@@ -212,33 +238,33 @@ class StoryViewerView(ttk.Frame):
             self.view_mode_combo.current(1)
         elif cur_view_mode == "detailed":
             self.view_mode_combo.current(2)
-        self.left_group.config(text=lang_dict['list_group_title'])
-        self.right_group.config(text=lang_dict['detail_group_title'])
-        self.search_button.config(text=lang_dict['search_button_text'])
-        
+        self.left_group.config(text=lang_dict.get('list_group_title', 'Story File List'))
+        self.right_group.config(text=lang_dict.get('detail_group_title', 'Story Details'))
+        self.search_button.config(text=lang_dict.get('search_button_text', 'Advanced storydata Search'))
+
         self.server_label.config(text=lang_dict.get('game_server_label', 'Game Server:'))
         self.jp_radio.config(text=lang_dict.get('jp_server_radio', 'JP'))
         self.kr_radio.config(text=lang_dict.get('kr_server_radio', 'KR'))
 
         # 우클릭 컨텍스트 메뉴 다국어 갱신
-        self.listbox_menu.entryconfig(0, label=lang_dict.get('remove_selected', '선택 항목 제거'))
-        self.listbox_menu.entryconfig(1, label=lang_dict.get('remove_all', '전체 항목 제거'))
-        self.listbox_menu.entryconfig(3, label=lang_dict.get('export_this_item', '이 항목 내보내기'))
+        self.listbox_menu.entryconfig(0, label=lang_dict.get('remove_selected', 'Remove Selected'))
+        self.listbox_menu.entryconfig(1, label=lang_dict.get('remove_all', 'Remove All'))
+        self.listbox_menu.entryconfig(3, label=lang_dict.get('export_this_item', 'Export This Item'))
 
         # 빠른 필터 플레이스홀더 갱신
         if self._placeholder_active:
             self.show_filter_placeholder()
 
     def show_filter_placeholder(self) -> None:
-        """필터 입력창에 다국어 플레이스홀더를 표시합니다."""
+        """필터 입력창 다국어 플레이스홀더 표시."""
         self._placeholder_active = True
         lang_dict = self.controller.get_lang_dict()
-        ph = lang_dict.get('filter_placeholder', '')
+        ph = lang_dict.get('filter_placeholder', 'ID, title, filename...')
         self.controller.filter_var.set(ph)
         self.filter_entry.config(foreground="#888888")
 
-    def update_status_bar(self, key, **kwargs) -> None:
-        """상태바 메시지를 다국어 키 기반으로 업데이트합니다."""
+    def update_status_bar(self, key: Any, **kwargs: Any) -> None:
+        """상태바 메시지 갱신."""
         lang_dict = self.controller.get_lang_dict()
         message = lang_dict.get(key, "...")
         if kwargs:
@@ -249,7 +275,7 @@ class StoryViewerView(ttk.Frame):
         self.status_bar.config(text=message)
 
     def update_story_text(self, content_list: list[tuple[str, str | None]]) -> None:
-        """스토리 텍스트 표시 영역을 주어진 콘텐츠로 업데이트합니다.
+        """스토리 텍스트 위젯에 서식화된 콘텐츠 출력.
 
         Args:
             content_list: (텍스트, 태그명) 튜플 리스트. 태그가 None이면 기본 스타일 적용.
@@ -262,7 +288,7 @@ class StoryViewerView(ttk.Frame):
         self.btn_copy.config(state=tk.NORMAL if content_list else tk.DISABLED)
 
     def set_action_buttons_state(self, state: str) -> None:
-        """검색 및 내보내기 버튼의 상태를 설정합니다.
+        """검색 및 내보내기 버튼 상태 설정.
 
         Args:
             state: 위젯 상태 ('normal', 'disabled' 등).
@@ -271,7 +297,7 @@ class StoryViewerView(ttk.Frame):
         self.btn_export.config(state=state)
 
     def _show_listbox_menu(self, event: Any) -> None:
-        """파일 목록 우클릭 컨텍스트 메뉴를 표시합니다.
+        """파일 목록 우클릭 컨텍스트 메뉴 표시.
 
         Args:
             event: 마우스 이벤트 객체.
@@ -280,14 +306,16 @@ class StoryViewerView(ttk.Frame):
             return
 
         # 마우스 커서 위치의 항목이 선택되어 있지 않으면 해당 항목 단일 선택
+        if self.file_listbox.size() == 0:
+            return
         index = self.file_listbox.nearest(event.y)
-        if index >= 0:
+        if index >= 0 and index < self.file_listbox.size():
             cur_sel = self.file_listbox.curselection()
             if index not in cur_sel:
                 self.file_listbox.selection_clear(0, tk.END)
                 self.file_listbox.selection_set(index)
                 self.file_listbox.activate(index)
-                self.controller.on_file_select()
+                self.file_listbox.after_idle(lambda: None if self.controller.is_loading else self.controller.on_file_select())
 
         has_selection = bool(self.file_listbox.curselection())
         has_items = self.file_listbox.size() > 0
@@ -295,17 +323,17 @@ class StoryViewerView(ttk.Frame):
 
         self.listbox_menu.entryconfig(
             0,
-            label=d.get('remove_selected', '선택 항목 제거'),
+            label=d.get('remove_selected', 'Remove Selected'),
             state=tk.NORMAL if has_selection else tk.DISABLED
         )
         self.listbox_menu.entryconfig(
             1,
-            label=d.get('remove_all', '전체 항목 제거'),
+            label=d.get('remove_all', 'Remove All'),
             state=tk.NORMAL if has_items else tk.DISABLED
         )
         self.listbox_menu.entryconfig(
             3,
-            label=d.get('export_this_item', '이 항목 내보내기'),
+            label=d.get('export_this_item', 'Export This Item'),
             state=tk.NORMAL if has_selection else tk.DISABLED
         )
         self.listbox_menu.post(event.x_root, event.y_root)
