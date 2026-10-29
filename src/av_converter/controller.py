@@ -27,6 +27,7 @@ from src.constants import (
     AV_AUDIO_SUPPORTED_EXTENSIONS,
     AV_CLEANUP_JOIN_TIMEOUT,
     AV_VIDEO_SUPPORTED_EXTENSIONS,
+    DEFAULT_LANG,
     FFMPEG_MIN_SUPPORTED,
     FFMPEG_TARGET_VERSION,
     TabType,
@@ -35,7 +36,6 @@ from src.languages import AV_CONVERTER_LANGUAGES as LANGUAGES
 from src.languages import pick_language
 from src.queue_events import CompletionEvent, LogEvent, ProgressEvent
 from src.queue_polling import QueuePollingMixin
-from src.shared_state import SharedState
 from src.utils.file_list_mixin import FileListMixin
 
 from .conversion_service import AVConversionService
@@ -62,7 +62,6 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         logic (ConversionLogic): 미디어 변환 엔진 인스턴스.
         view (AVConverterView): 바인딩된 GUI 프레임 인스턴스.
         tool_pipeline (ToolPipelineManager): 외부 툴체인 다운로드/준비 매니저.
-        shared_state (SharedState): 세부 서비스 계층 간 상태 공유 컨테이너.
     """
 
     def __init__(
@@ -87,7 +86,7 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         if app_lang_var:
             self.lang_var: tk.StringVar = app_lang_var
         else:
-            self.lang_var = tk.StringVar(value='ko')
+            self.lang_var = tk.StringVar(value=DEFAULT_LANG)
         self.lang_var.trace_add("write", self._on_language_change)
 
         from src.utils.base_path import get_application_base_path
@@ -130,33 +129,35 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             base_path=self.base_path,
             on_tools_updated_callback=self._find_tools,
         )
-        self.shared_state: SharedState = SharedState()
-        self.shared_state.get_lang_dict = self.get_lang_dict
-        self.shared_state.get_lang_data = self.get_lang_dict
-        self.shared_state.get_base_path = lambda: self.base_path
-        self.shared_state.get_view = lambda: self.view
-        self.shared_state.log_queue = self.log_queue
-        self.shared_state.tool_pipeline = self.tool_pipeline
-        self.shared_state.get_usmtoolkit_path = lambda: self.usmtoolkit_path
-        self.shared_state.set_usmtoolkit_path = lambda p: setattr(self, 'usmtoolkit_path', p)
-        self.shared_state.get_vgmstream_path = lambda: self.vgmstream_path
-        self.shared_state.set_vgmstream_path = lambda p: setattr(self, 'vgmstream_path', p)
         self._tooling: AVToolingService = AVToolingService(
-            shared_state=self.shared_state,
+            view=self.view,
+            base_path=self.base_path,
+            log_queue=self.log_queue,
+            get_lang_dict=self.get_lang_dict,
+            get_usmtoolkit_path=lambda: self.usmtoolkit_path,
+            set_usmtoolkit_path=lambda p: setattr(self, 'usmtoolkit_path', p),
+            get_vgmstream_path=lambda: self.vgmstream_path,
+            set_vgmstream_path=lambda p: setattr(self, 'vgmstream_path', p),
+            tool_pipeline=self.tool_pipeline,
+            add_log_entry=self._add_log_entry,
         )
-        self.shared_state.add_log_entry = self._add_log_entry
-        self.shared_state.add_spacing = self._add_spacing
-        self.shared_state.get_video_full_paths = lambda: self.video_full_paths
-        self.shared_state.get_audio_full_paths = lambda: self.audio_full_paths
-        self.shared_state.get_video_cancel_token = lambda: self.video_cancel_token
-        self.shared_state.get_audio_cancel_token = lambda: self.audio_cancel_token
-        self.shared_state.start_tool_preparation = self._start_tool_preparation
-        self.shared_state.set_conversion_thread = lambda tab_type, t: self._conversion_threads.__setitem__(tab_type, t)
-        self.shared_state.resume_polling = self._resume_polling
-        self.shared_state.is_dotnet_runtime_available = self._is_dotnet_runtime_available
-        self.shared_state.logic = self.logic
         self._conversion: AVConversionService = AVConversionService(
-            shared_state=self.shared_state,
+            view=self.view,
+            logic=self.logic,
+            get_lang_dict=self.get_lang_dict,
+            add_log_entry=self._add_log_entry,
+            add_spacing=self._add_spacing,
+            log_queue=self.log_queue,
+            get_video_full_paths=lambda: self.video_full_paths,
+            get_audio_full_paths=lambda: self.audio_full_paths,
+            get_usmtoolkit_path=lambda: self.usmtoolkit_path,
+            get_vgmstream_path=lambda: self.vgmstream_path,
+            get_video_cancel_token=lambda: self.video_cancel_token,
+            get_audio_cancel_token=lambda: self.audio_cancel_token,
+            start_tool_preparation=self._start_tool_preparation,
+            set_conversion_thread=lambda tab_type, t: self._conversion_threads.__setitem__(tab_type, t),
+            resume_polling=self._resume_polling,
+            is_dotnet_runtime_available=self._is_dotnet_runtime_available,
         )
         self._find_tools()
         self.ffmpeg_downloader: Any = self.tool_pipeline.ffmpeg_downloader
@@ -165,26 +166,15 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         self._ffmpeg_version_checked: bool = False
         self.view.notebook.bind('<<NotebookTabChanged>>', self._on_av_tab_changed, add='+')
 
-        self.shared_state.get_tool_paths = lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path}
-        self.shared_state.get_ffmpeg_downloader = lambda: self.ffmpeg_downloader
         self._log_renderer: AVLogRenderer = AVLogRenderer(
             get_lang_data=self.get_lang_dict,
             add_log_entry=self._add_log_entry,
             add_spacing=self._add_spacing,
             log_queue=self.log_queue,
             logic=self.logic,
-            get_tool_paths=self.shared_state.get_tool_paths,
-            get_ffmpeg_downloader=self.shared_state.get_ffmpeg_downloader,
+            get_tool_paths=lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path},
+            get_ffmpeg_downloader=lambda: self.ffmpeg_downloader,
         )
-        self.shared_state.get_video_total_files = lambda: self.video_total_files if hasattr(self, 'video_total_files') else 0
-        self.shared_state.set_video_total_files = lambda v: setattr(self, 'video_total_files', v)
-        self.shared_state.get_audio_total_files = lambda: self.audio_total_files if hasattr(self, 'audio_total_files') else 0
-        self.shared_state.set_audio_total_files = lambda v: setattr(self, 'audio_total_files', v)
-        self.shared_state.get_converting_state = self.is_converting
-        self.shared_state.set_ui_state = self.view.set_ui_state
-        self.shared_state.reset_ui_state = self.view.reset_ui_state
-        self.shared_state.get_video_widgets = lambda: self.view.video_widgets
-        self.shared_state.get_audio_widgets = lambda: self.view.audio_widgets
         self._log_service: AVLogService = AVLogService(
             view=self.view,
             log_queue=self.log_queue,
@@ -205,12 +195,7 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             get_video_widgets=lambda: self.view.video_widgets,
             get_audio_widgets=lambda: self.view.audio_widgets,
         )
-        self.shared_state.get_paths = lambda tab_type: self.audio_full_paths if tab_type == 'audio' else self.video_full_paths
-        self.shared_state.preview_temp_dir = str(self._preview_temp_dir)
-        self.shared_state.generate_error_log = self._generate_error_log
-        self.shared_state.prepare_tools = lambda tab_type, on_success: self._preview_service.prepare_tools_for_preview(tab_type, on_success)
         self._preview: AVPreviewHandler = AVPreviewHandler(
-            shared_state=self.shared_state,
             get_lang_data=self.get_lang_dict,
             get_paths=lambda tab_type: self.audio_full_paths if tab_type == 'audio' else self.video_full_paths,
             logic=self.logic,
@@ -220,10 +205,14 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             generate_error_log=self._generate_error_log,
             prepare_tools=lambda tab_type, on_success: self._preview_service.prepare_tools_for_preview(tab_type, on_success),
         )
-        self.shared_state.find_tools = self._find_tools
-        self.shared_state.preview_selected_fn = lambda lb, tt: self._preview.preview_selected(lb, tt)
         self._preview_service: AVPreviewService = AVPreviewService(
-            shared_state=self.shared_state,
+            view=self.view,
+            get_lang_dict=self.get_lang_dict,
+            add_log_entry=self._add_log_entry,
+            is_dotnet_runtime_available=self._is_dotnet_runtime_available,
+            find_tools=self._find_tools,
+            tool_pipeline=self.tool_pipeline,
+            preview_selected_fn=lambda lb, tt: self._preview.preview_selected(lb, tt),
         )
         self._log_renderer.log_initial_status()
         self._init_queue_polling(self.view)
@@ -523,7 +512,7 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         """오디오 변환 작업 백그라운드 스레드 시작."""
         self._conversion.start_audio_conversion(output_dir, overwrite)
 
-    def _start_conversion_thread(self, tab_type: TabType, target_func: Any, args: tuple) -> None:
+    def _start_conversion_thread(self, tab_type: TabType, target_func: Any, args: tuple[Any, ...]) -> None:
         """실제 변환 로직 실행용 백그라운드 스레드 생성 및 시작.
 
         Args:

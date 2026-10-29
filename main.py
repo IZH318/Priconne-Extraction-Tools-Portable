@@ -14,7 +14,7 @@ from pathlib import Path
 from tkinter import ttk
 from typing import Any
 
-from tkinterdnd2 import TkinterDnD  # type: ignore[import-untyped]
+from tkinterdnd2 import TkinterDnD
 
 from src.av_converter import AVConverterApp
 from src.container import AppContainer, SharedDependencies
@@ -67,7 +67,7 @@ class _TabIndex:
     REMOVER = 4
 
 
-class MainLauncher(TkinterDnD.Tk):
+class MainLauncher(TkinterDnD.Tk):  # type: ignore[misc]
     """Priconne Extraction Tools 메인 윈도우 런처.
 
     드래그 앤 드롭 이벤트를 지원하며, AppContainer를 통해

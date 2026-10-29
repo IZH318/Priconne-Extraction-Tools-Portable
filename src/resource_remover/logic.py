@@ -21,6 +21,7 @@ from typing import Any
 from send2trash import send2trash
 
 from src.cancellation_token import CancellationToken
+from src.constants import LOG_DIR_NAME, LOG_FILENAME_TS_FMT
 from src.utils.base_path import get_application_base_path
 from src.utils.file_scan import iter_files
 
@@ -244,9 +245,9 @@ class ResourceRemoverLogic:
             Path | None: 생성할 로그 파일 경로. 준비 실패 시 None.
         """
         try:
-            log_dir = get_application_base_path() / "logs"
+            log_dir = get_application_base_path() / LOG_DIR_NAME
             log_dir.mkdir(parents=True, exist_ok=True)
-            return log_dir / f"DeletionLog_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
+            return log_dir / f"DeletionLog_{datetime.now().strftime(LOG_FILENAME_TS_FMT)}.log"
         except OSError as exc:
             logger.warning("Failed to prepare deletion log path: %s", exc)
             return None

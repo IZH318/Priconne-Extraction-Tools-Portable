@@ -12,7 +12,9 @@ import subprocess
 import tkinter as tk
 from collections.abc import Callable
 from tkinter import messagebox
-from typing import Any, cast
+from typing import Any
+
+from src.constants import GUI_POLLING_INTERVAL_MS
 
 logger = logging.getLogger(__name__)
 
@@ -24,38 +26,51 @@ class AVPreviewService:
     .NET 런타임 검사 및 다운로드 Future 완료를 폴링하여 성공 시 on_success 콜백 호출.
 
     Attributes:
-        _shared_state (Any): 상위 공유 애플리케이션 상태 컨테이너.
         _view (Any): 알림 대화상자 표시 및 after 타이머 호출을 위한 View.
+        _get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
+        _add_log_entry (Callable[..., None]): 로그 이벤트 발행 콜백.
+        _is_dotnet_runtime_available (Callable[[], bool]): .NET 런타임 가용 여부 콜백.
+        _find_tools (Callable[[], None]): 도구 경로 재탐색 콜백.
+        _tool_pipeline (Any): 도구 준비 파이프라인(Future 반환).
+        _preview_selected_fn (Callable[[Any, Any], None]): 선택 항목 미리보기 위임 콜백.
         _polling_interval_ms (int): 비동기 툴 준비 완료 여부 폴링 주기(ms).
         _preview_busy_tabs (set[str]): 툴 준비 작업이 진행 중인 탭 키 집합 (탭별 독립).
     """
 
     def __init__(
         self,
-        shared_state: Any = None,
-        polling_interval_ms: int = 100,
+        view: Any,
+        get_lang_dict: Callable[[], dict[str, str]],
+        add_log_entry: Callable[..., None],
+        is_dotnet_runtime_available: Callable[[], bool],
+        find_tools: Callable[[], None],
+        tool_pipeline: Any,
+        preview_selected_fn: Callable[[Any, Any], None],
+        polling_interval_ms: int = GUI_POLLING_INTERVAL_MS,
     ) -> None:
         """AVPreviewService 초기화.
 
         Args:
-            shared_state (Any): 상태 컨테이너 객체.
+            view (Any): 알림 대화상자/after 타이머용 View.
+            get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
+            add_log_entry (Callable[..., None]): 로그 이벤트 발행 콜백.
+            is_dotnet_runtime_available (Callable[[], bool]): .NET 런타임 가용 여부 콜백.
+            find_tools (Callable[[], None]): 도구 경로 재탐색 콜백.
+            tool_pipeline (Any): 도구 준비 파이프라인.
+            preview_selected_fn (Callable[[Any, Any], None]): 선택 항목 미리보기 위임 콜백.
             polling_interval_ms (int): 폴링 간격(밀리초).
         """
-        ss = shared_state
-        self._shared_state = ss
-        _v = (ss.get_view() if ss is not None and callable(getattr(ss, "get_view", None)) else None)
-        self._view: Any = cast(Any, _v if _v is not None else {})
-        gld = getattr(ss, "get_lang_dict", None) if ss is not None else None
-        self._get_lang_dict: Callable[[], dict[str, str]] = gld if callable(gld) else (dict)
-        ald = getattr(ss, "add_log_entry", None) if ss is not None else None
-        self._add_log_entry = ald if callable(ald) else (lambda *a, **k: None)
-        idra = getattr(ss, "is_dotnet_runtime_available", None) if ss is not None else None
-        self._is_dotnet_runtime_available = idra if callable(idra) else (lambda: False)
-        ft = getattr(ss, "find_tools", None) if ss is not None else None
-        self._find_tools = ft if callable(ft) else (lambda: None)
-        self._tool_pipeline: Any = cast(Any, getattr(ss, "tool_pipeline", None) if ss is not None else None)
-        psf = getattr(ss, "preview_selected_fn", None) if ss is not None else None
-        self._preview_selected_fn = psf if callable(psf) else (lambda *a, **k: None)
+        self._view: Any = view if view is not None else {}
+        self._get_lang_dict: Callable[[], dict[str, str]] = get_lang_dict if callable(get_lang_dict) else dict
+        self._add_log_entry = add_log_entry if callable(add_log_entry) else (lambda *a, **k: None)
+        self._is_dotnet_runtime_available = (
+            is_dotnet_runtime_available if callable(is_dotnet_runtime_available) else (lambda: False)
+        )
+        self._find_tools = find_tools if callable(find_tools) else (lambda: None)
+        self._tool_pipeline = tool_pipeline
+        self._preview_selected_fn = (
+            preview_selected_fn if callable(preview_selected_fn) else (lambda *a, **k: None)
+        )
         self._polling_interval_ms = polling_interval_ms
         self._preview_busy_tabs: set[str] = set()
 
@@ -145,4 +160,3 @@ class AVPreviewService:
             # 폴링에 성공적으로 위임한 경우가 아니면 항상 진행 중 플래그를 해제한다.
             if not handed_off:
                 release_busy()
-

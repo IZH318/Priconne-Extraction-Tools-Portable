@@ -36,8 +36,8 @@ class RenameService:
     def __init__(
         self,
         get_string: Callable[..., str],
-        log_queue: Queue,
-        progress_queue: Queue,
+        log_queue: Queue[Any],
+        progress_queue: Queue[Any],
         base_path_provider: Callable[[], Path | None],
     ) -> None:
         """RenameService 초기화.

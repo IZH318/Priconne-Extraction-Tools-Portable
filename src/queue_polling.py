@@ -158,7 +158,7 @@ class QueuePollingMixin:
         self._polling_after_id = None
 
     @staticmethod
-    def _drain_queue(q: queue.Queue) -> list[Any]:
+    def _drain_queue(q: queue.Queue[Any]) -> list[Any]:
         """큐 누적 이벤트 논블로킹(Non-blocking) 일괄 드레인 및 리스트 반환.
 
         queue.Empty 예외 내부 처리 및 프로세스 종료 시 발생 가능한

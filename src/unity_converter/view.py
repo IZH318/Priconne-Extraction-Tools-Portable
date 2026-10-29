@@ -10,7 +10,7 @@ import tkinter as tk
 from tkinter import Scrollbar, Text, font, ttk
 from typing import TYPE_CHECKING, Any
 
-from tkinterdnd2 import DND_FILES  # type: ignore[import-untyped]
+from tkinterdnd2 import DND_FILES
 
 if TYPE_CHECKING:
     from .controller import AssetExtractorController

@@ -14,9 +14,18 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
+from typing import Any
+
+from src.constants import SUBPROCESS_REAP_TIMEOUT
 
 logger = logging.getLogger(__name__)
+
+
+class ProcessCancelledError(subprocess.SubprocessError):
+    """취소 토큰에 의해 실행 중이던 서브프로세스가 종료되었음을 알리는 예외."""
+
 
 # Windows taskkill.exe 절대 경로 캐시 (PATH/SystemRoot 조회는 최초 1회만 수행)
 _TASKKILL_PATH: str | None = None
@@ -49,16 +58,16 @@ class SubprocessRunner:
 
     # 실행 중인 자식 프로세스 레지스트리 (앱 종료 시 일괄 정리용)
     _registry_lock: threading.Lock = threading.Lock()
-    _active_processes: set[subprocess.Popen] = set()
+    _active_processes: set[subprocess.Popen[str]] = set()
 
     @classmethod
-    def _register_process(cls, proc: subprocess.Popen) -> None:
+    def _register_process(cls, proc: subprocess.Popen[str]) -> None:
         """실행 중 프로세스를 레지스트리에 등록."""
         with cls._registry_lock:
             cls._active_processes.add(proc)
 
     @classmethod
-    def _unregister_process(cls, proc: subprocess.Popen) -> None:
+    def _unregister_process(cls, proc: subprocess.Popen[str]) -> None:
         """종료된 프로세스를 레지스트리에서 제거."""
         with cls._registry_lock:
             cls._active_processes.discard(proc)
@@ -82,7 +91,8 @@ class SubprocessRunner:
         command: list[str],
         cwd: str | Path | None = None,
         timeout: int | None = None,
-    ) -> subprocess.CompletedProcess:
+        cancel_token: Any | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         """표준화된 환경에서 외부 명령어 실행 및 결과 반환.
 
         주요 기능:
@@ -129,7 +139,10 @@ class SubprocessRunner:
         )
         SubprocessRunner._register_process(proc)
         try:
-            out, err = proc.communicate(timeout=timeout)
+            if cancel_token is None:
+                out, err = proc.communicate(timeout=timeout)
+            else:
+                out, err = SubprocessRunner._communicate_with_cancel(proc, command, timeout, cancel_token)
             return subprocess.CompletedProcess(
                 args=command,
                 returncode=proc.returncode,
@@ -142,9 +155,9 @@ class SubprocessRunner:
             partial_out: str | bytes | None = None
             partial_err: str | bytes | None = None
             try:
-                partial_out, partial_err = proc.communicate(timeout=5)
+                partial_out, partial_err = proc.communicate(timeout=SUBPROCESS_REAP_TIMEOUT)
             except subprocess.TimeoutExpired:
-                logger.warning("Process %s did not terminate within 5s after kill", proc.pid)
+                logger.warning("Process %s did not terminate within %ss after kill", proc.pid, SUBPROCESS_REAP_TIMEOUT)
             except OSError as comm_exc:
                 logger.warning("Failed to collect output of process %s: %s", proc.pid, comm_exc)
             raise subprocess.TimeoutExpired(
@@ -153,6 +166,9 @@ class SubprocessRunner:
                 output=partial_out,
                 stderr=partial_err,
             )
+        except ProcessCancelledError:
+            # 취소에 의한 종료는 이미 프로세스 트리를 정리했으므로 그대로 전파
+            raise
         except BaseException:
             # communicate()가 비정상 중단된 경우(OSError/KeyboardInterrupt 등)에도
             # 자식 트리를 남기지 않도록 정리한 뒤 예외를 그대로 전파한다.
@@ -162,7 +178,40 @@ class SubprocessRunner:
             SubprocessRunner._unregister_process(proc)
 
     @staticmethod
-    def _kill_process_tree(proc: subprocess.Popen) -> None:
+    def _communicate_with_cancel(
+        proc: subprocess.Popen[str],
+        command: list[str],
+        timeout: int | None,
+        cancel_token: Any,
+    ) -> tuple[Any, Any]:
+        """취소 토큰을 주기적으로 확인하며 프로세스 출력을 수집.
+
+        취소 시 프로세스 트리를 종료하고 ProcessCancelledError를 발생시킨다.
+        전체 timeout이 경과하면 subprocess.TimeoutExpired를 발생시킨다.
+        """
+        poll_interval = 0.2
+        deadline = (time.monotonic() + timeout) if timeout is not None else None
+        while True:
+            if cancel_token.is_cancelled:
+                SubprocessRunner._kill_process_tree(proc)
+                try:
+                    proc.communicate(timeout=SUBPROCESS_REAP_TIMEOUT)
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+                raise ProcessCancelledError(f"Process cancelled by token: {command!r}")
+            wait = poll_interval
+            if deadline is not None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(command, float(timeout) if timeout is not None else 0.0)
+                wait = min(poll_interval, remaining)
+            try:
+                return proc.communicate(timeout=wait)
+            except subprocess.TimeoutExpired:
+                continue
+
+    @staticmethod
+    def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
         """타임아웃된 프로세스와 파생된 자식 프로세스 트리 전체를 종료.
 
         Windows: taskkill /F /T 로 트리 전체를 종료한다. taskkill을 찾지 못하면 proc.kill()로 폴백.
@@ -189,7 +238,7 @@ class SubprocessRunner:
                 pass
             return
 
-        try:
+        try:  # type: ignore[unreachable]
             pgid = os.getpgid(proc.pid)
         except ProcessLookupError:
             # 이미 종료된 프로세스

@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.constants import SEPARATOR_LONG
+from src.constants import HUMAN_TS_FMT, LOG_DIR_NAME, LOG_FILENAME_TS_FMT, SEPARATOR_LONG
 
 logger = logging.getLogger(__name__)
 
@@ -45,9 +45,9 @@ def open_task_log(
 
     base = Path(base_dir) if base_dir is not None else get_application_base_path()
     try:
-        log_dir = base / "logs"
+        log_dir = base / LOG_DIR_NAME
         log_dir.mkdir(parents=True, exist_ok=True)
-        log_filename = log_dir / f"{prefix}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.log"
+        log_filename = log_dir / f"{prefix}_{datetime.now().strftime(LOG_FILENAME_TS_FMT)}.log"
         handle = open(log_filename, "a", encoding="utf-8")
     except OSError as exc:
         logger.warning("Failed to create task log %s: %s", prefix, exc)
@@ -95,7 +95,7 @@ def write_log_header(
     cpu_cores = (os.process_cpu_count() if hasattr(os, "process_cpu_count") else os.cpu_count()) or os.cpu_count() or 1
 
     f.write(f"{SEPARATOR_LONG}\n")
-    f.write(f"[SESSION] {context_name} Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
+    f.write(f"[SESSION] {context_name} Started at {now.strftime(HUMAN_TS_FMT)[:-3]}\n")
     f.write(f"{SEPARATOR_LONG}\n")
     f.write(f"[TOOL]    App Version:     {app_info.get('APP_VERSION', 'Unknown')} ({app_info.get('APP_LAST_UPDATE', 'Unknown')})\n")
     f.write(f"[TOOL]    Developer:       {app_info.get('APP_DEVELOPER', 'Unknown')}\n")
@@ -134,7 +134,7 @@ def write_log_item(
         message (Any): 사유/메시지/예외 내용.
         detail (str | None): 추가 상세(스택 트레이스 등). 없으면 생략.
     """
-    ts = timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    ts = timestamp.strftime(HUMAN_TS_FMT)[:-3]
     indent = " " * 12  # "라벨(9) : " = 12칸, 여러 줄 값의 이어지는 줄 정렬용
 
     def field(label: str, value: Any) -> str:

@@ -205,7 +205,7 @@ BASELINE_TABLES_LIST: list[str] = [
 ]
 
 
-def _get_default_baseline_path(info: dict, src_dir: str) -> str:
+def _get_default_baseline_path(info: dict[str, Any], src_dir: str) -> str:
     """서버 설정에서 기본 베이스라인 DB 파일의 절대 경로 반환."""
     b_dbs = info.get("baseline_dbs", {})
     if isinstance(b_dbs, dict) and "default" in b_dbs:
@@ -222,7 +222,7 @@ def escape_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
 
-def extract_signature_samples(conn: sqlite3.Connection, table_name: str) -> tuple[int, list[frozenset], bool]:
+def extract_signature_samples(conn: sqlite3.Connection, table_name: str) -> tuple[int, list[frozenset[Any]], bool]:
     cursor = conn.cursor()
     escaped_tbl = escape_identifier(table_name)
 
@@ -258,7 +258,7 @@ def calculate_match_score(
     conn: sqlite3.Connection,
     candidate_tbl: str,
     base_col_count: int,
-    signature_rows: list,
+    signature_rows: list[Any],
     col_tolerance: int,
     is_small_table: bool
 ) -> float:
@@ -317,7 +317,7 @@ def resolve_column_mapping(
     ref_tbl: str,
     cand_conn: sqlite3.Connection,
     cand_tbl: str,
-    original_base_types: dict | None = None
+    original_base_types: dict[str, Any] | None = None
 ) -> tuple[list[str], dict[str, str]]:
     try:
         ref_cur = ref_conn.cursor()
@@ -503,7 +503,7 @@ def resolve_column_mapping(
         return [f"  (Failed to resolve column mapping: {e!s})"], {}
 
 
-def resolve_single_table_worker(args: tuple) -> tuple:
+def resolve_single_table_worker(args: tuple[Any, ...]) -> tuple[Any, ...]:
     """단일 테이블 역난독화 워커.
 
     Args:
@@ -580,7 +580,7 @@ def resolve_single_table_worker(args: tuple) -> tuple:
         return server_key, table_key, base_table_name, None, {}
 
 
-def _iter_resolved_tables(tasks: list[tuple]) -> Iterator[tuple]:
+def _iter_resolved_tables(tasks: list[tuple[Any, ...]]) -> Iterator[tuple[Any, ...]]:
     """테이블 역난독화 태스크를 프로세스 풀로 실행하고 결과를 순차 산출한다.
 
     프로세스 풀 생성/실행이 불가능한 환경에서는 동일한 태스크를 현재 프로세스에서
@@ -621,10 +621,10 @@ def _iter_resolved_tables(tasks: list[tuple]) -> Iterator[tuple]:
 
 
 def resolve_all_servers_parallel(
-    server_db_info: dict,
+    server_db_info: dict[str, Any],
     root_dir: str,
     src_dir: str,
-    progress_callback: Callable | None = None,
+    progress_callback: Callable[..., Any] | None = None,
     force_servers: set[str] | None = None,
 ) -> None:
     """모든 서버 DB 설정(server_db_info)의 멀티프로세스 병렬 역난독화 실행.
@@ -756,7 +756,7 @@ def resolve_all_servers_parallel(
         cache.save()
         return
 
-    resolved_results: list[tuple] = []
+    resolved_results: list[tuple[Any, ...]] = []
     try:
         for s_key, t_key, best_tbl, col_map in _iter_resolved_tables(all_tasks):
             if progress_callback:

@@ -21,14 +21,12 @@ from pathlib import Path
 from tkinter import messagebox
 from typing import Any, cast
 
-from src.constants import TabType
+from src.constants import AV_PREVIEW_POLL_INTERVAL_MS, AV_PREVIEW_TEMP_MAX_AGE_S, TabType
 from src.utils.platform_open import open_with_default_app
 
 from .logic import sanitize_stream_filename
 
 logger = logging.getLogger(__name__)
-
-_PREVIEW_POLL_INTERVAL_MS = 50  # 미리보기 워커 결과 큐 폴링 주기 (ms)
 
 
 class AVPreviewHandler:
@@ -46,7 +44,6 @@ class AVPreviewHandler:
         _get_tool_paths (Callable[[], dict[str, Path | None]]): 외부 툴체인 경로 사전 조회 콜백.
         _generate_error_log (Callable[..., Any]): 오류 로그 파일 작성 콜백.
         _prepare_tools (Callable[[TabType, Callable[[], None]], None]): 툴체인 다운로드/준비 트리거 콜백.
-        shared_state (Any): 공유 애플리케이션 상태 객체.
     """
 
     def __init__(
@@ -59,7 +56,6 @@ class AVPreviewHandler:
         get_tool_paths: Callable[[], dict[str, Path | None]],
         generate_error_log: Callable[..., Any],
         prepare_tools: Callable[[TabType, Callable[[], None]], None],
-        shared_state: Any = None,
     ) -> None:
         """AVPreviewHandler 초기화.
 
@@ -72,7 +68,6 @@ class AVPreviewHandler:
             get_tool_paths (Callable[[], dict[str, Path | None]]): 도구 실행 경로 맵 반환 콜백.
             generate_error_log (Callable[..., Any]): 에러 로그 파일 생성 콜백.
             prepare_tools (Callable[[TabType, Callable[[], None]], None]): 툴체인 준비 및 완료 콜백.
-            shared_state (Any): 모듈 간 공유 상태 객체 (선택 사항).
         """
         self._get_lang_data = get_lang_data
         self._get_paths = get_paths
@@ -82,7 +77,6 @@ class AVPreviewHandler:
         self._get_tool_paths = get_tool_paths
         self._generate_error_log = generate_error_log
         self._prepare_tools = prepare_tools
-        self.shared_state = shared_state
 
     def preview_selected(self, listbox: tk.Listbox, tab_type: TabType) -> None:
         """리스트박스에서 선택된 파일의 미리보기 실행.
@@ -129,7 +123,7 @@ class AVPreviewHandler:
         """
         lang_dict = self._get_lang_data()
         popup = self._view.create_progress_popup()
-        result_q: queue.Queue = queue.Queue()
+        result_q: queue.Queue[Any] = queue.Queue()
         closed = False
 
         def close_popup() -> None:
@@ -147,7 +141,7 @@ class AVPreviewHandler:
             except queue.Empty:
                 # 팝업 존재 여부와 무관하게 뷰에 폴링을 재예약 → 팝업이 먼저 닫혀도 결과 유실 방지.
                 try:
-                    self._view.after(_PREVIEW_POLL_INTERVAL_MS, poll)
+                    self._view.after(AV_PREVIEW_POLL_INTERVAL_MS, poll)
                 except (tk.TclError, RuntimeError, AttributeError):
                     logger.debug("Preview polling stopped: view is unavailable", exc_info=True)
                 return
@@ -181,7 +175,7 @@ class AVPreviewHandler:
             result_q.put((result, error))
 
         try:
-            self._view.after(_PREVIEW_POLL_INTERVAL_MS, poll)
+            self._view.after(AV_PREVIEW_POLL_INTERVAL_MS, poll)
         except (tk.TclError, RuntimeError, AttributeError):
             # 뷰가 없으면 결과 전달이 불가하므로 팝업만 정리하고 중단 (잔류 grab 방지).
             close_popup()
@@ -293,7 +287,7 @@ class AVPreviewHandler:
                 continue
             if item.startswith("preview_stream_") and item.endswith(".wav"):
                 try:
-                    if current_time - os.path.getmtime(item_path) > 300:
+                    if current_time - os.path.getmtime(item_path) > AV_PREVIEW_TEMP_MAX_AGE_S:
                         os.remove(item_path)
                 except OSError:
                     pass
@@ -318,7 +312,7 @@ class AVPreviewHandler:
                 if keep_dir is not None and os.path.abspath(item_path) == os.path.abspath(keep_dir):
                     continue
                 try:
-                    if current_time - os.path.getmtime(item_path) > 300:
+                    if current_time - os.path.getmtime(item_path) > AV_PREVIEW_TEMP_MAX_AGE_S:
                         try:
                             shutil.rmtree(item_path, ignore_errors=True)
                         except OSError as exc:

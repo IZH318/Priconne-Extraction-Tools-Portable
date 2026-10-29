@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 from pathlib import Path
 from types import MappingProxyType
@@ -30,6 +31,9 @@ APP_LAST_UPDATE: Final[str] = "2026-10-10"
 APP_DEVELOPER: Final[str] = "(Github) IZH318"
 APP_WEBSITE: Final[str] = "https://github.com/IZH318"
 APP_COPYRIGHT_YEAR: Final[str] = "2026"
+
+# 다국어 폴백 기본 언어 (JSON에 요청 언어 블록이 없을 때 사용)
+DEFAULT_LANG: Final[str] = "en"
 
 # GUI 갱신 및 큐 폴링 간격 (밀리초)
 GUI_POLLING_INTERVAL_MS: Final[int] = 100  # Controller 큐 이벤트 폴링 기본 주기 (100ms)
@@ -50,9 +54,17 @@ DOTNET_RUNTIME_PROBE_TIMEOUT: Final[int] = 2
 USMTOOLKIT_VERSION_PROBE_TIMEOUT: Final[int] = 3
 FFMPEG_VERSION_PROBE_TIMEOUT: Final[int] = 5
 
+# 서브프로세스 강제 종료 후 잔여 출력 수거 대기 (초)
+SUBPROCESS_REAP_TIMEOUT: Final[int] = 5
+
 # 로그 출력 구분선
 SEPARATOR_LONG: Final[str] = "-" * 100
 SEPARATOR_MEDIUM: Final[str] = "-" * 60
+
+# 로그 파일 저장 관련 상수
+LOG_DIR_NAME: Final[str] = "logs"
+LOG_FILENAME_TS_FMT: Final[str] = "%Y-%m-%d_%H%M%S"    # 로그 파일명 타임스탬프 (초 단위)
+HUMAN_TS_FMT: Final[str] = "%Y-%m-%d %H:%M:%S.%f"      # 로그 본문 표시용 사람용 타임스탬프 (끝 3자리 절삭 전)
 
 # 파일 처리 및 해시 계산 관련 상수
 HASH_CHUNK_SIZE: Final[int] = 65536  # 스트리밍 해시 계산용 64KB I/O 버퍼 크기
@@ -205,31 +217,6 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def refresh_lazy_constants() -> None:
-    """지연 평가 상수 캐시를 초기화하여 다음 접근 시 환경변수/deps.json 재해석 유도.
-
-    지연 상수는 최초 접근 시 1회 해석(환경변수 PRICONNE_* > deps.json > 기본값) 후
-    _RESOLVED_CACHE에 캐시되므로, 프로세스 실행 중 환경변수 변경이나 deps.json 수정은
-    자동으로 반영되지 않는다. 본 함수를 호출하면 _RESOLVED_CACHE와 _DEPS_CONFIG_CACHE를
-    함께 비우므로, 이후 지연 상수 접근부터 최신 설정값이 적용된다.
-
-    Note:
-        캐시 초기화는 _DEPS_CONFIG_LOCK으로 보호되며, 해석 결과 및 deps.json 설정이
-        모두 폐기되므로 다음 접근 시 파일 I/O(디스크 재조회)가 다시 발생할 수 있음.
-        해석 우선순위 및 기본값 규칙은 변경하지 않음.
-
-    Args:
-        없음: 인자를 받지 않는다.
-
-    Returns:
-        None: 반환값 없음 (캐시 초기화만 수행).
-    """
-    global _DEPS_CONFIG_CACHE
-    with _DEPS_CONFIG_LOCK:
-        _RESOLVED_CACHE.clear()
-        _DEPS_CONFIG_CACHE = None
-
-
 # 외부 도구 기본 다운로드 URL 및 아카이브 파일명
 USMTOOLKIT_DEFAULT_URL: Final[str] = "https://github.com/Rikux3/UsmToolkit/releases/download/0.2/publish.zip"
 USMTOOLKIT_ZIP_FILENAME: Final[str] = "usmtoolkit_temp.zip"
@@ -282,6 +269,32 @@ SENTINEL_AUDIO_DONE: Final[str] = "__AUDIO_DONE__"
 UNITY_SUPPORTED_EXTENSIONS: Final[tuple[str, ...]] = ('.unity3d',)
 DEFAULT_UNITY_VERSION: Final[str] = "2021.3.20f1"
 UNITY_VERSION_PRESETS: Final[tuple[str, ...]] = ("2021.3.20f1", "6000.0.58.57061")
+
+# Story Viewer 스토리 파일명 패턴
+# storydata_<adv_id>[.<ext>] 형식에서 adv_id 추출용 (확장자 선택적)
+STORYDATA_ADV_ID_RE: Final[re.Pattern[str]] = re.compile(r'^storydata_(\d+)(?:\.[^.]+)?$')
+# storydata_<adv_id> 형식(확장자 없음)에서 adv_id 추출용
+STORYDATA_ADV_ID_BARE_RE: Final[re.Pattern[str]] = re.compile(r'^storydata_(\d+)$')
+# storydata_<adv_id>.json 형식 판별용 (스토리 데이터 파일 탐색)
+STORYDATA_JSON_RE: Final[re.Pattern[str]] = re.compile(r'^storydata_\d+\.json$')
+
+# Story Viewer SQLite IN 절 일괄 조회 배치 크기
+DB_QUERY_CHUNK: Final[int] = 500
+
+# AV Converter 미리보기 관련 상수
+AV_PREVIEW_POLL_INTERVAL_MS: Final[int] = 50   # 미리보기 워커 결과 큐 폴링 주기 (ms)
+AV_PREVIEW_TEMP_MAX_AGE_S: Final[int] = 300    # 미리보기 임시 파일 최대 보존 시간 (초)
+AV_STEM_HASH_LEN: Final[int] = 8               # 중복 파일명 stem 접미 해시 길이
+
+# 임시 파일/폴더 명명 규칙 (생성부와 정리부가 공유하는 계약)
+TEMP_PART_SUFFIX: Final[str] = ".part"
+TEMP_PARTIAL_SUFFIX: Final[str] = ".partial"
+TEMP_AVTMP_PREFIX: Final[str] = ".avtmp_"
+TEMP_FFMPEG_DIR_NAME: Final[str] = "ffmpeg_extracted_temp"
+
+# 세션 임시 폴더 명명 (container.py)
+APP_TEMP_DIR_NAME: Final[str] = "Priconne_Extraction_Tools_(Portable)_TEMP"
+SESSION_DIR_PREFIX: Final[str] = "session_"
 
 # Original Resource Remover Tool 리소스 확장자 카테고리
 # 불변성 유지를 위해 MappingProxyType 튜플로 정의

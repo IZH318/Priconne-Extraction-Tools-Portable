@@ -17,14 +17,9 @@ from typing import IO, Any, ClassVar, Iterator
 from src.exceptions import AssetProcessingError
 from src.parsers.story_deserializer import StoryDataDeserializer
 from src.queue_events import CompletionEvent, LogEvent
+from src.utils.filename import WINDOWS_RESERVED_DEVICE_NAMES
 
 logger = logging.getLogger(__name__)
-
-
-# Windows 예약 디바이스명 (확장자와 무관하게 정상 파일 생성이 불가능한 이름)
-_WINDOWS_RESERVED_NAMES: frozenset[str] = frozenset(
-    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
-)
 
 
 class AssetProcessor:
@@ -146,7 +141,7 @@ class AssetProcessor:
         cleaned = re.sub(r'[\\/:*?"<>|]', '_', name)
         cleaned = re.sub(r'[\x00-\x1f]', '', cleaned)
         cleaned = cleaned.rstrip('. ')
-        if cleaned.split('.', 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+        if cleaned.split('.', 1)[0].upper() in WINDOWS_RESERVED_DEVICE_NAMES:
             cleaned = f"_{cleaned}"
         return cleaned or '_'
 
@@ -257,13 +252,8 @@ class AssetProcessor:
         Returns:
             성공적으로 추출 및 내보내기 완료된 에셋 수.
         """
-        import UnityPy
-        from UnityPy import config
-
-        from src.constants import DEFAULT_UNITY_VERSION
-        if not getattr(config, 'FALLBACK_UNITY_VERSION', None):
-            config.FALLBACK_UNITY_VERSION = DEFAULT_UNITY_VERSION  # type: ignore[assignment]
-        self.env = UnityPy.load(self.file_path)
+        from .asset_reader import open_bundle
+        self.env = open_bundle(self.file_path)
         assert self.env is not None
         self._mesh_materials_cache = None
         num_assets = len(self.env.objects)

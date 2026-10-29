@@ -13,14 +13,16 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from src.constants import DEFAULT_LANG
+
 logger = logging.getLogger(__name__)
 
 _json_path = Path(__file__).parent / 'languages.json'
 
 _load_error: str | None = None
 _loaded_ok: bool = False
-_logger_lang_data_cache: dict | None = None
-_full_data: dict = {}
+_logger_lang_data_cache: dict[str, Any] | None = None
+_full_data: dict[str, Any] = {}
 _ensure_done: bool = False
 _load_lock = threading.Lock()
 
@@ -44,7 +46,6 @@ def _ensure_loaded() -> None:
     with _load_lock:
         if _ensure_done:
             return
-        _ensure_done = True
 
         try:
             with open(_json_path, encoding='utf-8') as _f:
@@ -77,9 +78,10 @@ def _ensure_loaded() -> None:
             globals()['STORY_VIEWER_LANGUAGES'] = _full_data.get('story_viewer', {}) if isinstance(_full_data.get('story_viewer', {}), dict) else {}
             globals()['UNITY_CONVERTER_LANGUAGES'] = _full_data.get('unity_converter', {}) if isinstance(_full_data.get('unity_converter', {}), dict) else {}
             globals()['MAIN_MENU_LANGUAGES'] = _full_data.get('main_menu', {}) if isinstance(_full_data.get('main_menu', {}), dict) else {}
-        else:
-            for k in _LANG_KEYS:
-                globals()[k] = {}
+
+        # 로드 및 전역 주입이 모두 끝난 뒤에 완료로 표시한다.
+        # (도중 예외로 중단되면 다음 호출에서 재시도하도록 _ensure_done을 미설정 상태로 둔다)
+        _ensure_done = True
 
 
 def __getattr__(name: str) -> Any:
@@ -100,7 +102,7 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
-def get_logger_lang_data_map() -> dict:
+def get_logger_lang_data_map() -> dict[str, Any]:
     """에러 로거용 언어 딕셔너리 반환.
 
     캐시된 데이터를 재사용하여 중복 I/O 방지.
@@ -117,9 +119,9 @@ def get_logger_lang_data_map() -> dict:
 
 
 def pick_language(lang_code: str, table: dict[str, Any]) -> dict[str, str]:
-    """언어 코드에 해당하는 번역 딕셔너리 선택 (미지원 코드는 'ko'로 폴백).
+    """언어 코드에 해당하는 번역 딕셔너리 선택 (미지원 코드는 기본 언어로 폴백).
 
-    모든 서브도구 컨트롤러가 동일한 폴백 정책(선택 언어 → 한국어)을 사용하도록
+    모든 서브도구 컨트롤러가 동일한 폴백 정책(선택 언어 → 기본 언어(영어))을 사용하도록
     단일 진입점을 제공한다.
 
     Args:
@@ -127,13 +129,13 @@ def pick_language(lang_code: str, table: dict[str, Any]) -> dict[str, str]:
         table (dict[str, Any]): 언어 코드 → 번역 딕셔너리 매핑 테이블.
 
     Returns:
-        dict[str, str]: 선택된 언어의 번역 딕셔너리. 미지원/누락 시 한국어 폴백.
+        dict[str, str]: 선택된 언어의 번역 딕셔너리. 미지원/누락 시 기본 언어(영어) 폴백.
     """
     selected = table.get(lang_code)
     if isinstance(selected, dict) and selected:
         # 호출자가 반환값을 수정하더라도 전역 언어 테이블이 오염되지 않도록 사본을 반환
         return dict(selected)
-    fallback = table.get('ko')
+    fallback = table.get(DEFAULT_LANG)
     return dict(fallback) if isinstance(fallback, dict) else {}
 
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import threading
 import tkinter as tk
 from collections.abc import Callable
@@ -17,6 +16,7 @@ from pathlib import Path
 from tkinter import messagebox
 from typing import Any
 
+from src.constants import STORYDATA_ADV_ID_RE, STORYDATA_JSON_RE
 from src.utils.file_scan import iter_files
 from src.utils.tk_safe import post_to_ui, post_to_ui_deferred
 from src.story_viewer import db_helper
@@ -39,7 +39,7 @@ class StoryDBService:
         view: Any,
         master: Any,
         base_path: Path,
-        server_db_info: dict,
+        server_db_info: dict[str, Any],
         server_var: Any,
         db_manager: Any,
         get_lang_dict: Callable[[], dict[str, str]],
@@ -47,7 +47,6 @@ class StoryDBService:
         apply_filter: Callable[[], None],
         clear_workspace: Callable[[], None],
         get_loading_cancel_requested: Callable[[], bool] | None = None,
-        shared_state: Any = None,
     ) -> None:
         self._view = view
         self._master = master
@@ -205,7 +204,7 @@ class StoryDBService:
 
         filename_to_adv_id = {}
         for filename in all_files:
-            match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
+            match = STORYDATA_ADV_ID_RE.match(filename)
             if match:
                 filename_to_adv_id[filename] = match.group(1)
 
@@ -329,7 +328,7 @@ class StoryDBService:
         import re as _re
         temp_all_files, invalid_files = {}, []
         file_candidates: dict[str, Any] = {}
-        pattern = _re.compile(r'^storydata_\d+\.json$')
+        pattern = STORYDATA_JSON_RE
 
         if paths:
             for path in paths:
@@ -508,8 +507,6 @@ class StoryDBService:
         self._view.btn_open_file.config(state=tk.NORMAL)
         self._view.btn_open_folder.config(state=tk.NORMAL)
 
-        if results is None:
-            return
         self._workspace.all_files = results['all_files']
         self._workspace.file_titles = results['titles']
         self._workspace.raw_file_titles = results.get('raw_titles', {})

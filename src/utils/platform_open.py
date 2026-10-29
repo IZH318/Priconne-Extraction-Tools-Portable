@@ -34,7 +34,7 @@ def open_with_default_app(file_path: str) -> None:
 
     logger.info("Opening %s with default app", file_path)
     if sys.platform == 'win32':
-        os.startfile(file_path)  # type: ignore[attr-defined]
+        os.startfile(file_path)
     elif sys.platform == 'darwin':
         subprocess.Popen(['open', file_path])
     else:

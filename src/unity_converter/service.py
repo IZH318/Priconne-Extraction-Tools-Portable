@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Any
 
 from src.utils.base_path import get_application_base_path
 from src.utils.error_log import open_task_log, write_log_items
+from src.utils.lang_dict import safe_lang_dict
 
 logger = logging.getLogger(__name__)
 
@@ -22,29 +24,25 @@ class UnityExtractionService:
     입력 검증, 워커 배치 분할, 실패 리포팅 조정.
 
     Attributes:
-        _shared_state: 공유 의존성 컨테이너.
         _controller: 상위 MVC 컨트롤러 참조.
     """
 
     def __init__(
         self,
-        shared_state: Any = None,
+        get_lang_dict: Callable[[], dict[str, str]],
+        get_base_path: Callable[[], Any],
         controller: Any = None,
     ) -> None:
         """UnityExtractionService 초기화.
 
         Args:
-            shared_state: 콜백 및 구성을 제공하는 SharedState 객체.
+            get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
+            get_base_path (Callable[[], Any]): 실행 기준 경로 조회 콜백.
             controller: 상위 컨트롤러 참조.
         """
-        self._shared_state = shared_state
+        self._get_lang_dict = get_lang_dict if callable(get_lang_dict) else dict
+        self._get_base_path = get_base_path if callable(get_base_path) else (lambda: None)
         self._controller = controller
-        if shared_state is not None and callable(getattr(shared_state, "get_lang_dict", None)):
-            self._get_lang_dict = shared_state.get_lang_dict
-        elif controller is not None and hasattr(controller, "get_lang_dict"):
-            self._get_lang_dict = controller.get_lang_dict
-        else:
-            self._get_lang_dict = dict
 
     def get_lang_dict(self) -> dict[str, str]:
         """현재 활성화된 언어 번역 딕셔너리 안전 조회.
@@ -52,10 +50,7 @@ class UnityExtractionService:
         Returns:
             번역 키와 로컬라이즈된 문자열 매핑 딕셔너리.
         """
-        try:
-            return self._get_lang_dict() or {}
-        except (TypeError, ValueError, AttributeError, RuntimeError):
-            return {}
+        return safe_lang_dict(self._get_lang_dict)
 
     def validate_start(self, file_paths: Any = None, output_path: Any = None) -> tuple[bool, str | None]:
         """입력 대상 파일 및 출력 디렉터리 경로 설정 여부 사전 검증.
@@ -128,13 +123,12 @@ class UnityExtractionService:
         """
         try:
             exec_path = None
-            if self._shared_state is not None and callable(getattr(self._shared_state, "get_base_path", None)):
-                try:
-                    bp = self._shared_state.get_base_path()
-                    if bp is not None:
-                        exec_path = str(bp)
-                except (TypeError, ValueError, AttributeError, RuntimeError):
-                    exec_path = None
+            try:
+                bp = self._get_base_path()
+                if bp is not None:
+                    exec_path = str(bp)
+            except (TypeError, ValueError, AttributeError, RuntimeError):
+                exec_path = None
             if exec_path is None and self._controller is not None and getattr(self._controller, "base_path", None):
                 exec_path = str(self._controller.base_path)
             if exec_path is None:

@@ -19,8 +19,11 @@ from src.constants import (
     APP_COPYRIGHT_YEAR,
     APP_DEVELOPER,
     APP_LAST_UPDATE,
+    APP_TEMP_DIR_NAME,
     APP_VERSION,
     APP_WEBSITE,
+    DEFAULT_LANG,
+    SESSION_DIR_PREFIX,
 )
 from src.logger import setup_global_logging
 from src.utils.process_check import is_pid_alive
@@ -71,19 +74,19 @@ class AppContainer:
         except (ValueError, TypeError, OSError):
             _loc = ''
 
-        # 지원 언어(ko/en/ja) 매핑, 알 수 없는 로케일은 'en' 폴백
+        # 지원 언어(ko/en/ja) 매핑, 알 수 없는 로케일은 기본 언어(영어) 폴백
         if _loc.startswith('ko'):
             _initial_lang = 'ko'
         elif _loc.startswith('ja'):
             _initial_lang = 'ja'
         else:
-            _initial_lang = 'en'
+            _initial_lang = DEFAULT_LANG
         self.app_lang_var: tk.StringVar = tk.StringVar(value=_initial_lang)
 
         # 2. 프로세스별 세션 격리 임시 폴더 생성 (TOCTOU 및 다중 인스턴스 간섭 완화)
-        self._base_temp_dir = Path(tempfile.gettempdir()) / 'Priconne_Extraction_Tools_(Portable)_TEMP'
+        self._base_temp_dir = Path(tempfile.gettempdir()) / APP_TEMP_DIR_NAME
         self._base_temp_dir.mkdir(parents=True, exist_ok=True)
-        self.app_temp_dir = Path(tempfile.mkdtemp(prefix=f"session_{os.getpid()}_", dir=self._base_temp_dir))
+        self.app_temp_dir = Path(tempfile.mkdtemp(prefix=f"{SESSION_DIR_PREFIX}{os.getpid()}_", dir=self._base_temp_dir))
 
         # 3. 비정상 종료 등으로 잔류한 과거 세션 임시 디렉터리 선별 정리
         self._cleanup_old_session_dirs()
@@ -124,19 +127,6 @@ class AppContainer:
 
         setup_global_logging(self.root, self.app_info_for_logger, self.app_lang_var, get_logger_lang_data_map())
 
-    @staticmethod
-    def _is_pid_alive(pid: int) -> bool:
-        """지정 PID 프로세스의 활성 실행 여부 검사 (utils.process_check 위임).
-
-        Args:
-            pid (int): 검사 대상 운영체제 프로세스 ID.
-
-        Returns:
-            bool: 프로세스가 활성이거나 생존 여부를 확정할 수 없으면 True,
-                확실히 종료되었으면 False.
-        """
-        return is_pid_alive(pid)
-
     def _cleanup_old_session_dirs(self) -> None:
         """과거 세션 폴더 중 이미 종료된 프로세스의 폴더만 선별 삭제.
 
@@ -150,7 +140,7 @@ class AppContainer:
             return
         try:
             for child in list(self._base_temp_dir.iterdir()):
-                if not (child.name.startswith("session_") and child != self.app_temp_dir):
+                if not (child.name.startswith(SESSION_DIR_PREFIX) and child != self.app_temp_dir):
                     continue
                 # 심볼릭 링크는 is_dir()/rmtree 가 대상 경로를 따라가므로 우선 제외
                 if child.is_symlink():
@@ -172,7 +162,7 @@ class AppContainer:
                     # PID 토큰 미식별 폴더는 생존 여부 판정 불가 → 삭제하지 않음
                     continue
                 pid = int(parts[1])
-                if self._is_pid_alive(pid):
+                if is_pid_alive(pid):
                     # 실행 중이거나 생존 판정 불가한 다른 인스턴스의 작업 폴더이므로 보호
                     continue
                 try:

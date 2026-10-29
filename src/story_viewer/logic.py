@@ -146,8 +146,6 @@ class SearchEngine:
         Returns:
             조건 일치 여부 (bool).
         """
-        if not isinstance(scene, dict):
-            return False
         print_data = scene.get('print') if isinstance(scene.get('print'), dict) else {}
         if 'content' in criteria and not (isinstance(print_data, dict) and criteria['content'] in print_data.get('text', '').lower()):
             return False
@@ -697,8 +695,6 @@ class StoryFormatter:
 
         dispatch = StoryFormatter._get_dispatch_table()
         content_list: list[tuple[str, str | None]] = []
-        if not isinstance(data, dict):
-            return content_list
         scene_keys = sorted(
             data.keys(),
             key=lambda x: int(x) if isinstance(x, str) and x.isascii() and x.isdigit() else float('inf'),

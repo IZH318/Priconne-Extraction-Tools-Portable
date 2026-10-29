@@ -286,7 +286,7 @@ class StoryDataDeserializer:
         return text
 
     @staticmethod
-    def deserialize(bytes_: bytes) -> dict:
+    def deserialize(bytes_: bytes) -> dict[int, dict[str, Any]]:
         """스토리 바이너리를 파싱하여 계층적 딕셔너리로 변환.
 
         BUSTUP 커맨드 기준 씬(블록) 번호 증가,
@@ -298,9 +298,6 @@ class StoryDataDeserializer:
         Returns:
             dict: 블록 인덱스를 키로 하고, 해당 블록의 대사/연출 커맨드 매핑을 값으로 갖는 딕셔너리.
         """
-        if not isinstance(bytes_, (bytes, bytearray)):
-            bytes_ = str(bytes_).encode('utf-8', 'surrogateescape')
-
         commands = StoryDataDeserializer._deserialize_story_raw(bytes_)
         story: dict[int, dict[str, Any]] = {}
         num = 0  # 현재 활성화된 스토리 씬 블록 인덱스

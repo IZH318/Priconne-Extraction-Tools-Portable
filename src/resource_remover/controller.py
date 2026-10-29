@@ -21,12 +21,11 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
 
 from src.breadcrumbs import add_breadcrumb
-from src.constants import EXTENSION_CATEGORIES, RESOURCE_REMOVER_CLEANUP_JOIN_TIMEOUT
+from src.constants import DEFAULT_LANG, EXTENSION_CATEGORIES, RESOURCE_REMOVER_CLEANUP_JOIN_TIMEOUT
 from src.languages import RESOURCE_REMOVER_LANGUAGES as LANGUAGES
 from src.languages import format_text, pick_language
 from src.queue_events import CompletionEvent
 from src.queue_polling import QueuePollingMixin
-from src.shared_state import SharedState
 from src.utils.base_path import get_application_base_path
 
 from .logic import ResourceRemoverLogic
@@ -59,10 +58,7 @@ class ResourceRemoverController(QueuePollingMixin):
         """
         self.master: tk.Misc = master
         self.logic: ResourceRemoverLogic = ResourceRemoverLogic()
-        self.shared_state: SharedState = SharedState()
-        self.shared_state.get_lang_dict = self.get_lang_dict
-        self.shared_state.get_base_path = lambda: self.target_path_var.get()
-        self._removal_service: ResourceRemovalService = ResourceRemovalService(shared_state=self.shared_state, logic=self.logic)
+        self._removal_service: ResourceRemovalService = ResourceRemovalService(get_lang_dict=self.get_lang_dict, logic=self.logic)
         self.about_info: dict[str, Any] = about_info or {}
         self.target_path_var: tk.StringVar = tk.StringVar(value="")
 
@@ -82,7 +78,7 @@ class ResourceRemoverController(QueuePollingMixin):
         if app_lang_var:
             self.lang_var: tk.StringVar = app_lang_var
         else:
-            self.lang_var = tk.StringVar(value='ko')
+            self.lang_var = tk.StringVar(value=DEFAULT_LANG)
 
         self.view: ResourceRemoverView = ResourceRemoverView(frame, self)
         self.lang_var.trace_add('write', self._on_language_change)

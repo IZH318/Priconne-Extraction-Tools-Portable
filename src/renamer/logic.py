@@ -63,8 +63,8 @@ class RenameHashedFile:
 
     def __init__(
         self,
-        log_queue: Queue,
-        progress_queue: Queue,
+        log_queue: Queue[Any],
+        progress_queue: Queue[Any],
         get_string_func: Callable[[str], str],
         base_path: Path | None = None,
     ) -> None:
@@ -363,7 +363,7 @@ class RenameHashedFile:
                 for file_path in self.unprocessed_files:
                     # 협력적 취소 신호 수신 시 폴백 루프도 조기 중단
                     if self.is_cancelled:
-                        break
+                        break  # type: ignore[unreachable]
 
                     renamed_by_content = False
                     try:

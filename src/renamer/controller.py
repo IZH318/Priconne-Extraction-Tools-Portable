@@ -21,12 +21,12 @@ from src.constants import (
     APP_LAST_UPDATE,
     APP_VERSION,
     APP_WEBSITE,
+    DEFAULT_LANG,
     RENAMER_CLEANUP_JOIN_TIMEOUT,
 )
 from src.languages import RENAMER_LANGUAGES as LANGUAGES
 from src.languages import pick_language
 from src.queue_polling import QueuePollingMixin
-from src.shared_state import SharedState
 
 from .log_renderer import RenamerLogRenderer
 from .queue_handler import RenamerQueueHandler
@@ -100,7 +100,6 @@ class RenamerController(QueuePollingMixin):
         total_files_count: 대상 디렉터리에서 감지된 전체 후보 파일 수.
         log_queue: 작업 스레드로부터 LogEvent 데이터클래스를 수신하는 큐.
         progress_queue: 작업 스레드로부터 ProgressEvent 데이터클래스를 수신하는 큐.
-        shared_state: 의존성 주입을 위한 공유 매개변수 객체.
         file_processor: 활성 RenameHashedFile 인스턴스.
         log_manager: 로그 포맷팅 및 이력 관리를 담당하는 RenamerLogRenderer 인스턴스.
         queue_handler: UI 타이머 주기마다 큐를 비우고 UI를 갱신하는 RenamerQueueHandler 인스턴스.
@@ -137,7 +136,7 @@ class RenamerController(QueuePollingMixin):
         if app_lang_var:
             self.lang_var = app_lang_var
         else:
-            self.lang_var = tk.StringVar(value='ko')
+            self.lang_var = tk.StringVar(value=DEFAULT_LANG)
         self.lang_var.trace_add("write", self._on_language_change)
 
         self.last_progress_info = {'current': 0, 'total': 0}
@@ -151,12 +150,6 @@ class RenamerController(QueuePollingMixin):
 
         self._base_path: Path | None = None
 
-        self.shared_state: SharedState = SharedState()
-        self.shared_state.get_string = self.get_string
-        self.shared_state.get_lang_dict = self.get_lang_dict
-        self.shared_state.log_queue = self.log_queue
-        self.shared_state.progress_queue = self.progress_queue
-        self.shared_state.base_path_provider = lambda: self._base_path
         self._rename_service = RenameService(
             get_string=self.get_string,
             log_queue=self.log_queue,
@@ -196,7 +189,7 @@ class RenamerController(QueuePollingMixin):
         lang_dict = pick_language(self.lang_var.get(), LANGUAGES)
         template = lang_dict.get(key)
         if template is None:
-            template = pick_language('en', LANGUAGES).get(key)
+            template = pick_language(DEFAULT_LANG, LANGUAGES).get(key)
         if template is None:
             # JSON 손상/키 누락 시 최후 폴백: 내장 영어 리터럴 → 키 이름
             template = _RENAMER_ENGLISH_FALLBACK.get(key, key)

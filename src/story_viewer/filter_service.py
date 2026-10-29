@@ -7,11 +7,11 @@
 from __future__ import annotations
 
 import contextlib
-import re
 import tkinter as tk
 from collections.abc import Callable
 from typing import Any
 
+from src.constants import STORYDATA_ADV_ID_RE
 from src.story_viewer.workspace_state import StoryWorkspaceState
 
 
@@ -81,7 +81,7 @@ class StoryFilterService:
             if query in fname.lower():
                 matched.append(fname)
                 continue
-            match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', fname)
+            match = STORYDATA_ADV_ID_RE.match(fname)
             if match and query in match.group(1):
                 matched.append(fname)
                 continue

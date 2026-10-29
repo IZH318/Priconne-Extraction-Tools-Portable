@@ -22,6 +22,7 @@ from types import TracebackType
 from typing import Any
 
 from src.breadcrumbs import format_breadcrumbs
+from src.constants import DEFAULT_LANG, LOG_DIR_NAME, LOG_FILENAME_TS_FMT
 
 logger = logging.getLogger("priconne")
 
@@ -45,7 +46,7 @@ def _resolve_log_dir() -> Path:
 
     from src.utils.base_path import get_application_base_path
 
-    log_dir = get_application_base_path() / "logs"
+    log_dir = get_application_base_path() / LOG_DIR_NAME
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
     except (OSError, PermissionError):
@@ -83,7 +84,7 @@ def write_error_log(
     log_dir = _resolve_log_dir()
 
     now = datetime.now()
-    log_filepath = log_dir / f"ErrorLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+    log_filepath = log_dir / f"ErrorLog_{now.strftime(LOG_FILENAME_TS_FMT)}.log"
 
     from src.constants import SEPARATOR_LONG
     from src.utils.error_log import write_log_header, write_log_item
@@ -151,7 +152,7 @@ class _AppLogFileHandler(logging.Handler):
         log_dir = _resolve_log_dir()
 
         now = datetime.now()
-        filename = f"AppLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+        filename = f"AppLog_{now.strftime(LOG_FILENAME_TS_FMT)}.log"
         self._file = open(log_dir / filename, "a", encoding="utf-8")
         write_log_header(self._file, "Application Log", base_path, self._app_info)
         self._file.flush()
@@ -249,8 +250,6 @@ def setup_global_logging(
         exc_type = args.exc_type
         exc_value = args.exc_value
         exc_traceback = args.exc_traceback
-        if exc_type is None:
-            exc_type = type(exc_value) if exc_value is not None else Exception
         thread_name = args.thread.name if args.thread else 'Unknown Thread'
         logger.error(
             "Unhandled Thread Exception in %s",
@@ -279,9 +278,9 @@ def setup_global_logging(
 
             # 언어 설정 가져오기 (기본값 'en')
             try:
-                lang_code = lang_var.get() if lang_var else 'en'
+                lang_code = lang_var.get() if lang_var else DEFAULT_LANG
             except (tk.TclError, RuntimeError, AttributeError):  # 폴백: 위젯 파괴 시점 예외 처리
-                lang_code = 'en'
+                lang_code = DEFAULT_LANG
             if lang_data_map and 'main_menu' in lang_data_map:
                 menu_data = lang_data_map['main_menu']
             else:
@@ -289,7 +288,7 @@ def setup_global_logging(
 
             if not isinstance(menu_data, dict):
                 menu_data = {}
-            lang_data = menu_data.get(lang_code, menu_data.get('en', {})) if isinstance(menu_data, dict) else {}
+            lang_data = menu_data.get(lang_code, menu_data.get(DEFAULT_LANG, {})) if isinstance(menu_data, dict) else {}
             if not isinstance(lang_data, dict):
                 lang_data = {}
 

@@ -19,7 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
-from src.constants import DOWNLOAD_CHUNK_SIZE
+from src.constants import DOWNLOAD_CHUNK_SIZE, TEMP_PART_SUFFIX
 from src.exceptions import DownloadError
 from src.utils.temp_registry import register_temp_artifact, unregister_temp_artifact
 
@@ -72,7 +72,7 @@ def verified_download(
     dest = Path(dest_path)
     dest.parent.mkdir(parents=True, exist_ok=True)
     # 동일 목적지에 대한 중복 다운로드(다중 인스턴스)가 서로의 임시 파일을 덮어쓰지 않도록 PID 포함
-    temp_path = dest.with_name(f"{dest.name}.{os.getpid()}.part")
+    temp_path = dest.with_name(f"{dest.name}.{os.getpid()}{TEMP_PART_SUFFIX}")
     register_temp_artifact(temp_path)
     request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     received = 0

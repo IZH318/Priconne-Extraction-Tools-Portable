@@ -10,12 +10,13 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import re
 import sqlite3
 import tkinter as tk
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypedDict
 
+from src.constants import STORYDATA_ADV_ID_BARE_RE
+from src.utils.filename import WINDOWS_RESERVED_DEVICE_NAMES
 from src.utils.tk_safe import post_to_ui
 from src.utils.platform_open import open_with_default_app
 
@@ -51,16 +52,11 @@ FILENAME_SANITIZE_MAP = str.maketrans({
 })
 
 
-_WINDOWS_RESERVED_DEVICE_NAMES: frozenset[str] = frozenset(
-    {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}
-)
-
-
 def sanitize_filename(name: str) -> str:
     """윈도우 파일 시스템 금지 문자를 전각 문자로 1:1 치환하고 예약어 충돌 방지."""
     sanitized = name.translate(FILENAME_SANITIZE_MAP).strip().rstrip(" .")
     # Windows 예약 디바이스명(CON, NUL, COM1 등)은 확장자와 무관하게 예약되어 접두사(_)를 붙여 충돌 방지
-    if sanitized.split(".", 1)[0].upper() in _WINDOWS_RESERVED_DEVICE_NAMES:
+    if sanitized.split(".", 1)[0].upper() in WINDOWS_RESERVED_DEVICE_NAMES:
         sanitized = f"_{sanitized}"
     return sanitized
 
@@ -106,7 +102,7 @@ def resolve_export_filename(
     """
     base_name = os.path.splitext(filename)[0]
     adv_id = None
-    match = re.match(r'^storydata_(\d+)$', base_name)
+    match = STORYDATA_ADV_ID_BARE_RE.match(base_name)
     if match:
         adv_id = match.group(1)
 
@@ -281,7 +277,6 @@ class StoryExportHandler:
         get_db_manager: Callable[[], StoryDBManager],
         view: StoryViewerView,
         get_file_titles: Callable[[], dict[str, str]] | None = None,
-        shared_state: Any = None,
     ) -> None:
         self._get_lang_dict = get_lang_dict
         self._master = master
@@ -294,7 +289,6 @@ class StoryExportHandler:
         self._get_db_manager = get_db_manager
         self._view = view
         self._get_file_titles = get_file_titles or (dict)
-        self.shared_state = shared_state
 
     @staticmethod
     def _save_list_to_file(data_list: list[str], filename_suffix: str, output_folder: str, header: str = "", empty_msg: str | None = None) -> tuple[bool, Exception | None]:
@@ -455,7 +449,7 @@ class StoryExportHandler:
                         # 2차 파일명 충돌 방지 (혹시 이미 사용된 파일명이 존재하는 경우)
                         if out_fname in used_filenames:
                             f_base, f_ext = os.path.splitext(out_fname)
-                            match_id = re.match(r'^storydata_(\d+)$', os.path.splitext(filename)[0])
+                            match_id = STORYDATA_ADV_ID_BARE_RE.match(os.path.splitext(filename)[0])
                             adv_id_val = match_id.group(1) if match_id else None
                             if adv_id_val and f"({adv_id_val})" not in f_base:
                                 out_fname = f"{f_base} ({adv_id_val}){f_ext}"

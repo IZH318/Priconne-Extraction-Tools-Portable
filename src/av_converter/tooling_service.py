@@ -14,12 +14,12 @@ import tkinter as tk
 from tkinter import messagebox
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from src.av_converter.logic import ConversionLogic
 from src.constants import FFMPEG_MIN_SUPPORTED, FFMPEG_TARGET_VERSION, GUI_POLLING_INTERVAL_MS, USMTOOLKIT_VERSION_PROBE_TIMEOUT, TabType
-from src.shared_state import SharedState
 from src.subprocess_runner import SubprocessRunner
+from src.utils.lang_dict import safe_lang_dict
 
 logger = logging.getLogger(__name__)
 
@@ -27,12 +27,10 @@ logger = logging.getLogger(__name__)
 class AVToolingService:
     """외부 바이너리 툴체인 관리 및 준비 서비스.
 
-    UsmToolkit, vgmstream 등의 외부 바이너리 경로를 탐색하여 SharedState에 캐싱하고,
-    누락된 도구가 있는 경우 비동기 다운로드를 실행하여 Tkinter 폴링 루프로
-    완료 여부 감시.
+    UsmToolkit, vgmstream 등의 외부 바이너리 경로를 탐색하여 주입된 setter로 등록하고,
+    누락된 도구가 있는 경우 비동기 다운로드를 실행하여 Tkinter 폴링 루프로 완료 여부 감시.
 
     Attributes:
-        _shared_state (SharedState | None): 공유 애플리케이션 상태 컨테이너.
         _base_path (Path | None): 실행 파일 기준 루트 경로.
         _log_queue (Any): 로그 이벤트 전달용 큐.
         _view (Any): UI 상태 제어 및 after 타이머 호출용 뷰 위젯.
@@ -42,27 +40,43 @@ class AVToolingService:
 
     def __init__(
         self,
-        shared_state: SharedState | None = None,
+        view: Any,
+        base_path: Path | None,
+        log_queue: Any,
+        get_lang_dict: Callable[[], dict[str, str]],
+        get_usmtoolkit_path: Callable[[], Any],
+        set_usmtoolkit_path: Callable[[Any], None],
+        get_vgmstream_path: Callable[[], Any],
+        set_vgmstream_path: Callable[[Any], None],
+        tool_pipeline: Any,
+        add_log_entry: Callable[..., None] | None,
         polling_interval_ms: int = GUI_POLLING_INTERVAL_MS,
     ) -> None:
         """AVToolingService 초기화.
 
         Args:
-            shared_state (SharedState | None): 툴 경로 및 뷰, 로그 큐가 포함된 공유 상태 객체.
+            view (Any): UI 제어/after 타이머용 뷰.
+            base_path (Path | None): 실행 파일 기준 루트 경로.
+            log_queue (Any): 로그 이벤트 전달용 큐.
+            get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
+            get_usmtoolkit_path (Callable[[], Any]): UsmToolkit 경로 조회.
+            set_usmtoolkit_path (Callable[[Any], None]): UsmToolkit 경로 설정.
+            get_vgmstream_path (Callable[[], Any]): vgmstream 경로 조회.
+            set_vgmstream_path (Callable[[Any], None]): vgmstream 경로 설정.
+            tool_pipeline (Any): 도구 준비 파이프라인(Future 반환).
+            add_log_entry (Callable[..., None]): 로그 이벤트 발행 콜백.
             polling_interval_ms (int): 다운로드 비동기 상태 확인 폴링 주기(밀리초).
         """
-        self._shared_state = shared_state
-        ss = shared_state
-        self._base_path = (ss.get_base_path() if ss is not None and callable(getattr(ss, "get_base_path", None)) else None)
-        self._log_queue = getattr(ss, "log_queue", None) if ss is not None else None
-        _v = (ss.get_view() if ss is not None and callable(getattr(ss, "get_view", None)) else (getattr(ss, "get_view", None) if ss is not None else None))
-        self._view: Any = cast(Any, _v if _v is not None else {})
-        self._get_lang_dict = (ss.get_lang_dict if ss is not None and callable(getattr(ss, "get_lang_dict", None)) else (dict))
-        self._get_usmtoolkit_path = (ss.get_usmtoolkit_path if ss is not None and callable(getattr(ss, "get_usmtoolkit_path", None)) else (lambda: None))
-        self._set_usmtoolkit_path = (ss.set_usmtoolkit_path if ss is not None and callable(getattr(ss, "set_usmtoolkit_path", None)) else (lambda *a, **k: None))
-        self._get_vgmstream_path = (ss.get_vgmstream_path if ss is not None and callable(getattr(ss, "get_vgmstream_path", None)) else (lambda: None))
-        self._set_vgmstream_path = (ss.set_vgmstream_path if ss is not None and callable(getattr(ss, "set_vgmstream_path", None)) else (lambda *a, **k: None))
-        self._tool_pipeline = getattr(ss, "tool_pipeline", None) if ss is not None else None
+        self._view: Any = view if view is not None else {}
+        self._base_path = base_path
+        self._log_queue = log_queue
+        self._get_lang_dict = get_lang_dict if callable(get_lang_dict) else dict
+        self._get_usmtoolkit_path = get_usmtoolkit_path if callable(get_usmtoolkit_path) else (lambda: None)
+        self._set_usmtoolkit_path = set_usmtoolkit_path if callable(set_usmtoolkit_path) else (lambda *a, **k: None)
+        self._get_vgmstream_path = get_vgmstream_path if callable(get_vgmstream_path) else (lambda: None)
+        self._set_vgmstream_path = set_vgmstream_path if callable(set_vgmstream_path) else (lambda *a, **k: None)
+        self._tool_pipeline = tool_pipeline
+        self._add_log_entry_cb = add_log_entry if callable(add_log_entry) else None
         self._polling_interval_ms = polling_interval_ms
         self._preparing: dict[str, bool] = {"video": False, "audio": False}
 
@@ -83,10 +97,7 @@ class AVToolingService:
         Returns:
             dict[str, str]: 현재 선택된 언어 키-문자열 맵.
         """
-        try:
-            return self._get_lang_dict() or {}
-        except (TypeError, ValueError, AttributeError, RuntimeError):
-            return {}
+        return safe_lang_dict(self._get_lang_dict)
 
     def find_tools(self) -> None:
         """기준 경로 하위에서 UsmToolkit 및 vgmstream 실행 파일 존재 여부 탐색 및 등록.
@@ -95,7 +106,7 @@ class AVToolingService:
         - UsmToolkit: <base_path>/usmtoolkit/UsmToolkit.exe
         - vgmstream: <base_path>/usmtoolkit/vgmstream/vgmstream-cli.exe
 
-        경로 탐색 후 SharedState에 경로를 등록하고, UsmToolkit 호환용 test.exe 링크 검증.
+        경로 탐색 후 setter로 경로를 등록하고, UsmToolkit 호환용 test.exe 링크 검증.
         """
         base_path = self._base_path or Path(".")
         usm_dir = base_path / "usmtoolkit"
@@ -174,9 +185,8 @@ class AVToolingService:
         self._preparing[str(tab_type)] = True
         view = self._view
         view.set_ui_state(tab_type, "disabled")
-        ss = self._shared_state
-        if ss is not None and callable(getattr(ss, "add_log_entry", None)):
-            ss.add_log_entry(tab_type, "tools_preparing")
+        if callable(self._add_log_entry_cb):
+            self._add_log_entry_cb(tab_type, "tools_preparing")
         if self._tool_pipeline is None:
             self._preparing[str(tab_type)] = False
             raise RuntimeError("tool pipeline is not initialized")
@@ -198,8 +208,8 @@ class AVToolingService:
                         view.reset_ui_state(tab_type, reset_status=True)
                         self._notify_prepare_failure()
                 except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
-                    if ss is not None and callable(getattr(ss, "add_log_entry", None)):
-                        ss.add_log_entry(tab_type, "conv_log_error_exception", error=str(e))
+                    if callable(self._add_log_entry_cb):
+                        self._add_log_entry_cb(tab_type, "conv_log_error_exception", error=str(e))
                     view.reset_ui_state(tab_type, reset_status=True)
                     self._notify_prepare_failure()
             else:
@@ -247,17 +257,16 @@ class AVToolingService:
             logger.debug("Failed to show prepare-failure dialog", exc_info=True)
 
     def _add_log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
-        """상태 객체 또는 로그 큐를 통해 UI 로그 렌더러에 이벤트 발행.
+        """로그 콜백 또는 로그 큐를 통해 UI 로그 렌더러에 이벤트 발행.
 
         Args:
             target_tab (TabType): 대상 탭.
             log_key (str): 번역 다국어 키.
             **kwargs: 포맷팅 파라미터.
         """
-        if self._shared_state is not None and callable(getattr(self._shared_state, "add_log_entry", None)):
-            self._shared_state.add_log_entry(target_tab, log_key, **kwargs)
+        if callable(self._add_log_entry_cb):
+            self._add_log_entry_cb(target_tab, log_key, **kwargs)
         elif self._log_queue is not None:
             from src.queue_events import LogEvent
 
             self._log_queue.put(LogEvent(target=target_tab, key=log_key, kwargs=kwargs))
-

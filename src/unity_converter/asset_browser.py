@@ -171,20 +171,14 @@ class AssetBrowserWindow(tk.Toplevel):
     def _load_assets_worker(self) -> None:
         """워커 스레드: 번들 로드 및 트리에 표시할 항목 메타데이터 수집."""
         try:
-            import UnityPy
-            from UnityPy import config
-            config.FALLBACK_UNITY_VERSION = self.unity_version  # type: ignore[assignment]
-            env = UnityPy.load(self.file_path)
+            from .asset_reader import get_object_name, open_bundle
+            env = open_bundle(self.file_path, self.unity_version, force_version=True)
 
             entries: list[tuple[str, str, str, str, Any]] = []
             for obj in env.objects:
                 type_name = obj.type.name
                 group_name = self.TYPE_GROUPS.get(type_name, type_name)
-                try:
-                    data = obj.parse_as_object()
-                    name = getattr(data, 'm_Name', '') or f"PathID_{obj.path_id}"
-                except AttributeError:
-                    name = f"PathID_{obj.path_id}"
+                name = get_object_name(obj)
                 try:
                     size_str = self._format_file_size(obj.byte_size)
                 except AttributeError:

@@ -1,12 +1,14 @@
 """Resource Remover 서비스 모듈.
 
 컨트롤러와 ResourceRemoverLogic 간 데이터 전달 및
-공유 상태(SharedState)의 다국어 번역 연동 담당.
+다국어 번역 연동 담당.
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from typing import Any
+
+from src.utils.lang_dict import safe_lang_dict
 
 from .logic import ResourceRemoverLogic
 
@@ -16,23 +18,19 @@ class ResourceRemovalService:
 
     def __init__(
         self,
-        shared_state: Any = None,
+        get_lang_dict: Callable[[], dict[str, str]],
         logic: Any = None,
     ) -> None:
         """ResourceRemovalService 초기화.
 
         Args:
-            shared_state (Any): 공통 상태 및 다국어 콜백을 제공하는 SharedState 객체.
+            get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
             logic (ResourceRemoverLogic | None): 도메인 로직 인스턴스 (None이면 신규 생성).
         """
         if logic is None:
             logic = ResourceRemoverLogic()
         self._logic: ResourceRemoverLogic = logic
-        self._shared_state = shared_state
-        if shared_state is not None and callable(getattr(shared_state, "get_lang_dict", None)):
-            self._get_lang_dict = shared_state.get_lang_dict
-        else:
-            self._get_lang_dict = dict
+        self._get_lang_dict = get_lang_dict if callable(get_lang_dict) else dict
 
     @property
     def logic(self) -> ResourceRemoverLogic:
@@ -41,10 +39,7 @@ class ResourceRemovalService:
 
     def get_lang_dict(self) -> dict[str, str]:
         """현재 활성화된 다국어 UI 번역 딕셔너리 반환."""
-        try:
-            return self._get_lang_dict() or {}
-        except (TypeError, ValueError, AttributeError, RuntimeError):
-            return {}
+        return safe_lang_dict(self._get_lang_dict)
 
     def count_resources(self, extensions_to_remove: Sequence[str]) -> list[Any]:
         """지정된 확장자를 가진 파일들을 검색하여 파일 목록 반환.

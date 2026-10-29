@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import re
 import tkinter as tk
 from typing import Any
 
+from src.constants import STORYDATA_ADV_ID_RE
 from src.story_viewer.workspace_state import StoryWorkspaceState
 from src.utils.file_list_mixin import FileListMixin
 
@@ -32,7 +32,6 @@ class StoryFileListService:
         view: Any,
         display_mode_var: Any,
         workspace: StoryWorkspaceState,
-        shared_state: Any = None,
     ) -> None:
         self._view = view
         self._display_mode_var = display_mode_var
@@ -169,7 +168,7 @@ class StoryFileListService:
             for i in range(index, end_index):
                 filename = target_files[i]
                 display_name = filename
-                match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
+                match = STORYDATA_ADV_ID_RE.match(filename)
                 adv_id = match.group(1) if match else ""
 
                 if display_mode == 'title':

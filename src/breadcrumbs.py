@@ -13,6 +13,8 @@ from datetime import datetime
 from types import MappingProxyType
 from typing import Any
 
+from src.constants import HUMAN_TS_FMT
+
 
 @dataclass(frozen=True)
 class Breadcrumb:
@@ -64,7 +66,7 @@ class BreadcrumbBuffer:
         if isinstance(payload, dict):
             payload = MappingProxyType(payload)
         crumb = Breadcrumb(
-            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            timestamp=datetime.now().strftime(HUMAN_TS_FMT)[:-3],
             category=category,
             message=message,
             data=payload,

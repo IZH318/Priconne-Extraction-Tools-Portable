@@ -12,7 +12,7 @@ import tkinter as tk
 from tkinter import Listbox, Menu, filedialog, scrolledtext, ttk
 from typing import TYPE_CHECKING, Any
 
-from tkinterdnd2 import DND_FILES  # type: ignore[import-untyped]
+from tkinterdnd2 import DND_FILES
 
 from src.constants import TabType
 from src.utils.dialogs import center_window
@@ -112,7 +112,7 @@ class AVConverterView(ttk.Frame):
             if 'overwrite_check' in widgets:
                 widgets['overwrite_check'].config(text=d.get('overwrite_option', 'Overwrite existing files'))
 
-    def _build_conversion_tab_ui(self, parent_tab: ttk.Frame, tab_type: TabType, filenames_var: tk.StringVar) -> tuple[dict, scrolledtext.ScrolledText, dict]:
+    def _build_conversion_tab_ui(self, parent_tab: ttk.Frame, tab_type: TabType, filenames_var: tk.StringVar) -> tuple[dict[str, Any], scrolledtext.ScrolledText, dict[str, Any]]:
         """탭 유형별(비디오/오디오) 2열 분할 레이아웃 및 제어 위젯 생성.
 
         Args:

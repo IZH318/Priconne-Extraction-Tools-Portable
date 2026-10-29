@@ -11,6 +11,8 @@ import os
 import re
 import tkinter as tk
 
+from src.utils.file_scan import iter_files
+
 logger = logging.getLogger(__name__)
 
 
@@ -124,8 +126,8 @@ class FileListMixin:
     ) -> list[str]:
         """경로 목록을 검색하여 지원 확장자에 맞는 파일 수집.
 
-        폴더 포함 시 os.walk(followlinks=False) 기반 심볼릭 링크 순환(루프) 방지 재귀 탐색 및
-        메모리 고갈 방지 목적의 max_files 초과 시 즉시 탐색 중단 처리.
+        폴더 포함 시 공용 재귀 탐색기 `iter_files`(os.walk followlinks=False)를 재사용하여
+        심볼릭 링크 순환(루프)을 방지하고, 중복 제거 및 max_files 초과 시 탐색 중단을 관리.
 
         Args:
             paths (list[str]): 파일 및 디렉터리 경로가 혼합된 입력 리스트.
@@ -138,26 +140,22 @@ class FileListMixin:
         _exts = tuple(e.lower() for e in supported_exts)
         found: list[str] = []
         seen: set[str] = set()
+
+        def _add(candidate: str) -> None:
+            key = os.path.normcase(os.path.abspath(candidate))
+            if key not in seen:
+                seen.add(key)
+                found.append(candidate)
+
         for path in paths:
             if len(found) >= max_files:
                 break
             if os.path.isfile(path) and path.lower().endswith(_exts):
-                key = os.path.normcase(os.path.abspath(path))
-                if key not in seen:
-                    seen.add(key)
-                    found.append(path)
+                _add(path)
             elif os.path.isdir(path):
-                for root, _, files in os.walk(path, followlinks=False):
+                for full in iter_files(path, predicate=lambda name: name.lower().endswith(_exts)):
                     if len(found) >= max_files:
                         break
-                    for f in files:
-                        if len(found) >= max_files:
-                            break
-                        if f.lower().endswith(_exts):
-                            full = os.path.join(root, f)
-                            key = os.path.normcase(os.path.abspath(full))
-                            if key not in seen:
-                                seen.add(key)
-                                found.append(full)
+                    _add(full)
         return found
 

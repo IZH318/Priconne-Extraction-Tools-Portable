@@ -57,7 +57,7 @@ def is_pid_alive(pid: int) -> bool:
         finally:
             kernel32.CloseHandle(handle)
 
-    try:
+    try:  # type: ignore[unreachable]
         os.kill(pid, 0)
         return True
     except ProcessLookupError:

@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -19,11 +18,10 @@ from typing import Any
 
 from src.breadcrumbs import add_breadcrumb
 from src.cancellation_token import CancellationToken
-from src.constants import STORY_CLEANUP_JOIN_TIMEOUT
+from src.constants import DEFAULT_LANG, STORYDATA_ADV_ID_RE, STORY_CLEANUP_JOIN_TIMEOUT
 from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
 from src.languages import pick_language
 from src.queue_polling import QueuePollingMixin
-from src.shared_state import SharedState
 from src.utils.base_path import get_application_base_path
 
 from .db_manager import StoryDBManager
@@ -196,7 +194,7 @@ class StoryViewerController(QueuePollingMixin):
         if app_lang_var:
             self.lang_var: tk.StringVar = app_lang_var
         else:
-            self.lang_var = tk.StringVar(value='ko')
+            self.lang_var = tk.StringVar(value=DEFAULT_LANG)
 
         self.display_mode_var: tk.StringVar = tk.StringVar(value="original")
         self.view_mode_var: tk.StringVar = tk.StringVar(value="script")
@@ -217,12 +215,7 @@ class StoryViewerController(QueuePollingMixin):
             view=self.view,
             get_all_files=lambda: self._workspace.all_files,
         )
-        self.shared_state: SharedState = SharedState()
-        self.shared_state.get_lang_dict = self.get_lang_dict
-        self.shared_state.get_view = lambda: self.view
-        self.shared_state.get_base_path = lambda: self.base_path
         self._db_service: StoryDBService = StoryDBService(
-            shared_state=self.shared_state,
             view=self.view,
             master=self.master,
             base_path=self.base_path,
@@ -236,7 +229,6 @@ class StoryViewerController(QueuePollingMixin):
             get_loading_cancel_requested=lambda: self._loading_cancel_token.is_cancelled,
         )
         self._export_handler: StoryExportHandler = StoryExportHandler(
-            shared_state=self.shared_state,
             get_lang_dict=self.get_lang_dict,
             master=self.master,
             view_mode_var=self.view_mode_var,
@@ -250,7 +242,6 @@ class StoryViewerController(QueuePollingMixin):
             get_file_titles=lambda: self._workspace.file_titles,
         )
         self._file_list_service: StoryFileListService = StoryFileListService(
-            shared_state=self.shared_state,
             view=self.view,
             display_mode_var=self.display_mode_var,
             workspace=self._workspace,
@@ -405,7 +396,7 @@ class StoryViewerController(QueuePollingMixin):
             add_breadcrumb("io", "Opened story folder", {"path": folder_path})
             self._start_loading_task(folder_path=folder_path)
 
-    def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None, lang_dict: dict) -> None:
+    def _load_and_analyze_thread(self, paths: tuple[str, ...] | list[str] | None, folder_path: str | None, lang_dict: dict[str, Any]) -> None:
         """선택된 파일/폴더의 스토리 데이터 백그라운드 로드 및 분석.
 
         Args:
@@ -520,7 +511,7 @@ class StoryViewerController(QueuePollingMixin):
         if not filename or filename not in self._workspace.all_files:
             return
 
-        match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', filename)
+        match = STORYDATA_ADV_ID_RE.match(filename)
         adv_id = match.group(1) if match else ""
         raw_title = self._workspace.file_titles.get(filename, "")
 

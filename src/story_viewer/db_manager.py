@@ -444,7 +444,7 @@ class StoryDBManager:
 
         threading.Thread(target=_check_thread, daemon=True).start()
 
-    def _on_check_complete(self, top: tk.Toplevel, downloads_list: list, remote_version_data: dict, local_version_path: str, missing_db_files: list, on_ready: Callable[..., Any] | None, lang_dict: dict, is_feature_completely_unavailable: bool) -> None:
+    def _on_check_complete(self, top: tk.Toplevel, downloads_list: list[Any], remote_version_data: dict[str, Any], local_version_path: str, missing_db_files: list[Any], on_ready: Callable[..., Any] | None, lang_dict: dict[str, Any], is_feature_completely_unavailable: bool) -> None:
         """백그라운드 버전 검사 완료 후 UI 업데이트 처리."""
         try:
             if top.winfo_exists():
@@ -557,7 +557,7 @@ class StoryDBManager:
         )
         self.db_warning_shown = True
 
-    def _start_db_download(self, downloads_list: list[tuple[str, str, str]], remote_version_data: dict, local_version_path: str, on_ready: Callable[..., Any] | None = None) -> None:
+    def _start_db_download(self, downloads_list: list[tuple[str, str, str]], remote_version_data: dict[str, Any], local_version_path: str, on_ready: Callable[..., Any] | None = None) -> None:
         """누락된 DB 파일의 백그라운드 다운로드 시작.
 
         Args:

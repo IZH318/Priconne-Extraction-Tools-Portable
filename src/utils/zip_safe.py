@@ -10,19 +10,12 @@ import os
 from pathlib import Path
 from typing import Any
 
+from src.utils.filename import WINDOWS_RESERVED_DEVICE_NAMES
+
 
 class UnsafeZipMemberError(ValueError):
     """ZIP 아카이브 멤버가 경로 순회 시도(..), 절대 경로 또는 심볼릭 링크를 포함할 때 발생하는 보안 예외."""
 
-
-# Windows 예약 디바이스명 (확장자와 무관하게 예약되어 파일 생성이 불가/오동작)
-_WINDOWS_RESERVED_DEVICE_NAMES: frozenset[str] = frozenset(
-    {
-        "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
-        *[f"COM{i}" for i in range(1, 10)],
-        *[f"LPT{i}" for i in range(1, 10)],
-    }
-)
 
 # Zip Bomb(비정상 고압축률 아카이브) 방지 기본 상한
 DEFAULT_MAX_ARCHIVE_BYTES: int = 2 * 1024 * 1024 * 1024
@@ -65,7 +58,7 @@ def _is_safe_member_name(name: str) -> bool:
         if not stripped or stripped in (".", ".."):
             return False
         # Windows 예약 디바이스명(CON, NUL, COM1 등) 거부
-        if stripped.split(".", 1)[0].upper() in _WINDOWS_RESERVED_DEVICE_NAMES:
+        if stripped.split(".", 1)[0].upper() in WINDOWS_RESERVED_DEVICE_NAMES:
             return False
     return True
 

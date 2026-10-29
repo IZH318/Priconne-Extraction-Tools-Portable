@@ -14,9 +14,12 @@ import logging
 import os
 import shutil
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from src.constants import LOG_DIR_NAME, TEMP_AVTMP_PREFIX, TEMP_FFMPEG_DIR_NAME, TEMP_PART_SUFFIX, TEMP_PARTIAL_SUFFIX
 from src.utils.process_check import is_pid_alive
 
 logger = logging.getLogger(__name__)
@@ -28,15 +31,78 @@ _LOCK = threading.Lock()
 def _registry_path() -> Path:
     from src.utils.base_path import get_application_base_path
 
-    return get_application_base_path() / "logs" / _REGISTRY_NAME
+    return get_application_base_path() / LOG_DIR_NAME / _REGISTRY_NAME
+
+
+@contextmanager
+def _file_lock(lock_path: Path) -> Iterator[None]:
+    """지정 경로의 사이드카 파일에 OS 수준 배타 락을 건다(다중 인스턴스 보호).
+
+    Windows는 msvcrt.locking, 그 외는 fcntl.flock을 사용한다. 락 파일 열기/획득에
+    실패하면 경고 로그만 남기고 락 없이 진행한다(인프로세스 락은 별도 유지).
+    """
+    fd: int | None = None
+    locked = False
+    try:
+        try:
+            lock_path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(lock_path, os.O_CREAT | os.O_RDWR)
+        except OSError as exc:
+            logger.debug("Failed to open lock file %s: %s", lock_path, exc)
+            yield
+            return
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                try:
+                    if os.fstat(fd).st_size == 0:
+                        os.write(fd, b"\0")
+                except OSError:
+                    pass
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_EX)  # type: ignore[attr-defined]
+            locked = True
+        except OSError as exc:
+            logger.debug("Failed to acquire lock %s: %s", lock_path, exc)
+        yield
+    finally:
+        if fd is not None:
+            try:
+                if locked:
+                    try:
+                        if os.name == 'nt':
+                            import msvcrt
+                            os.lseek(fd, 0, os.SEEK_SET)
+                            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                        else:
+                            import fcntl
+                            fcntl.flock(fd, fcntl.LOCK_UN)  # type: ignore[attr-defined]
+                    except OSError:
+                        pass
+            finally:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+
+
+@contextmanager
+def _interprocess_lock() -> Iterator[None]:
+    """temp 레지스트리 파일에 대한 프로세스 간 배타 락 컨텍스트."""
+    reg_path = _registry_path()
+    with _file_lock(reg_path.with_name(reg_path.name + ".lock")):
+        yield
 
 
 def _is_temp_artifact(path: Path) -> bool:
     """삭제 허용 대상(임시 파일 및 폴더) 패턴 판정."""
     name = path.name
-    if name.endswith(".part") or name.endswith(".partial"):
+    if name.endswith(TEMP_PART_SUFFIX) or name.endswith(TEMP_PARTIAL_SUFFIX):
         return True
-    return name.startswith(".avtmp_") or name == "ffmpeg_extracted_temp"
+    return name.startswith(TEMP_AVTMP_PREFIX) or name == TEMP_FFMPEG_DIR_NAME
 
 
 def _read_registry() -> list[dict[str, Any]]:
@@ -104,7 +170,7 @@ def register_temp_artifact(path: str | Path) -> None:
     """
     target = str(Path(path))
     pid = os.getpid()
-    with _LOCK:
+    with _LOCK, _interprocess_lock():
         entries = _read_registry()
         if not any(entry["path"] == target for entry in entries):
             entries.append({"path": target, "pid": pid})
@@ -118,7 +184,7 @@ def unregister_temp_artifact(path: str | Path) -> None:
         path (str | Path): 임시 파일 또는 폴더 경로.
     """
     target = str(Path(path))
-    with _LOCK:
+    with _LOCK, _interprocess_lock():
         entries = _read_registry()
         remaining = [entry for entry in entries if entry["path"] != target]
         if len(remaining) != len(entries):
@@ -156,7 +222,7 @@ def sweep_stale_temp_artifacts() -> int:
     Returns:
         int: 실제로 삭제한 항목 수.
     """
-    with _LOCK:
+    with _LOCK, _interprocess_lock():
         entries = _read_registry()
         if not entries:
             return 0

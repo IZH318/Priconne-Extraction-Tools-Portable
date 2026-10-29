@@ -12,7 +12,7 @@ import threading
 import tkinter as tk
 from collections.abc import Callable
 from tkinter import messagebox
-from typing import Any, cast
+from typing import Any
 
 from src.constants import SENTINEL_AUDIO_DONE, SENTINEL_VIDEO_DONE
 from src.queue_events import CompletionEvent
@@ -21,11 +21,10 @@ from src.queue_events import CompletionEvent
 class AVConversionService:
     """비디오/오디오 변환 스레드 및 UI 상태 관리 서비스.
 
-    SharedState를 통해 뷰, 변환 로직, 다국어 사전, 취소 토큰, 툴 준비 파이프라인에 접근하며,
+    생성자로 주입된 의존성(뷰, 변환 로직, 콜백, 취소 토큰, 툴 준비 파이프라인)만 사용하며,
     동시 실행을 방지하기 위한 _start_lock을 적용하여 안정적인 백그라운드 작업 실행.
 
     Attributes:
-        _shared_state (Any): 상위 상태 컨테이너.
         _view (Any): UI 제어 뷰 인스턴스.
         _logic (Any): 실제 비디오/오디오 파일 변환 알고리즘 인스턴스.
         _log_queue (Any): 변환 로직 및 로그 서비스와 공유하는 이벤트/완료 신호 전달용 큐.
@@ -35,49 +34,61 @@ class AVConversionService:
 
     def __init__(
         self,
-        shared_state: Any = None,
-        polling_interval_ms: int = 100,
+        view: Any,
+        logic: Any,
+        get_lang_dict: Callable[[], dict[str, str]],
+        add_log_entry: Callable[..., None],
+        add_spacing: Callable[..., None],
+        log_queue: Any,
+        get_video_full_paths: Callable[[], list[str]],
+        get_audio_full_paths: Callable[[], list[str]],
+        get_usmtoolkit_path: Callable[[], Any],
+        get_vgmstream_path: Callable[[], Any],
+        get_video_cancel_token: Callable[[], Any],
+        get_audio_cancel_token: Callable[[], Any],
+        start_tool_preparation: Callable[..., None],
+        set_conversion_thread: Callable[[Any, Any], None],
+        resume_polling: Callable[[], None],
+        is_dotnet_runtime_available: Callable[[], bool],
     ) -> None:
         """AVConversionService 초기화.
 
         Args:
-            shared_state (Any): UI 상태, 변환 로직, 콜백 등이 포함된 SharedState 객체.
-            polling_interval_ms (int): UI 이벤트 폴링 간격 (밀리초).
+            view (Any): UI 제어 뷰.
+            logic (Any): 비디오/오디오 변환 엔진.
+            get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
+            add_log_entry (Callable[..., None]): 로그 이벤트 발행 콜백.
+            add_spacing (Callable[..., None]): 로그 구분선 발행 콜백.
+            log_queue (Any): 완료 신호 전달용 큐(없으면 logic.log_queue 폴백).
+            get_video_full_paths (Callable[[], list[str]]): 비디오 입력 경로 조회.
+            get_audio_full_paths (Callable[[], list[str]]): 오디오 입력 경로 조회.
+            get_usmtoolkit_path (Callable[[], Any]): UsmToolkit 경로 조회.
+            get_vgmstream_path (Callable[[], Any]): vgmstream 경로 조회.
+            get_video_cancel_token (Callable[[], Any]): 비디오 취소 토큰 조회.
+            get_audio_cancel_token (Callable[[], Any]): 오디오 취소 토큰 조회.
+            start_tool_preparation (Callable[..., None]): 툴 준비 트리거 콜백.
+            set_conversion_thread (Callable[[Any, Any], None]): 변환 스레드 등록 콜백.
+            resume_polling (Callable[[], None]): 폴링 재개 콜백.
+            is_dotnet_runtime_available (Callable[[], bool]): .NET 런타임 가용 여부 콜백.
         """
-        ss = shared_state
-        self._shared_state = ss
-        _v = (ss.get_view() if ss is not None and callable(getattr(ss, "get_view", None)) else None)
-        self._view: Any = cast(Any, _v if _v is not None else {})
-        self._logic: Any = cast(Any, getattr(ss, "logic", None) if ss is not None else None)
-        gld = getattr(ss, "get_lang_dict", None) if ss is not None else None
-        self._get_lang_dict: Callable[[], dict[str, str]] = gld if callable(gld) else (dict)
-        ald = getattr(ss, "add_log_entry", None) if ss is not None else None
-        self._add_log_entry = ald if callable(ald) else (lambda *a, **k: None)
-        asp = getattr(ss, "add_spacing", None) if ss is not None else None
-        self._add_spacing = asp if callable(asp) else (lambda *a, **k: None)
-        lq = getattr(ss, "log_queue", None) if ss is not None else None
-        self._log_queue: Any = lq if lq is not None else getattr(self._logic, "log_queue", None)
-        gvfp = getattr(ss, "get_video_full_paths", None) if ss is not None else None
-        self._get_video_full_paths: Callable[[], list[str]] = gvfp if callable(gvfp) else (list)
-        gafp = getattr(ss, "get_audio_full_paths", None) if ss is not None else None
-        self._get_audio_full_paths: Callable[[], list[str]] = gafp if callable(gafp) else (list)
-        gusp = getattr(ss, "get_usmtoolkit_path", None) if ss is not None else None
-        self._get_usmtoolkit_path = gusp if callable(gusp) else (lambda: None)
-        gvgp = getattr(ss, "get_vgmstream_path", None) if ss is not None else None
-        self._get_vgmstream_path = gvgp if callable(gvgp) else (lambda: None)
-        gvct = getattr(ss, "get_video_cancel_token", None) if ss is not None else None
-        self._get_video_cancel_token = gvct if callable(gvct) else (lambda: None)
-        gact = getattr(ss, "get_audio_cancel_token", None) if ss is not None else None
-        self._get_audio_cancel_token = gact if callable(gact) else (lambda: None)
-        stp = getattr(ss, "start_tool_preparation", None) if ss is not None else None
-        self._start_tool_preparation = stp if callable(stp) else (lambda *a, **k: None)
-        sct = getattr(ss, "set_conversion_thread", None) if ss is not None else None
-        self._set_conversion_thread = sct if callable(sct) else (lambda *a, **k: None)
-        rp = getattr(ss, "resume_polling", None) if ss is not None else None
-        self._resume_polling = rp if callable(rp) else (lambda: None)
-        idra = getattr(ss, "is_dotnet_runtime_available", None) if ss is not None else None
-        self._is_dotnet_runtime_available = idra if callable(idra) else (lambda: False)
-        self._polling_interval_ms = polling_interval_ms
+        self._view: Any = view if view is not None else {}
+        self._logic = logic
+        self._get_lang_dict: Callable[[], dict[str, str]] = get_lang_dict if callable(get_lang_dict) else dict
+        self._add_log_entry = add_log_entry if callable(add_log_entry) else (lambda *a, **k: None)
+        self._add_spacing = add_spacing if callable(add_spacing) else (lambda *a, **k: None)
+        self._log_queue: Any = log_queue if log_queue is not None else getattr(logic, "log_queue", None)
+        self._get_video_full_paths: Callable[[], list[str]] = get_video_full_paths if callable(get_video_full_paths) else list
+        self._get_audio_full_paths: Callable[[], list[str]] = get_audio_full_paths if callable(get_audio_full_paths) else list
+        self._get_usmtoolkit_path = get_usmtoolkit_path if callable(get_usmtoolkit_path) else (lambda: None)
+        self._get_vgmstream_path = get_vgmstream_path if callable(get_vgmstream_path) else (lambda: None)
+        self._get_video_cancel_token = get_video_cancel_token if callable(get_video_cancel_token) else (lambda: None)
+        self._get_audio_cancel_token = get_audio_cancel_token if callable(get_audio_cancel_token) else (lambda: None)
+        self._start_tool_preparation = start_tool_preparation if callable(start_tool_preparation) else (lambda *a, **k: None)
+        self._set_conversion_thread = set_conversion_thread if callable(set_conversion_thread) else (lambda *a, **k: None)
+        self._resume_polling = resume_polling if callable(resume_polling) else (lambda: None)
+        self._is_dotnet_runtime_available = (
+            is_dotnet_runtime_available if callable(is_dotnet_runtime_available) else (lambda: False)
+        )
         self._converting: dict[str, bool] = {"video": False, "audio": False}
         self._start_lock: threading.Lock = threading.Lock()
 
@@ -222,4 +233,3 @@ class AVConversionService:
             bool: 변환 스레드가 활성화되어 작업 중이면 True.
         """
         return bool(self._converting.get(str(tab_type), False))
-

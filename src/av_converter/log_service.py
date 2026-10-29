@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class AVLogService:
     """AV Converter 탭의 로그 렌더링 및 큐 이벤트 처리 서비스 클래스.
 
-    SharedState 또는 주입받은 큐로부터 실시간 변환 진행 상황을 디스패치하며,
+    주입받은 큐로부터 실시간 변환 진행 상황을 디스패치하며,
     동적 다국어 언어 변경 시 기존 로그 히스토리를 대상 언어로 일괄 재렌더링.
 
     Attributes:
@@ -46,10 +46,10 @@ class AVLogService:
         view: Any,
         log_queue: Any,
         get_lang_dict: Callable[[], dict[str, str]],
-        video_log_history: list,
-        audio_log_history: list,
-        last_log_timestamp: dict,
-        redraw_logs_fn: Callable[[list, dict], None],
+        video_log_history: list[Any],
+        audio_log_history: list[Any],
+        last_log_timestamp: dict[str, Any],
+        redraw_logs_fn: Callable[[list[Any], dict[str, Any]], None],
         render_log_entry_fn: Callable[[str | None, str, Any, str | None], str],
         get_video_total_files: Callable[[], int],
         set_video_total_files: Callable[[int], None],
@@ -58,8 +58,8 @@ class AVLogService:
         get_video_cancel_token: Callable[[], Any],
         get_audio_cancel_token: Callable[[], Any],
         reset_ui_state: Callable[..., None],
-        get_video_widgets: Callable[[], dict],
-        get_audio_widgets: Callable[[], dict],
+        get_video_widgets: Callable[[], dict[str, Any]],
+        get_audio_widgets: Callable[[], dict[str, Any]],
         get_base_path: Callable[[], Any] | None = None,
     ) -> None:
         """AVLogService 인스턴스 초기화.
@@ -104,7 +104,7 @@ class AVLogService:
         self._get_audio_widgets = get_audio_widgets
 
 
-    def _history(self, tab_type: str) -> list:
+    def _history(self, tab_type: str) -> list[Any]:
         return self._video_log_history if tab_type == 'video' else self._audio_log_history
 
     def _log_widget(self, tab_type: str) -> Any:
@@ -185,7 +185,7 @@ class AVLogService:
             log_widget.see(tk.END)
             log_widget.config(state=tk.DISABLED)
 
-    def _drain_queue(self) -> list:
+    def _drain_queue(self) -> list[Any]:
         from src.queue_polling import QueuePollingMixin
         return QueuePollingMixin._drain_queue(self._log_queue)
 
@@ -193,8 +193,6 @@ class AVLogService:
         d = self._get_lang_dict()
         target_tab = getattr(msg, 'target', None) or 'video'
         widgets = self._get_video_widgets() if target_tab == 'video' else self._get_audio_widgets()
-        if not isinstance(widgets, dict):
-            return
 
         if msg.is_start:
             total = msg.total
@@ -227,11 +225,9 @@ class AVLogService:
         d = self._get_lang_dict()
         tab_type = 'video' if msg.target == SENTINEL_VIDEO_DONE else 'audio'
         widgets = self._get_video_widgets() if tab_type == 'video' else self._get_audio_widgets()
-        if not isinstance(widgets, dict):
-            widgets = {}
         cancel_token = self._get_video_cancel_token() if tab_type == 'video' else self._get_audio_cancel_token()
         total = self._get_video_total_files() if tab_type == 'video' else self._get_audio_total_files()
-        progress = widgets.get('progress') if isinstance(widgets, dict) else None
+        progress = widgets.get('progress')
         current = 0
         if progress is not None:
             with contextlib.suppress(tk.TclError, RuntimeError, AttributeError, KeyError):
@@ -245,7 +241,7 @@ class AVLogService:
             messagebox.showwarning(title, text, parent=self._view)
 
         self._reset_ui_state(tab_type, False)
-        status_label = widgets.get('status_label') if isinstance(widgets, dict) else None
+        status_label = widgets.get('status_label')
         if cancel_token and cancel_token.is_cancelled:
             if status_label is not None:
                 with contextlib.suppress(tk.TclError, RuntimeError, AttributeError):
@@ -258,7 +254,7 @@ class AVLogService:
                 with contextlib.suppress(tk.TclError, RuntimeError, AttributeError):
                     progress['value'] = total
 
-    def generate_error_log(self, tab_type: str, failed_files: list) -> None:
+    def generate_error_log(self, tab_type: str, failed_files: list[Any]) -> None:
         import os
         import sys
 

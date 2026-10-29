@@ -22,13 +22,12 @@ from typing import Any
 
 from src.breadcrumbs import add_breadcrumb
 from src.cancellation_token import CancellationToken
-from src.constants import DEFAULT_UNITY_VERSION, UNITY_VERSION_PRESETS
+from src.constants import DEFAULT_LANG, DEFAULT_UNITY_VERSION, UNITY_VERSION_PRESETS
 from src.constants import UNITY_SUPPORTED_EXTENSIONS as SUPPORTED_EXTENSIONS
 from src.languages import UNITY_CONVERTER_LANGUAGES as LANGUAGES
 from src.languages import pick_language
 from src.queue_events import CompletionEvent, LogEvent
 from src.queue_polling import QueuePollingMixin
-from src.shared_state import SharedState
 from src.utils.file_list_mixin import FileListMixin
 from src.utils.log_history import new_log_timestamp
 from src.utils.task_pool import register_process_pool, unregister_process_pool
@@ -65,7 +64,6 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         asset_type_vars: 에셋 유형별 활성화 상태(BooleanVar) 매핑 딕셔너리.
         lang_var: 전역 애플리케이션 언어 코드 추적 StringVar.
         view: UI 위젯 관리 프레젠테이션 뷰.
-        shared_state: 콜백 주입용 공유 상태 객체.
         _extraction_service: 배치 분할 및 오류 로그 생성 관리 서비스.
     """
 
@@ -111,7 +109,7 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         if app_lang_var:
             self.lang_var: tk.StringVar = app_lang_var
         else:
-            self.lang_var = tk.StringVar(value='ko')
+            self.lang_var = tk.StringVar(value=DEFAULT_LANG)
 
         self._manager: Any = None
         self._atexit_registered: bool = False
@@ -126,11 +124,11 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
 
         self.view = AssetExtractorView(frame, self)
 
-        self.shared_state: SharedState = SharedState()
-        self.shared_state.get_lang_dict = self.get_lang_dict
-        self.shared_state.get_base_path = lambda: self.base_path
-        self.shared_state.get_view = lambda: self.view
-        self._extraction_service: UnityExtractionService = UnityExtractionService(shared_state=self.shared_state, controller=self)
+        self._extraction_service: UnityExtractionService = UnityExtractionService(
+            get_lang_dict=self.get_lang_dict,
+            get_base_path=lambda: self.base_path,
+            controller=self,
+        )
 
         self.lang_var.trace_add('write', self._on_language_change)
 

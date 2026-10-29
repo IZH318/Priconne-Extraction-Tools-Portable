@@ -130,7 +130,7 @@ class AVLogRenderer:
 
     def redraw_logs(
         self,
-        log_configs: list[tuple[str, list, Any]],
+        log_configs: list[tuple[str, list[Any], Any]],
         last_log_timestamp: dict[str, str | None],
     ) -> None:
         """언어 변경 시 전체 로그 히스토리를 순회하며 로그 위젯 재출력.

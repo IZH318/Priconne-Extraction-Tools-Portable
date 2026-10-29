@@ -21,6 +21,8 @@ __all__ = [
     "error_log",
     "file_list_mixin",
     "file_scan",
+    "filename",
+    "lang_dict",
     "log_history",
     "platform_open",
     "process_check",
