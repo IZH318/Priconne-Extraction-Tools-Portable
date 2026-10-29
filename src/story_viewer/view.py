@@ -200,9 +200,12 @@ class StoryViewerView(ttk.Frame):
         self.story_text.tag_configure('script_place', font=(default_font_family, 10, 'bold'), foreground='#744210')
         self.story_text.tag_configure('script_choice', font=(default_font_family, 11, 'bold'), foreground='#C53030')
         self.story_text.tag_configure('script_choice_tag', font=(default_font_family, 10, 'italic'), foreground='#718096')
-        self.story_text.tag_configure('script_branch', font=(default_font_family, 10, 'bold'), foreground='#9C4221')
+        self.story_text.tag_configure('script_branch', font=(default_font_family, 11, 'bold'), foreground='#9C4221')
         self.story_text.tag_configure('script_outline_header', font=(default_font_family, 10, 'bold'), foreground='#2C5282')
         self.story_text.tag_configure('script_divider', font=(default_font_family, 9), foreground='#A0AEC0')
+        self.story_text.tag_configure('script_transition', font=(default_font_family, 11, 'bold'), foreground='#2B6CB0')
+        self.story_text.tag_configure('script_movie', font=(default_font_family, 10, 'bold'), foreground='#6B46C1')
+        self.story_text.tag_configure('script_still', font=(default_font_family, 10, 'bold'), foreground='#2C7A7B')
 
     def update_ui_text(self) -> None:
         """현재 언어 설정에 맞춰 UI 텍스트 일괄 갱신."""

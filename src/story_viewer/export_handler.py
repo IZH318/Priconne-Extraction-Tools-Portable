@@ -149,10 +149,12 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
     branch_point_label = lang_dict.get('script_branch_point', 'Branch Point')
     choice_item_label = lang_dict.get('script_choice_item', 'Choice')
     place_prefix = lang_dict.get('script_place_prefix', 'Place')
+    movie_label = lang_dict.get('script_movie_label', '애니메이션 컷신')
+    still_label = lang_dict.get('script_still_label', '스틸컷 일러스트')
 
     md_out: list[str] = []
     for node in StoryFormatter.iter_script_nodes(data, lang_dict):
-        b_prefix = "> " if node.in_branch else ""
+        b_prefix = (">" * node.indent_level + " ") if node.indent_level > 0 else ""
 
         # 상단 타이틀 및 줄거리 노드
         if node.kind == 'header':
@@ -174,7 +176,11 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
 
         # 분기 씬 헤더 노드
         elif node.kind == 'branch_start':
-            md_out.append(f"> #### ┌─ [ {node.scene_range} | {node.branch_label}{node.tag_suffix} ] ─┐\n>\n")
+            md_out.append(f"{b_prefix}#### ┌─ [ {node.scene_range} | {node.branch_label}{node.tag_suffix} ] ─┐\n{b_prefix}\n")
+
+        # 전환 씬 헤더 노드 (단일 선택지 직후 씬 등)
+        elif node.kind == 'transition_scene':
+            md_out.append(f"{b_prefix}**── ▶ [ Scene {node.scene_key} ] ──**  \n")
 
         # 장소 노드
         elif node.kind == 'place':
@@ -187,6 +193,14 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
             for line in node.lines:
                 md_out.append(f"{b_prefix}{line}  \n")
             md_out.append(f"{b_prefix}\n")
+
+        # 애니메이션 컷신 노드
+        elif node.kind == 'movie':
+            md_out.append(f"{b_prefix}**[{movie_label}: {node.movie_id}]**\n{b_prefix}\n")
+
+        # 스틸컷 일러스트 노드
+        elif node.kind == 'still':
+            md_out.append(f"{b_prefix}**[{still_label}: {node.still_id}]**\n{b_prefix}\n")
 
         # 선택지 노드
         elif node.kind == 'choice':
@@ -207,7 +221,7 @@ def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]
 
         # 분기 씬 박스 마감 노드
         elif node.kind == 'branch_end':
-            md_out.append(f">\n> └── ▶ **{node.leads_to}**\n\n")
+            md_out.append(f"{b_prefix}\n{b_prefix}└── ▶ **{node.leads_to}**\n\n")
 
         # 대사 없음 안내 노드
         elif node.kind == 'no_dialogue':
