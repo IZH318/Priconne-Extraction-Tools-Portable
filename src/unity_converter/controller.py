@@ -590,7 +590,7 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         """워커 스레드 진입점: ProcessPoolExecutor 배치 워커 풀 관리 및 취소 토큰 처리."""
         completion_queue: Any = None
         try:
-            # 종료 시 completion_queue 프로퍼티가 이미 shutdown 된 Manager 를 대체 생성하지 않도록 1회만 확보.
+            # 종료 시 completion_queue 프로퍼티가 이미 shutdown 된 Manager를 대체 생성하지 않도록 1회만 확보.
             completion_queue = self.completion_queue
             batches = self._extraction_service.prepare_batches(self.file_paths)
             if not batches:

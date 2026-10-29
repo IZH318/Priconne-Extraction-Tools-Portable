@@ -1,7 +1,7 @@
 """AV Converter 도구 준비 및 호환성 관리 서비스 모듈.
 
 USM/CRI 비디오 디먹싱 및 HCA/AWB 오디오 디코딩에 필요한 외부 실행 파일
-(UsmToolkit.exe, vgmstream-cli.exe, .NET 런타임 등)의 감지, 복사 호환성 보장 및
+(UsmToolkit.exe, vgmstream-cli.exe 등)의 감지, 복사 호환성 보장 및
 비동기 다운로드 파이프라인과의 폴링 연계 담당.
 """
 
@@ -16,9 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from src.av_converter.logic import ConversionLogic
-from src.constants import FFMPEG_MIN_SUPPORTED, FFMPEG_TARGET_VERSION, GUI_POLLING_INTERVAL_MS, USMTOOLKIT_VERSION_PROBE_TIMEOUT, TabType
-from src.subprocess_runner import SubprocessRunner
+from src.constants import FFMPEG_MIN_SUPPORTED, FFMPEG_TARGET_VERSION, GUI_POLLING_INTERVAL_MS, TabType
 from src.utils.lang_dict import safe_lang_dict
 
 logger = logging.getLogger(__name__)
@@ -44,7 +42,6 @@ class AVToolingService:
         base_path: Path | None,
         log_queue: Any,
         get_lang_dict: Callable[[], dict[str, str]],
-        get_usmtoolkit_path: Callable[[], Any],
         set_usmtoolkit_path: Callable[[Any], None],
         get_vgmstream_path: Callable[[], Any],
         set_vgmstream_path: Callable[[Any], None],
@@ -59,7 +56,6 @@ class AVToolingService:
             base_path (Path | None): 실행 파일 기준 루트 경로.
             log_queue (Any): 로그 이벤트 전달용 큐.
             get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
-            get_usmtoolkit_path (Callable[[], Any]): UsmToolkit 경로 조회.
             set_usmtoolkit_path (Callable[[Any], None]): UsmToolkit 경로 설정.
             get_vgmstream_path (Callable[[], Any]): vgmstream 경로 조회.
             set_vgmstream_path (Callable[[Any], None]): vgmstream 경로 설정.
@@ -71,7 +67,6 @@ class AVToolingService:
         self._base_path = base_path
         self._log_queue = log_queue
         self._get_lang_dict = get_lang_dict if callable(get_lang_dict) else dict
-        self._get_usmtoolkit_path = get_usmtoolkit_path if callable(get_usmtoolkit_path) else (lambda: None)
         self._set_usmtoolkit_path = set_usmtoolkit_path if callable(set_usmtoolkit_path) else (lambda *a, **k: None)
         self._get_vgmstream_path = get_vgmstream_path if callable(get_vgmstream_path) else (lambda: None)
         self._set_vgmstream_path = set_vgmstream_path if callable(set_vgmstream_path) else (lambda *a, **k: None)
@@ -138,37 +133,6 @@ class AVToolingService:
                 except OSError:
                     pass
 
-    def is_dotnet_runtime_available(self) -> bool:
-        """UsmToolkit 실행에 필요한 .NET 런타임 환경 시스템 설치 여부 검증.
-
-        UsmToolkit 실행 파일이 존재하면 --version 서브프로세스를 시험 실행하며,
-        실행에 실패하면 dotnet --list-runtimes 출력을 파싱하여 런타임 설치 여부로 재판별한다.
-
-        Returns:
-            bool: .NET 런타임이 유효하게 사용 가능하면 True.
-        """
-        usm = self._get_usmtoolkit_path()
-        if usm is not None and hasattr(usm, "exists") and usm.exists():
-            try:
-                res = SubprocessRunner.run([str(usm), "--version"], timeout=USMTOOLKIT_VERSION_PROBE_TIMEOUT)
-                if res.returncode == 0:
-                    return True
-            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
-                pass
-        runtimes = ConversionLogic.get_installed_dotnet_runtimes()
-        # 롤포워드는 전방 전용이므로 netcoreapp3.1 앱은 3.1 이상 런타임이 있어야 구동된다
-        for entry in runtimes:
-            parts = entry.split()
-            if len(parts) < 2:
-                continue
-            try:
-                major_minor = tuple(int(part) for part in parts[1].split('.')[:2])
-            except ValueError:
-                continue
-            if len(major_minor) == 2 and major_minor >= (3, 1):
-                return True
-        return False
-
     def start_tool_preparation(self, tab_type: TabType, output_dir: str, next_func: Callable[[str], None]) -> None:
         """필수 도구 다운로드를 트리거하고 완료 시까지 GUI 이벤트 루프로 상태 감시.
 
@@ -228,7 +192,8 @@ class AVToolingService:
     def _notify_prepare_failure(self) -> None:
         """도구 준비 실패 시 실패한 도구를 안내하는 팝업을 표시.
 
-        FFmpeg 실패인 경우 수동 배치 안내와 권장/최소 지원 버전을 함께 표시.
+        FFmpeg 실패인 경우 수동 배치 안내와 권장/최소 지원 버전을 함께 표시하고,
+        .NET Runtime 실패인 경우 전용 제목과 설치 안내 문구를 함께 표시.
         """
         lang = self._get_lang_dict() if callable(self._get_lang_dict) else {}
         fail_key_raw = getattr(self._tool_pipeline, "last_prepare_fail", None) if self._tool_pipeline is not None else None
@@ -237,6 +202,7 @@ class AVToolingService:
             'usmtoolkit_prepare_fail': 'UsmToolkit',
             'vgmstream_prepare_fail': 'vgmstream',
             'ffmpeg_prepare_fail': 'FFmpeg',
+            'dotnet_prepare_fail': '.NET Runtime',
         }.get(fail_key, 'Unknown')
 
         title = lang.get('tools_prepare_fail_title', 'Tool Preparation Failed')
@@ -250,6 +216,11 @@ class AVToolingService:
             if hint:
                 min_display = f"{FFMPEG_MIN_SUPPORTED[0]}.{FFMPEG_MIN_SUPPORTED[1]}"
                 msg = msg + "\n\n" + hint.format(target=FFMPEG_TARGET_VERSION, min_supported=min_display)
+        elif fail_key == 'dotnet_prepare_fail':
+            title = lang.get('dotnet_runtime_missing_title', title)
+            dotnet_hint = lang.get('dotnet_runtime_missing_msg')
+            if dotnet_hint:
+                msg = msg + "\n\n" + dotnet_hint
 
         try:
             messagebox.showwarning(title, msg, parent=self._view)

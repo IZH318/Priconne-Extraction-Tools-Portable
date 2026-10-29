@@ -134,7 +134,6 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             base_path=self.base_path,
             log_queue=self.log_queue,
             get_lang_dict=self.get_lang_dict,
-            get_usmtoolkit_path=lambda: self.usmtoolkit_path,
             set_usmtoolkit_path=lambda p: setattr(self, 'usmtoolkit_path', p),
             get_vgmstream_path=lambda: self.vgmstream_path,
             set_vgmstream_path=lambda p: setattr(self, 'vgmstream_path', p),
@@ -157,7 +156,6 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             start_tool_preparation=self._start_tool_preparation,
             set_conversion_thread=lambda tab_type, t: self._conversion_threads.__setitem__(tab_type, t),
             resume_polling=self._resume_polling,
-            is_dotnet_runtime_available=self._is_dotnet_runtime_available,
         )
         self._find_tools()
         self.ffmpeg_downloader: Any = self.tool_pipeline.ffmpeg_downloader
@@ -209,7 +207,6 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             view=self.view,
             get_lang_dict=self.get_lang_dict,
             add_log_entry=self._add_log_entry,
-            is_dotnet_runtime_available=self._is_dotnet_runtime_available,
             find_tools=self._find_tools,
             tool_pipeline=self.tool_pipeline,
             preview_selected_fn=lambda lb, tt: self._preview.preview_selected(lb, tt),
@@ -317,10 +314,6 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         vgmstream-cli.exe를 test.exe로 복사하여 호환성 보장.
         """
         self._tooling._ensure_usmtoolkit_compatibility()
-
-    def _is_dotnet_runtime_available(self) -> bool:
-        """.NET Runtime 설치 여부 확인."""
-        return self._tooling.is_dotnet_runtime_available()
 
     def _prepare_tools_for_preview(self, tab_type: TabType, on_success: Callable[[], None]) -> None:
         """미리보기 실행 전 누락 도구 자동 준비.

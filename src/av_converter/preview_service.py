@@ -1,7 +1,7 @@
 """AV Converter 미디어 파일 미리보기 준비 서비스 모듈.
 
 비디오(.usm) 및 오디오(.awb) 파일의 단일 항목 재생 미리보기를 위해
-필요한 외부 툴(UsmToolkit, vgmstream, FFmpeg)의 다운로드 및 준비 여부를 점검하고,
+필요한 외부 툴(UsmToolkit, vgmstream, FFmpeg, .NET Runtime)의 다운로드 및 준비 여부를 점검하고,
 완료 시 미리보기 콜백 호출.
 """
 
@@ -23,13 +23,12 @@ class AVPreviewService:
     """미디어 파일 미리보기 툴체인 점검 및 준비 서비스.
 
     탭별 중복 실행 방지 플래그(_preview_busy_tabs)를 통해 다중 클릭으로 인한 경쟁 상태(Race Condition)를 방지하며,
-    .NET 런타임 검사 및 다운로드 Future 완료를 폴링하여 성공 시 on_success 콜백 호출.
+    툴체인 준비 Future 완료를 폴링하여 성공 시 on_success 콜백 호출.
 
     Attributes:
         _view (Any): 알림 대화상자 표시 및 after 타이머 호출을 위한 View.
         _get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
         _add_log_entry (Callable[..., None]): 로그 이벤트 발행 콜백.
-        _is_dotnet_runtime_available (Callable[[], bool]): .NET 런타임 가용 여부 콜백.
         _find_tools (Callable[[], None]): 도구 경로 재탐색 콜백.
         _tool_pipeline (Any): 도구 준비 파이프라인(Future 반환).
         _preview_selected_fn (Callable[[Any, Any], None]): 선택 항목 미리보기 위임 콜백.
@@ -42,7 +41,6 @@ class AVPreviewService:
         view: Any,
         get_lang_dict: Callable[[], dict[str, str]],
         add_log_entry: Callable[..., None],
-        is_dotnet_runtime_available: Callable[[], bool],
         find_tools: Callable[[], None],
         tool_pipeline: Any,
         preview_selected_fn: Callable[[Any, Any], None],
@@ -54,7 +52,6 @@ class AVPreviewService:
             view (Any): 알림 대화상자/after 타이머용 View.
             get_lang_dict (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
             add_log_entry (Callable[..., None]): 로그 이벤트 발행 콜백.
-            is_dotnet_runtime_available (Callable[[], bool]): .NET 런타임 가용 여부 콜백.
             find_tools (Callable[[], None]): 도구 경로 재탐색 콜백.
             tool_pipeline (Any): 도구 준비 파이프라인.
             preview_selected_fn (Callable[[Any, Any], None]): 선택 항목 미리보기 위임 콜백.
@@ -63,9 +60,6 @@ class AVPreviewService:
         self._view: Any = view if view is not None else {}
         self._get_lang_dict: Callable[[], dict[str, str]] = get_lang_dict if callable(get_lang_dict) else dict
         self._add_log_entry = add_log_entry if callable(add_log_entry) else (lambda *a, **k: None)
-        self._is_dotnet_runtime_available = (
-            is_dotnet_runtime_available if callable(is_dotnet_runtime_available) else (lambda: False)
-        )
         self._find_tools = find_tools if callable(find_tools) else (lambda: None)
         self._tool_pipeline = tool_pipeline
         self._preview_selected_fn = (
@@ -86,7 +80,7 @@ class AVPreviewService:
     def prepare_tools_for_preview(self, tab_type: Any, on_success: Callable[[], None]) -> None:
         """미리보기에 필요한 툴체인을 비동기로 다운로드/준비하고 완료 시 콜백 실행.
 
-        탭별로 동시 중복 호출 시 무시되며(진행 중 플래그), 비디오 탭의 경우 .NET 런타임 설치 여부 확인.
+        탭별로 동시 중복 호출 시 무시되며(진행 중 플래그), 준비 작업은 백그라운드 파이프라인에 위임된다.
 
         Args:
             tab_type (Any): 검사할 탭 식별자 ('video' 또는 'audio').
@@ -109,18 +103,6 @@ class AVPreviewService:
         try:
             view = self._view
             lang_dict = self._get_lang_dict()
-            if tab_type == "video" and not self._is_dotnet_runtime_available():
-                messagebox.showwarning(
-                    lang_dict.get("dotnet_runtime_missing_title", ".NET Runtime Required"),
-                    lang_dict.get(
-                        "dotnet_runtime_missing_msg",
-                        "A 'Microsoft .NET Runtime' is required to convert video (.usm) files.\n\n"
-                        "Please install .NET Core 3.1 or higher, or .NET 8.0 or higher, and try again.\n"
-                        "(※ Note: This is different from .NET Framework)",
-                    ),
-                    parent=view,
-                )
-                return
             if self._tool_pipeline is None:
                 logger.warning("Tool pipeline is unavailable; skipping preview tool preparation for %s.", tab_type)
                 return

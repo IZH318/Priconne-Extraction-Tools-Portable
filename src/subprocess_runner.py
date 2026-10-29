@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +93,7 @@ class SubprocessRunner:
         cwd: str | Path | None = None,
         timeout: int | None = None,
         cancel_token: Any | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         """표준화된 환경에서 외부 명령어 실행 및 결과 반환.
 
@@ -106,6 +108,7 @@ class SubprocessRunner:
             command (list[str]): 실행할 실행 파일 및 인자 리스트.
             cwd (str | Path | None): 작업 디렉터리 경로. 유효하지 않은 경로인 경우 FileNotFoundError 발생.
             timeout (int | None): 최대 대기 시간(초). 초과 시 subprocess.TimeoutExpired 발생.
+            env (Mapping[str, str] | None): 자식 프로세스에 전달할 환경 변수. None이면 부모 환경을 상속.
 
         Returns:
             subprocess.CompletedProcess: 실행 완료된 프로세스의 반환 코드, stdout, stderr를 담은 객체.
@@ -136,6 +139,7 @@ class SubprocessRunner:
             errors='replace',
             creationflags=creationflags,
             start_new_session=not is_windows,
+            env=env,
         )
         SubprocessRunner._register_process(proc)
         try:

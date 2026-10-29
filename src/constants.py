@@ -1,7 +1,7 @@
 """전역 상수 및 외부 종속 도구 구성 모듈.
 
 애플리케이션 메타데이터, GUI 폴링 주기, 파일 해시 버퍼 크기,
-서브도구별 지원 확장자 및 외부 도구(FFmpeg, UsmToolkit, vgmstream) 다운로드/실행
+서브도구별 지원 확장자 및 외부 도구(FFmpeg, UsmToolkit, vgmstream, .NET Runtime) 다운로드/실행
 관련 상수 정의.
 
 참고:
@@ -85,6 +85,17 @@ FFMPEG_ACCEPTED_MAJOR: Final[int] = 7
 # 사용자가 직접 배치해 사용할 수 있는 최소 지원 버전 (예: 4.4)
 FFMPEG_MIN_SUPPORTED: Final[tuple[int, int, int]] = (4, 4, 0)
 
+# UsmToolkit 실행에 필요한 .NET Runtime 관련 상수
+# UsmToolkit(tfm netcoreapp3.1, rollForward=Major)은 3.1 이상 .NET Runtime에서 실행
+DOTNET_RUNTIME_VERSION: Final[str] = "3.1.32"
+DOTNET_RUNTIME_DIR_NAME: Final[str] = "dotnet"
+DOTNET_EXE_NAME: Final[str] = "dotnet.exe"
+DOTNET_RUNTIME_ZIP_FILENAME: Final[str] = "dotnet_runtime_temp.zip"
+# Windows x64 런타임 ZIP의 SHA-512 (arm64 환경은 x64 에뮬레이션으로 동일 사용)
+DOTNET_RUNTIME_SHA512: Final[str] = "72a3feb6784c5c69cb464ad4a8678e719615bd1e4e9a7c3cf5c1f67a4f01e08c073424532772f1e320d05f63c01079c6a089be45f4777abe035f14ffbf06f38b"
+# UsmToolkit이 요구하는 최소 .NET Runtime 버전 (tfm netcoreapp3.1, rollForward=Major)
+DOTNET_RUNTIME_MIN_VERSION: Final[tuple[int, int]] = (3, 1)
+
 
 def _load_deps_config() -> dict[str, str]:
     """외부 도구 종속성 설정 파일(deps.json) 로드.
@@ -130,6 +141,7 @@ _LAZY_CONSTS = {
     'USMTOOLKIT_URL',
     'FFMPEG_URL',
     'VGMSTREAM_URL',
+    'DOTNET_RUNTIME_URL',
     'DOWNLOAD_SOCKET_TIMEOUT',
     'SUBPROCESS_VIDEO_CONVERT_TIMEOUT',
     'SUBPROCESS_AUDIO_CONVERT_TIMEOUT',
@@ -142,6 +154,7 @@ if TYPE_CHECKING:
     USMTOOLKIT_URL: str
     FFMPEG_URL: str
     VGMSTREAM_URL: str
+    DOTNET_RUNTIME_URL: str
     DOWNLOAD_SOCKET_TIMEOUT: int
     SUBPROCESS_VIDEO_CONVERT_TIMEOUT: int
     SUBPROCESS_AUDIO_CONVERT_TIMEOUT: int
@@ -172,6 +185,9 @@ def _resolve_lazy_const(name: str) -> Any:
         return _env or cfg.get("FFmpeg", FFMPEG_DEFAULT_URL)
     if name == 'VGMSTREAM_URL':
         return cfg.get("Vgmstream", "https://github.com/vgmstream/vgmstream/releases/download/r2117/vgmstream-win.zip")
+    if name == 'DOTNET_RUNTIME_URL':
+        _env = (os.environ.get('PRICONNE_DOTNET_URL') or '').strip()
+        return _env or cfg.get("DotnetRuntime", DOTNET_RUNTIME_DEFAULT_URL)
     if name == 'DOWNLOAD_SOCKET_TIMEOUT':
         return _env_int('PRICONNE_DOWNLOAD_TIMEOUT', 120)
     if name == 'SUBPROCESS_VIDEO_CONVERT_TIMEOUT':
@@ -223,6 +239,8 @@ USMTOOLKIT_ZIP_FILENAME: Final[str] = "usmtoolkit_temp.zip"
 USMTOOLKIT_EXE_NAME: Final[str] = "UsmToolkit.exe"
 
 FFMPEG_DEFAULT_URL: Final[str] = "https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip"
+# .NET Core 3.1.32 Windows x64 런타임 ZIP (공식 릴리스 노트 'Runtime Binaries')
+DOTNET_RUNTIME_DEFAULT_URL: Final[str] = "https://download.visualstudio.microsoft.com/download/pr/d4368ac4-925b-426e-a253-7d675e5cddd6/9749cb293185da421a6958382b5d8b30/dotnet-runtime-3.1.32-win-x64.zip"
 VGMSTREAM_ZIP_FILENAME: Final[str] = "vgmstream_temp.zip"
 VGMSTREAM_EXE_NAME: Final[str] = "vgmstream-cli.exe"
 

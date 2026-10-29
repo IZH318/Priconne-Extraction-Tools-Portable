@@ -109,7 +109,7 @@ def _read_registry() -> list[dict[str, Any]]:
     """레지스트리 항목({path, pid}) 목록 반환.
 
     구버전(경로 문자열 목록)과 현버전(딕셔너리 목록)을 모두 읽어들이며,
-    구버전 항목은 소유자를 알 수 없으므로 pid=None 으로 표기한다.
+    구버전 항목은 소유자를 알 수 없으므로 pid=None으로 표기한다.
 
     Returns:
         list[dict[str, Any]]: {'path': str, 'pid': int | None} 형태의 항목 목록.

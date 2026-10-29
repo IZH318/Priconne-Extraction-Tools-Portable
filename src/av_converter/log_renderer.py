@@ -34,7 +34,7 @@ class AVLogRenderer:
         _add_log_entry (Callable[..., None]): 로그 이벤트 큐 전달 콜백.
         _add_spacing (Callable[..., None]): 로그 빈 줄 추가 콜백.
         _log_queue (queue.Queue[LogEvent]): 타임스탬프 미표기 로그 직접 전달용 큐.
-        _logic (ConversionLogic): 경로 변환·.NET 런타임 조회용 변환 로직 인스턴스.
+        _logic (ConversionLogic): 경로 변환·.NET Runtime 조회용 변환 로직 인스턴스.
         _get_tool_paths (Callable[[], dict[str, Path | None]]): 도구 경로 사전 조회 콜백.
         _get_ffmpeg_downloader (Callable[[], FFmpegDownloader]): FFmpeg 다운로더 조회 콜백.
     """
@@ -56,7 +56,7 @@ class AVLogRenderer:
             add_log_entry (Callable[..., None]): 로그 이벤트를 큐에 전달하는 콜백.
             add_spacing (Callable[..., None]): 로그 빈 줄을 추가하는 콜백.
             log_queue (queue.Queue[LogEvent]): 타임스탬프 없는 원시 로그 전달용 큐 참조.
-            logic (ConversionLogic): 경로 변환 및 .NET 런타임 조회용 변환 로직.
+            logic (ConversionLogic): 경로 변환 및 .NET Runtime 조회용 변환 로직.
             get_tool_paths (Callable[[], dict[str, Path | None]]): 도구 경로 사전 반환 콜백.
             get_ffmpeg_downloader (Callable[[], FFmpegDownloader]): FFmpeg 다운로더 반환 콜백.
         """
@@ -183,6 +183,11 @@ class AVLogRenderer:
             self._add_log_entry(tab, 'env_error', tool_name=tool_name)
             self._add_log_entry(tab, error_desc_key)
 
+    @staticmethod
+    def _format_runtime_versions(entries: list[str]) -> str:
+        """'Microsoft.NETCore.App <version>' 목록에서 버전 문자열만 콤마로 이어붙여 반환."""
+        return ", ".join(entry.split()[-1] for entry in entries)
+
     def log_initial_status(self) -> None:
         """프로그램 시작 시 초기 환경 점검 상태를 비디오/오디오 탭 로그로 출력."""
         tool_paths = self._get_tool_paths()
@@ -195,11 +200,15 @@ class AVLogRenderer:
 
         self._add_log_entry('video', 'env_check_header')
 
-        dotnet_versions = self._logic.get_installed_dotnet_runtimes()
-        if dotnet_versions:
+        by_source = self._logic.get_dotnet_runtimes_by_source()
+        local_versions = by_source.get("local", [])
+        system_versions = by_source.get("system", [])
+        if local_versions or system_versions:
             self._add_log_entry('video', 'env_success', tool_name=".NET Runtime")
-            for ver in dotnet_versions:
-                self._add_log_entry('video', 'env_dotnet_version', version=ver)
+            if local_versions:
+                self._add_log_entry('video', 'env_dotnet_local', versions=self._format_runtime_versions(local_versions))
+            if system_versions:
+                self._add_log_entry('video', 'env_dotnet_system', versions=self._format_runtime_versions(system_versions))
         else:
             self._add_log_entry('video', 'env_error', tool_name=".NET Runtime")
             self._add_log_entry('video', 'env_error_desc_dotnet')

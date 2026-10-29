@@ -6,7 +6,7 @@
 3. Tkinter GUI 이벤트 루프 콜백 예외 (tk_root.report_callback_exception)
 
 시스템 사양, 스택 트레이스, 브레드크럼 기록 및 세션 로그 파일 기록(자동 삭제 없음).
-세션 진단 로그도 기존 작업 로그(write_log_header)와 동일한 형식으로 logs/AppLog_*.log 에 기록.
+세션 진단 로그도 기존 작업 로그(write_log_header)와 동일한 형식으로 logs/AppLog_*.log에 기록.
 """
 from __future__ import annotations
 

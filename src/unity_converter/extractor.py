@@ -691,10 +691,10 @@ class AssetProcessor:
         mtl_name = os.path.splitext(os.path.basename(obj_path))[0] + ".mtl"
         mtl_path = os.path.join(os.path.dirname(obj_path), mtl_name)
         if os.path.normpath(mtl_path) == os.path.normpath(obj_path):
-            # 동일 경로인 경우 MTL 기록이 예약된 OBJ 를 잘라내므로 파일명을 분리.
+            # 동일 경로인 경우 MTL 기록이 예약된 OBJ를 잘라내므로 파일명을 분리.
             mtl_name = os.path.splitext(os.path.basename(obj_path))[0] + "_mat.mtl"
             mtl_path = os.path.join(os.path.dirname(obj_path), mtl_name)
-        # export_mesh_obj 는 mtllib 라인을 원본 메시명으로 출력하므로 실제 예약 파일명으로 정정.
+        # export_mesh_obj는 mtllib 라인을 원본 메시명으로 출력하므로 실제 예약 파일명으로 정정.
         exported = exported.replace(f"mtllib {getattr(data, 'm_Name', '')}.mtl", f"mtllib {mtl_name}", 1)
         with handle:
             handle.write(exported)
@@ -708,7 +708,7 @@ class AssetProcessor:
             logger.warning("Failed to write companion .mtl %s: %s", mtl_name, exc)
 
         if not mtl_written:
-            # MTL 기록 실패 시 존재하지 않는 파일을 가리키는 mtllib 참조를 OBJ 에서 제거
+            # MTL 기록 실패 시 존재하지 않는 파일을 가리키는 mtllib 참조를 OBJ에서 제거
             try:
                 stripped = re.sub(
                     rf"^mtllib\s+{re.escape(mtl_name)}\s*\r?\n?", "", exported, count=1, flags=re.MULTILINE

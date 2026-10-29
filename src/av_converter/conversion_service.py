@@ -1,8 +1,8 @@
 """AV Converter 변환 서비스 모듈.
 
 비디오(.usm) 및 오디오(.awb) 변환 작업의 전처리 유효성 검사,
-.NET 런타임 및 외부 툴체인 준비 확인, 백그라운드 변환 스레드 생성과
-취소 토큰(CancellationToken) 연결 및 변환 제어.
+백그라운드 변환 스레드 생성과 취소 토큰(CancellationToken) 연결 및 변환 제어.
+(.NET Runtime 및 외부 툴체인 준비는 백그라운드 파이프라인이 담당)
 """
 
 from __future__ import annotations
@@ -11,7 +11,6 @@ import contextlib
 import threading
 import tkinter as tk
 from collections.abc import Callable
-from tkinter import messagebox
 from typing import Any
 
 from src.constants import SENTINEL_AUDIO_DONE, SENTINEL_VIDEO_DONE
@@ -49,7 +48,6 @@ class AVConversionService:
         start_tool_preparation: Callable[..., None],
         set_conversion_thread: Callable[[Any, Any], None],
         resume_polling: Callable[[], None],
-        is_dotnet_runtime_available: Callable[[], bool],
     ) -> None:
         """AVConversionService 초기화.
 
@@ -69,7 +67,6 @@ class AVConversionService:
             start_tool_preparation (Callable[..., None]): 툴 준비 트리거 콜백.
             set_conversion_thread (Callable[[Any, Any], None]): 변환 스레드 등록 콜백.
             resume_polling (Callable[[], None]): 폴링 재개 콜백.
-            is_dotnet_runtime_available (Callable[[], bool]): .NET 런타임 가용 여부 콜백.
         """
         self._view: Any = view if view is not None else {}
         self._logic = logic
@@ -86,14 +83,13 @@ class AVConversionService:
         self._start_tool_preparation = start_tool_preparation if callable(start_tool_preparation) else (lambda *a, **k: None)
         self._set_conversion_thread = set_conversion_thread if callable(set_conversion_thread) else (lambda *a, **k: None)
         self._resume_polling = resume_polling if callable(resume_polling) else (lambda: None)
-        self._is_dotnet_runtime_available = (
-            is_dotnet_runtime_available if callable(is_dotnet_runtime_available) else (lambda: False)
-        )
         self._converting: dict[str, bool] = {"video": False, "audio": False}
         self._start_lock: threading.Lock = threading.Lock()
 
     def start_video_conversion(self, output_dir: str) -> None:
-        """비디오 변환 전 파일 목록, 출력 경로, .NET 런타임 환경 검증 및 변환 준비 시작.
+        """비디오 변환 전 파일 목록, 출력 경로 검증 및 변환 준비 시작.
+
+        .NET Runtime 및 외부 툴체인 준비는 백그라운드 파이프라인에서 자동 수행된다.
 
         Args:
             output_dir (str): 변환된 비디오 파일들을 저장할 대상 폴더 경로.
@@ -104,19 +100,6 @@ class AVConversionService:
             return
         if not output_dir:
             self._add_log_entry("video", "error_no_output_video")
-            return
-        lang_dict = self._get_lang_dict()
-        if not self._is_dotnet_runtime_available():
-            messagebox.showwarning(
-                lang_dict.get("dotnet_runtime_missing_title", ".NET Runtime Required"),
-                lang_dict.get(
-                    "dotnet_runtime_missing_msg",
-                    "A 'Microsoft .NET Runtime' is required to convert video (.usm) files.\n\n"
-                    "Please install .NET Core 3.1 or higher, or .NET 8.0 or higher, and try again.\n"
-                    "(※ Note: This is different from .NET Framework)",
-                ),
-                parent=self._view,
-            )
             return
         from src.breadcrumbs import add_breadcrumb
 

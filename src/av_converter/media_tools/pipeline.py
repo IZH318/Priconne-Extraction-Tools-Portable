@@ -12,6 +12,7 @@ from src.constants import TabType
 from src.queue_events import LogEvent
 from src.utils.task_pool import DaemonThreadPoolExecutor
 
+from .dotnet import DotnetRuntimeDownloader
 from .ffmpeg import FFmpegDownloader
 from .usmtoolkit import UsmToolkitDownloader
 from .vgmstream import VgmstreamDownloader
@@ -50,6 +51,10 @@ class ToolPipelineManager:
             log_queue=self.log_queue,
             usmtoolkit_path_parent_dir=self.usmtoolkit_dir,
         )
+        self.dotnet_downloader = DotnetRuntimeDownloader(
+            log_queue=self.log_queue,
+            usmtoolkit_dir=self.usmtoolkit_dir,
+        )
 
     def _log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
         """로그 메시지를 통신 큐에 추가."""
@@ -78,21 +83,27 @@ class ToolPipelineManager:
         """지정된 탭 타입에 필요한 도구들을 올바른 계층 순서로 준비."""
         self.last_prepare_fail = None
         if tab_type == 'video':
-            # 1. UsmToolkit 준비 (usmtoolkit 폴더 생성 및 압축 해제, config/deps 필터링)
+            # 1. .NET Runtime 준비 (UsmToolkit 실행에 필요, 시스템에 있으면 건너뜀)
+            if not self.dotnet_downloader.ensure_ready():
+                self.last_prepare_fail = 'dotnet_prepare_fail'
+                self._log_entry('video', 'dotnet_prepare_fail')
+                return False
+
+            # 2. UsmToolkit 준비 (usmtoolkit 폴더 생성 및 압축 해제, config/deps 필터링)
             self.usmtoolkit_downloader.target_tab = 'video'
             if not self.usmtoolkit_downloader.ensure_ready():
                 self.last_prepare_fail = 'usmtoolkit_prepare_fail'
                 self._log_entry('video', 'usmtoolkit_prepare_fail')
                 return False
 
-            # 2. vgmstream 준비 (usmtoolkit/vgmstream 폴더에 압축 해제 및 test.exe 복사)
+            # 3. vgmstream 준비 (usmtoolkit/vgmstream 폴더에 압축 해제 및 test.exe 복사)
             self.vgmstream_downloader.target_tab = 'video'
             if not self.vgmstream_downloader.ensure_ready():
                 self.last_prepare_fail = 'vgmstream_prepare_fail'
                 self._log_entry('video', 'vgmstream_prepare_fail')
                 return False
 
-            # 3. FFmpeg 준비 (usmtoolkit/ffmpeg.exe)
+            # 4. FFmpeg 준비 (usmtoolkit/ffmpeg.exe)
             if not self.ffmpeg_downloader._actual_download_and_extract():
                 self.last_prepare_fail = 'ffmpeg_prepare_fail'
                 self._log_entry('video', 'ffmpeg_prepare_fail')

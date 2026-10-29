@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import sys
 
-# GetExitCodeProcess 가 반환하는 STILL_ACTIVE 값
+# GetExitCodeProcess가 반환하는 STILL_ACTIVE 값
 _STILL_ACTIVE: int = 259
 
 # 프로세스 부재를 확정하는 OpenProcess 오류 코드 (ERROR_INVALID_PARAMETER, ERROR_FILE_NOT_FOUND, ERROR_NOT_FOUND)

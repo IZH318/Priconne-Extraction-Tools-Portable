@@ -142,7 +142,7 @@ class AppContainer:
             for child in list(self._base_temp_dir.iterdir()):
                 if not (child.name.startswith(SESSION_DIR_PREFIX) and child != self.app_temp_dir):
                     continue
-                # 심볼릭 링크는 is_dir()/rmtree 가 대상 경로를 따라가므로 우선 제외
+                # 심볼릭 링크는 is_dir()/rmtree가 대상 경로를 따라가므로 우선 제외
                 if child.is_symlink():
                     continue
                 try:

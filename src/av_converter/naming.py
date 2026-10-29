@@ -39,13 +39,13 @@ def sanitize_stream_filename(name: str) -> str:
 
 
 def expected_output_extension(usmtoolkit_dir: Path) -> str:
-    """usmtoolkit/config.json 의 OutputFormat 을 읽어 실제 출력 파일 확장자를 결정.
+    """usmtoolkit/config.json의 OutputFormat을 읽어 실제 출력 파일 확장자를 결정.
 
-    UsmToolkit 은 동일 폴더의 config.json 값을 사용해 인코딩/먹싱을 수행하므로,
+    UsmToolkit은 동일 폴더의 config.json 값을 사용해 인코딩/먹싱을 수행하므로,
     이 값과 기대 확장자가 어긋나면 성공한 변환을 실패로 오판하게 된다.
 
     Args:
-        usmtoolkit_dir (Path): UsmToolkit.exe 가 위치한 폴더 경로.
+        usmtoolkit_dir (Path): UsmToolkit.exe가 위치한 폴더 경로.
 
     Returns:
         str: 점(.) 없는 소문자 확장자. 파일 미존재/파싱 실패 시 기본값 'mp4'.

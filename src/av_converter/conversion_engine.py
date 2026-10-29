@@ -19,7 +19,8 @@ from typing import TYPE_CHECKING, Any
 from src.constants import (
     AV_STEM_HASH_LEN,
     AV_TEMP_EXTENSIONS,
-    DOTNET_RUNTIME_PROBE_TIMEOUT,
+    DOTNET_EXE_NAME,
+    DOTNET_RUNTIME_DIR_NAME,
     SENTINEL_AUDIO_DONE,
     SENTINEL_VIDEO_DONE,
     SUBPROCESS_AUDIO_CONVERT_TIMEOUT,
@@ -34,6 +35,12 @@ from src.subprocess_runner import ProcessCancelledError, SubprocessRunner
 from src.utils.task_pool import DaemonThreadPoolExecutor
 from src.utils.temp_registry import register_temp_artifact, unregister_temp_artifact
 
+from .media_tools.probe import (
+    collect_local_dotnet_runtimes,
+    collect_system_dotnet_runtimes,
+    find_satisfying_dotnet_runtime,
+    is_dotnet_force_local_runtime,
+)
 from .naming import expected_output_extension, sanitize_stream_filename
 
 if TYPE_CHECKING:
@@ -112,7 +119,7 @@ class ConversionLogic:
                 if item.name == f"{stem}{item.suffix}":
                     removable = True
                 # 2. 접두사 + 숫자 (다중 오디오 스트림: movie_0.adx 등)
-                #    다른 입력의 stem 과 겹치면 그 작업의 중간 파일이므로 남겨둔다.
+                #    다른 입력의 stem과 겹치면 그 작업의 중간 파일이므로 남겨둔다.
                 elif item.stem.startswith(prefix) and item.stem[len(prefix):].isdigit():
                     removable = item.stem.lower() not in protected
                 else:
@@ -183,6 +190,8 @@ class ConversionLogic:
         """
         self.log_queue = log_queue
         self.base_path = base_path
+        # 시스템 .NET 요구 버전 충족 여부 캐시 (세션 중 1회 계산)
+        self._system_dotnet_ok: bool | None = None
 
     def _log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
         """로그 메시지를 통신 큐에 추가."""
@@ -199,28 +208,42 @@ class ConversionLogic:
         """외부 프로세스를 실행하고 출력을 캡처하는 헬퍼 함수."""
         return SubprocessRunner.run(command, timeout=SUBPROCESS_AUDIO_CONVERT_TIMEOUT, cancel_token=cancel_token)
 
-    @staticmethod
-    def get_installed_dotnet_runtimes() -> list[str]:
-        """`dotnet --list-runtimes`로 조회한 .NET Runtime (Microsoft.NETCore.App) 버전 목록 반환."""
-        versions: list[str] = []
-        dotnet_exe = shutil.which('dotnet')
-        if dotnet_exe and Path(dotnet_exe).is_file():
-            try:
-                res = SubprocessRunner.run([dotnet_exe, '--list-runtimes'], timeout=DOTNET_RUNTIME_PROBE_TIMEOUT)
-                if res.returncode == 0:
-                    for line in res.stdout.splitlines():
-                        parts = line.strip().split()
-                        if len(parts) >= 2 and parts[0] == 'Microsoft.NETCore.App':
-                            versions.append(f"{parts[0]} {parts[1]}")
-            except (OSError, subprocess.SubprocessError, ValueError) as exc:
-                logger.debug("Failed to list dotnet runtimes: %s", exc)
-        seen = set()
-        result = []
-        for v in versions:
-            if v not in seen:
-                seen.add(v)
-                result.append(v)
-        return result
+    def get_dotnet_runtimes_by_source(self) -> dict[str, list[str]]:
+        """.NET Runtime (Microsoft.NETCore.App) 목록을 출처별(system/local)로 반환."""
+        return {
+            "system": collect_system_dotnet_runtimes(),
+            "local": collect_local_dotnet_runtimes(self.base_path),
+        }
+
+    def _system_dotnet_satisfies(self) -> bool:
+        """시스템 .NET Runtime이 UsmToolkit 요구 버전(3.1 이상)을 만족하는지 여부 (1회 캐시)."""
+        if self._system_dotnet_ok is None:
+            self._system_dotnet_ok = find_satisfying_dotnet_runtime(collect_system_dotnet_runtimes()) is not None
+        return self._system_dotnet_ok
+
+    def dotnet_runtime_env(self, usmtoolkit_dir: Path) -> dict[str, str] | None:
+        """UsmToolkit 실행 시 주입할 자식 프로세스 환경을 반환.
+
+        시스템 런타임이 요구 버전을 만족하면 None을 반환하여 시스템 런타임을 그대로 사용하고,
+        그렇지 않으면 로컬(usmtoolkit/dotnet) 런타임을 가리키도록 DOTNET_ROOT를 주입한다.
+        시스템 환경변수는 변경하지 않으며, 자식 프로세스에만 적용된다.
+
+        Args:
+            usmtoolkit_dir (Path): UsmToolkit.exe가 위치한 폴더 경로.
+
+        Returns:
+            dict[str, str] | None: DOTNET_ROOT가 추가된 환경 맵 또는 (시스템 런타임 사용 시) None.
+        """
+        if not is_dotnet_force_local_runtime() and self._system_dotnet_satisfies():
+            return None
+        dotnet_dir = usmtoolkit_dir / DOTNET_RUNTIME_DIR_NAME
+        if not (dotnet_dir / DOTNET_EXE_NAME).is_file():
+            return None
+        env = dict(os.environ)
+        env["DOTNET_ROOT"] = str(dotnet_dir)
+        # 머신 전역 .NET 조회를 비활성화하여 지정한 로컬 런타임만 사용하도록 강제
+        env["DOTNET_MULTILEVEL_LOOKUP"] = "0"
+        return env
 
     def _convert_single_video_task(
         self,
@@ -241,7 +264,7 @@ class ConversionLogic:
             target_stem (str | None): 출력 파일 stem. 동일 stem 입력 충돌 시 호출자가
                 입력 경로 기반 접미사를 붙여 전달하며, None이면 원본 stem을 사용.
             protected_stems (set[str] | None): 같은 배치의 다른 입력 stem 집합.
-                해당 stem 의 중간 파일은 그 작업이 직접 정리하도록 남겨둔다.
+                해당 stem의 중간 파일은 그 작업이 직접 정리하도록 남겨둔다.
 
         Returns:
             tuple: (변환 상태 문자열, 로그 항목 리스트)
@@ -282,8 +305,9 @@ class ConversionLogic:
             # 디먹싱 시작 전 소스 폴더 스냅샷 (기존 사용자 파일을 중간 파일로 오인 삭제하지 않도록)
             pre_existing_files = self._snapshot_directory(usm_file.parent)
             try:
-                # 외부 UsmToolkit 프로세스 실행
-                result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir), timeout=SUBPROCESS_VIDEO_CONVERT_TIMEOUT, cancel_token=cancel_token)
+                # 외부 UsmToolkit 프로세스 실행 (로컬 런타임 사용 시 자식 프로세스에만 주입)
+                result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir), timeout=SUBPROCESS_VIDEO_CONVERT_TIMEOUT,
+                                              cancel_token=cancel_token, env=self.dotnet_runtime_env(usmtoolkit_dir))
 
                 log_entries.append(('conv_log_result_header', {}))
 
@@ -323,7 +347,7 @@ class ConversionLogic:
                             log_entries.append(('raw', {'text': ''}))
                             log_entries.extend([('raw', {'text': f"    > {line}"}) for line in filtered_stderr])
 
-                    # 이전 실패로 남은 미완성 파일(.partial) 제거 (중간 파일은 finally 에서 정리)
+                    # 이전 실패로 남은 미완성 파일(.partial) 제거 (중간 파일은 finally에서 정리)
                     self._discard_quarantined_output(final_mp4_path)
                 else:
                     status = "error"
@@ -348,7 +372,7 @@ class ConversionLogic:
                 self._quarantine_output(final_mp4_path)
             finally:
                 # 성공/실패/타임아웃 어느 경로에서도 디먹싱 중간 파일을 정리한다.
-                # (UsmToolkit 은 정상 완료 시 스스로 정리하므로, 이 정리는 중단/실패 대비 안전망이다)
+                # (UsmToolkit은 정상 완료 시 스스로 정리하므로, 이 정리는 중단/실패 대비 안전망이다)
                 self._cleanup_intermediate_files(
                     usm_file.parent, usm_file.stem, pre_existing_files, protected_stems
                 )
@@ -640,11 +664,11 @@ class ConversionLogic:
 
         Args:
             item_path_str (str): 대상 오디오 컨테이너 경로.
-            output_dir (str): 결과 WAV 를 저장할 루트 폴더.
+            output_dir (str): 결과 WAV를 저장할 루트 폴더.
             vgmstream_path (Path | str): vgmstream 실행 파일 경로.
             overwrite (bool): 기존 WAV 덮어쓰기 여부.
             target_stem (str | None): 출력 하위 폴더명. 동일 stem 입력 충돌 시 호출자가
-                입력 경로 기반 접미사를 붙여 전달하며, None 이면 원본 stem 을 사용.
+                입력 경로 기반 접미사를 붙여 전달하며, None이면 원본 stem을 사용.
 
         Returns:
             tuple: (변환된 트랙 수, 로그 항목 리스트, 에러 상세)
@@ -766,7 +790,8 @@ class ConversionLogic:
         # 미리보기 변환 시작 전 소스 폴더 스냅샷 (기존 사용자 파일을 중간 파일로 오인 삭제하지 않도록)
         pre_existing_files = self._snapshot_directory(usm_file.parent)
         try:
-            result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir), timeout=SUBPROCESS_PREVIEW_TIMEOUT)
+            result = SubprocessRunner.run(command, cwd=str(usmtoolkit_dir), timeout=SUBPROCESS_PREVIEW_TIMEOUT,
+                                          env=self.dotnet_runtime_env(usmtoolkit_dir))
             if self._is_valid_output_file(final_mp4_path):
                 return final_mp4_path, None
             else:
