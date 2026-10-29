@@ -2,7 +2,7 @@
 
 단일/다중 스토리 스크립트 파일을 텍스트(.txt) 또는 마크다운(.md)으로 변환 내보내기,
 선택지 포함 여부 및 화자 서식 지정, 파일 명명 규칙(원본/제목/ID_제목),
-데이터베이스 부가 데이터(캐릭터 프로필, 음성 대사, 이벤트 목록) 일괄 내보내기 전담.
+데이터베이스 부가 데이터(캐릭터 프로필, 음성 대사, 이벤트 목록) 일괄 내보내기 담당.
 """
 
 from __future__ import annotations
@@ -10,14 +10,13 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import queue
 import re
 import sqlite3
 import tkinter as tk
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypedDict
 
-from src.queue_events import ActionEvent
+from src.utils.tk_safe import post_to_ui
 from src.utils.platform_open import open_with_default_app
 
 from . import db_helper
@@ -52,9 +51,38 @@ FILENAME_SANITIZE_MAP = str.maketrans({
 })
 
 
+_WINDOWS_RESERVED_DEVICE_NAMES: frozenset[str] = frozenset(
+    {"CON", "PRN", "AUX", "NUL", *[f"COM{i}" for i in range(1, 10)], *[f"LPT{i}" for i in range(1, 10)]}
+)
+
+
 def sanitize_filename(name: str) -> str:
-    """윈도우 파일 시스템 금지 문자를 전각 문자로 1:1 치환."""
-    return name.translate(FILENAME_SANITIZE_MAP).strip()
+    """윈도우 파일 시스템 금지 문자를 전각 문자로 1:1 치환하고 예약어 충돌 방지."""
+    sanitized = name.translate(FILENAME_SANITIZE_MAP).strip().rstrip(" .")
+    # Windows 예약 디바이스명(CON, NUL, COM1 등)은 확장자와 무관하게 예약되어 접두사(_)를 붙여 충돌 방지
+    if sanitized.split(".", 1)[0].upper() in _WINDOWS_RESERVED_DEVICE_NAMES:
+        sanitized = f"_{sanitized}"
+    return sanitized
+
+
+def make_unique_export_path(output_path: str) -> str:
+    """이미 존재하는 경로면 덮어쓰지 않고 ' (n)' 접미사를 붙인 고유 경로를 반환.
+
+    Args:
+        output_path: 후보 출력 파일 경로.
+
+    Returns:
+        str: 기존 파일이 없으면 원본 경로, 있으면 충돌을 피한 새 경로.
+    """
+    if not os.path.exists(output_path):
+        return output_path
+    base, ext = os.path.splitext(output_path)
+    counter = 2
+    candidate = f"{base} ({counter}){ext}"
+    while os.path.exists(candidate):
+        counter += 1
+        candidate = f"{base} ({counter}){ext}"
+    return candidate
 
 
 def resolve_export_filename(
@@ -110,127 +138,84 @@ def resolve_export_filename(
 
 
 def _format_script_mode_markdown(data: dict[str, Any], lang_dict: dict[str, str]) -> str:
-    """대본(script) 모드 데이터를 마크다운 문법에 완벽히 맞춰 포매팅."""
-    scene_keys = sorted(data.keys(), key=lambda x: int(x) if x.isdigit() else float('inf'))
+    """대본(script) 모드 데이터를 마크다운 규격에 맞춰 포매팅.
 
-    outline_title = lang_dict.get('script_outline_title', 'Synopsis')
+    StoryFormatter.iter_script_nodes의 공용 장면 순회 결과를 마크다운으로 렌더링.
+
+    Args:
+        data: 포맷팅할 스토리 데이터 딕셔너리.
+        lang_dict: 다국어 딕셔너리.
+
+    Returns:
+        마크다운 문자열.
+    """
+    # 다국어 라벨 획득
     branch_point_label = lang_dict.get('script_branch_point', 'Branch Point')
     choice_item_label = lang_dict.get('script_choice_item', 'Choice')
-    branch_dialogue_label = lang_dict.get('script_branch_dialogue', 'Branch Dialogue')
-    branch_label_fmt = lang_dict.get('script_branch_label_fmt', '{dialogue_label} for {choice_label} #{idx}')
-    branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', 'Leads to [Scene {scene}]')
-    branch_end_label = lang_dict.get('script_branch_end', '[End of Story]')
     place_prefix = lang_dict.get('script_place_prefix', 'Place')
-    no_dialogue_msg = lang_dict.get('script_no_dialogue', 'This story has no dialogue data')
-
-    structure = StoryFormatter.resolve_story_branches(data)
-    scene_to_branch = structure.scene_to_branch
-    merge_scenes = structure.merge_scenes
-    tag_to_scene = structure.tag_to_scene
 
     md_out: list[str] = []
-    scene_0 = data.get('0', {})
-    title = str(scene_0.get('title', '') or '').strip() if isinstance(scene_0, dict) else ''
-    situation = str(scene_0.get('situation', '') or '').strip() if isinstance(scene_0, dict) else ''
-    outline = str(scene_0.get('outline', '') or '').strip() if isinstance(scene_0, dict) else ''
+    for node in StoryFormatter.iter_script_nodes(data, lang_dict):
+        b_prefix = "> " if node.in_branch else ""
 
-    if title and situation and title != situation:
-        md_out.append(f"# {title}\n\n### {situation}\n\n")
-    elif title:
-        md_out.append(f"# {title}\n\n")
-    elif situation:
-        md_out.append(f"# {situation}\n\n")
+        # 상단 타이틀 및 줄거리 노드
+        if node.kind == 'header':
+            if node.title and node.situation and node.title != node.situation:
+                md_out.append(f"# {node.title}\n\n### {node.situation}\n\n")
+            elif node.title:
+                md_out.append(f"# {node.title}\n\n")
+            elif node.situation:
+                md_out.append(f"# {node.situation}\n\n")
 
-    if outline:
-        md_out.append(f"---\n\n### 【 {outline_title} 】\n\n{outline}\n\n---\n\n")
-    elif title or situation:
-        md_out.append("---\n\n")
+            if node.outline:
+                md_out.append(f"---\n\n### 【 {node.outline_title} 】\n\n{node.outline}\n\n---\n\n")
+            elif node.title or node.situation:
+                md_out.append("---\n\n")
 
-    has_dialogue = False
-    last_place = None
+        # 합류 씬 헤더 노드
+        elif node.kind == 'merge':
+            md_out.append(f"---\n\n### ═ [ Scene {node.scene_key} ] ═\n\n")
 
-    for key in scene_keys:
-        scene = data[key]
-        if not isinstance(scene, dict):
-            continue
-        has_content = ('print' in scene or 'choice' in scene or 'place' in scene or 'situation' in scene)
-        if key != '0' and not has_content:
-            continue
+        # 분기 씬 헤더 노드
+        elif node.kind == 'branch_start':
+            md_out.append(f"> #### ┌─ [ {node.scene_range} | {node.branch_label}{node.tag_suffix} ] ─┐\n>\n")
 
-        if key != '0' and key in merge_scenes:
-            md_out.append(f"---\n\n### ═ [ Scene {key} ] ═\n\n")
+        # 장소 노드
+        elif node.kind == 'place':
+            md_out.append(f"{b_prefix}*[{place_prefix}: {node.place}]*\n{b_prefix}\n")
 
-        b = scene_to_branch.get(key)
-        is_branch_start = bool(b and b.scenes and b.scenes[0] == key)
-        is_branch_end = bool(b and b.scenes and b.scenes[-1] == key)
+        # 대사 노드
+        elif node.kind == 'print':
+            if node.speaker:
+                md_out.append(f"{b_prefix}**[{node.speaker}]**  \n")
+            for line in node.lines:
+                md_out.append(f"{b_prefix}{line}  \n")
+            md_out.append(f"{b_prefix}\n")
 
-        if is_branch_start:
-            assert b is not None
-            r_str = f"Scene {b.scenes[0]}~{b.scenes[-1]}" if len(b.scenes) > 1 else f"Scene {key}"
-            tag_str = f" (Tag {b.tag})" if b.tag else ""
-            lbl = branch_label_fmt.format(choice_label=choice_item_label, idx=b.choice_idx, dialogue_label=branch_dialogue_label)
-            md_out.append(f"> #### ┌─ [ {r_str} | {lbl}{tag_str} ] ─┐\n>\n")
-            has_dialogue = True
-
-        b_prefix = "> " if b is not None else ""
-
-        raw_place = scene.get('place')
-        p_str = ""
-        if isinstance(raw_place, list) and raw_place:
-            p_str = str(raw_place[0]).strip()
-        elif isinstance(raw_place, str):
-            p_str = raw_place.strip()
-
-        if p_str and p_str != title and p_str != situation and p_str != last_place:
-            md_out.append(f"{b_prefix}*[{place_prefix}: {p_str}]*\n{b_prefix}\n")
-            last_place = p_str
-            has_dialogue = True
-
-        p_data = scene.get('print')
-        if p_data and isinstance(p_data, dict):
-            speaker = str(p_data.get('name', '') or '').strip()
-            text = str(p_data.get('text', '') or '').strip()
-            if text:
-                has_dialogue = True
-                if speaker:
-                    md_out.append(f"{b_prefix}**[{speaker}]**  \n")
-                lines = text.splitlines()
-                for line in lines:
-                    md_out.append(f"{b_prefix}{line}  \n")
-                md_out.append(f"{b_prefix}\n")
-
-        choices = scene.get('choice')
-        if choices and isinstance(choices, list) and len(choices) > 0:
-            has_dialogue = True
-            if len(choices) > 1:
-                md_out.append(f"{b_prefix}**▼ [{branch_point_label} | Scene {key}]**\n{b_prefix}\n")
-                for idx, c in enumerate(choices, 1):
-                    c_text = c.get('text', '') if isinstance(c, dict) else str(c)
-                    c_tag = str(c.get('tag', '') or '').strip() if isinstance(c, dict) else ""
-                    target_sc = tag_to_scene.get(c_tag)
-                    dest = f"[Scene {target_sc}]" if target_sc else ""
-                    tag_str = f" *(Tag {c_tag})*" if c_tag else ""
+        # 선택지 노드
+        elif node.kind == 'choice':
+            if len(node.choices) > 1:
+                md_out.append(f"{b_prefix}**▼ [{branch_point_label} | Scene {node.scene_key}]**\n{b_prefix}\n")
+                for choice in node.choices:
+                    dest = f"[Scene {choice.target_scene}]" if choice.target_scene else ""
+                    tag_str = f" *(Tag {choice.tag})*" if choice.tag else ""
                     dest_str = f" ➔ **{dest}**" if dest else ""
-                    md_out.append(f"{b_prefix}- **[{choice_item_label} {idx}]** {c_text}{tag_str}{dest_str}  \n")
+                    md_out.append(f"{b_prefix}- **[{choice_item_label} {choice.idx}]** {choice.text}{tag_str}{dest_str}  \n")
                 md_out.append(f"{b_prefix}\n")
             else:
-                c = choices[0]
-                c_text = c.get('text', '') if isinstance(c, dict) else str(c)
-                c_tag = str(c.get('tag', '') or '').strip() if isinstance(c, dict) else ""
-                target_sc = tag_to_scene.get(c_tag)
-                target_dest = f" ➔ **[Scene {target_sc}]**" if target_sc else ""
-                tag_str = f" *(Tag {c_tag})*" if c_tag else ""
-                md_out.append(f"{b_prefix}**─ [ {choice_item_label} | Scene {key} ] ─**  \n")
-                md_out.append(f"{b_prefix}1. {c_text}{tag_str}{target_dest}  \n{b_prefix}\n")
+                choice = node.choices[0]
+                target_dest = f" ➔ **[Scene {choice.target_scene}]**" if choice.target_scene else ""
+                tag_str = f" *(Tag {choice.tag})*" if choice.tag else ""
+                md_out.append(f"{b_prefix}**─ [ {choice_item_label} | Scene {node.scene_key} ] ─**  \n")
+                md_out.append(f"{b_prefix}1. {choice.text}{tag_str}{target_dest}  \n{b_prefix}\n")
 
-        if is_branch_end:
-            assert b is not None
-            dest_scene = b.destination
-            label = branch_leads_to_fmt.format(scene=dest_scene) if dest_scene else branch_end_label
-            md_out.append(f">\n> └── ▶ **{label}**\n\n")
+        # 분기 씬 박스 마감 노드
+        elif node.kind == 'branch_end':
+            md_out.append(f">\n> └── ▶ **{node.leads_to}**\n\n")
 
-    if not has_dialogue and not (title or outline):
-        md_out.append(f"*({no_dialogue_msg})*\n")
+        # 대사 없음 안내 노드
+        elif node.kind == 'no_dialogue':
+            md_out.append(f"*({node.message})*\n")
 
     return "".join(md_out)
 
@@ -286,7 +271,6 @@ class StoryExportHandler:
     def __init__(
         self,
         get_lang_dict: Callable[[], dict[str, str]],
-        task_queue: queue.Queue[ActionEvent],
         master: tk.Tk | tk.Toplevel,
         view_mode_var: tk.StringVar,
         get_current_filenames: Callable[[], list[str]],
@@ -300,7 +284,6 @@ class StoryExportHandler:
         shared_state: Any = None,
     ) -> None:
         self._get_lang_dict = get_lang_dict
-        self._task_queue = task_queue
         self._master = master
         self._view_mode_var = view_mode_var
         self._get_current_filenames = get_current_filenames
@@ -316,6 +299,7 @@ class StoryExportHandler:
     @staticmethod
     def _save_list_to_file(data_list: list[str], filename_suffix: str, output_folder: str, header: str = "", empty_msg: str | None = None) -> tuple[bool, Exception | None]:
         output_path = os.path.join(output_folder, f"{filename_suffix}.txt")
+        output_path = make_unique_export_path(output_path)
         try:
             with open(output_path, 'w', encoding='utf-8') as f:
                 if data_list:
@@ -327,7 +311,7 @@ class StoryExportHandler:
                         empty_msg = f"(No data found for {filename_suffix})"
                     f.write(f"{empty_msg}\n")
             return True, None
-        except OSError as e:
+        except (OSError, UnicodeError) as e:
             return False, e
 
     def export_master_thread(
@@ -412,11 +396,11 @@ class StoryExportHandler:
 
             active_other_tasks = [t for t in other_export_types if selected_options.get(t['type'])]
 
-            # 3. 안 B: 전체 작업 총합 계산 (스토리 파일 수 + 기타 목록 수)
+            # 3. 전체 작업 총합 계산 (스토리 파일 수 + 기타 목록 수)
             total_items = (len(filenames_to_export) if selected_options.get('story_data') else 0) + len(active_other_tasks)
             current_step = 0
 
-            # --- A. 스토리 데이터 추출 진행 ---
+            # 스토리 데이터 내보내기 진행
             if selected_options.get('story_data'):
                 if not filenames_to_export:
                     no_files_msg = lang_dict.get('msgbox_no_export_files_msg', 'There are no files to export.')
@@ -448,7 +432,7 @@ class StoryExportHandler:
 
                         def _update_status(tn: str = type_name, s: int = success_count, f: int = fail_count, step: int = current_step, tot: int = total_items) -> None:
                             self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=s, failed=f, i=step, t=tot)
-                        self._task_queue.put(ActionEvent(action=_update_status))
+                        post_to_ui(_update_status)
 
                         filepath = all_files.get(filename)
                         if not filepath:
@@ -468,7 +452,7 @@ class StoryExportHandler:
                             filename, naming_rule, file_titles, target_ext, duplicate_titles=duplicate_titles
                         )
 
-                        # 2차 충돌 안전 방어 (혹시 이미 사용된 파일명이 존재하는 경우)
+                        # 2차 파일명 충돌 방지 (혹시 이미 사용된 파일명이 존재하는 경우)
                         if out_fname in used_filenames:
                             f_base, f_ext = os.path.splitext(out_fname)
                             match_id = re.match(r'^storydata_(\d+)$', os.path.splitext(filename)[0])
@@ -481,13 +465,15 @@ class StoryExportHandler:
                                 counter += 1
 
                         used_filenames.add(out_fname)
-                        output_path = os.path.join(output_folder, out_fname)
+                        output_path = make_unique_export_path(os.path.join(output_folder, out_fname))
+                        # 접미사가 붙은 실제 파일명도 중복 집합에 등록해 후속 항목과의 충돌을 방지
+                        used_filenames.add(os.path.basename(output_path))
                         try:
                             text_to_write = format_content_for_export(data, target_view_mode, self._get_lang_dict(), file_format)
                             with open(output_path, 'w', encoding='utf-8') as f:
                                 f.write(text_to_write)
                             success_count += 1
-                        except (OSError, json.JSONDecodeError) as e:
+                        except (OSError, json.JSONDecodeError, UnicodeError) as e:
                             fail_count += 1
                             err_fmt = lang_dict.get('export_err_detail_format', '{name} (Error: {e})')
                             current_failed_details.append(err_fmt.format(name=filename, e=e, item=filename, err=e))
@@ -497,7 +483,7 @@ class StoryExportHandler:
                     total_failed_count += fail_count
                     all_failed_details.extend(current_failed_details)
 
-            # --- B. 기타 목록 데이터 추출 진행 ---
+            # 기타 목록 데이터 내보내기 진행
             if not was_cancelled:
                 for task in active_other_tasks:
                     if check_cancelled and check_cancelled():
@@ -513,7 +499,7 @@ class StoryExportHandler:
 
                     def _make_status_action(tn: str = type_name) -> Callable[[], None]:
                         return lambda: self._view.update_status_bar('status_bar_exporting_type', type_name=tn, success=0, failed=0)
-                    self._task_queue.put(ActionEvent(action=_make_status_action(type_name)))
+                    post_to_ui(_make_status_action(type_name))
                     try:
                         data_list = task['data_func']()
                         if not data_list:
@@ -553,7 +539,7 @@ class StoryExportHandler:
                     output_folder=output_folder
                 )
 
-            self._task_queue.put(ActionEvent(action=_on_complete_ui))
+            post_to_ui(_on_complete_ui)
 
     def _finish_export(
         self,
@@ -571,7 +557,7 @@ class StoryExportHandler:
         if was_cancelled:
             messagebox.showinfo(
                 lang_dict.get('msgbox_export_cancelled_title', 'Export Cancelled'),
-                lang_dict.get('msgbox_export_cancelled_msg', 'Data export operation was cancelled by the user.'),
+                lang_dict.get('msgbox_export_cancelled_msg', 'Data export operation was cancelled.'),
                 parent=self._master
             )
             self._view.update_status_bar('status_bar_initial')
@@ -598,7 +584,7 @@ class StoryExportHandler:
             self._view.update_status_bar('status_bar_export_summary', success_total=exported_count, failed_total=failed_count)
 
         if failed_list:
-            error_msg = "\n".join(failed_list[:10]) + ("\n..." if len(failed_list) > 10 else "")
+            error_msg = "\n".join(failed_list)
             err_details_fmt = lang_dict.get('msgbox_export_error_details_msg', 'Error occurred while exporting the following files/lists:\n{errors}')
             messagebox.showerror(
                 lang_dict.get('msgbox_export_error_details_title', 'Export Error Details'),

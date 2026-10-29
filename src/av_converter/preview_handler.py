@@ -1,8 +1,9 @@
 """AV Converter 미디어 미리보기 핸들러 모듈.
 
-비디오(.usm) 및 오디오(.awb, .acb, .hca) 단일 파일 재생 미리보기를 위한
-모달 대기 팝업 창, 다중 오디오 트랙 선택기(Track Selector) 트리뷰 연계,
-OS 기본 미디어 플레이어 실행 및 임시 파일 정리 전담.
+비디오(.usm) 및 오디오(.awb) 단일 파일 재생 미리보기를 위한
+뷰 표준 모달 진행 팝업, 다중 오디오 트랙 선택기(Track Selector) 트리뷰 연계,
+OS 기본 미디어 플레이어 연동 및 임시 파일 정리 담당.
+백그라운드 워커는 결과를 큐에 전달만 하고, Tk 접근은 메인 스레드 큐 폴링에서만 수행.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
+import queue
 import shutil
 import threading
 import time
@@ -26,9 +28,11 @@ from .logic import sanitize_stream_filename
 
 logger = logging.getLogger(__name__)
 
+_PREVIEW_POLL_INTERVAL_MS = 50  # 미리보기 워커 결과 큐 폴링 주기 (ms)
+
 
 class AVPreviewHandler:
-    """AV Converter의 미디어 파일 미리보기(Preview) 전담 핸들러 클래스.
+    """AV Converter의 미디어 파일 미리보기(Preview) 핸들러 클래스.
 
     컨트롤러와의 상호 의존성을 완화하기 위해 의존성 주입(Dependency Injection) 방식을 채택하며,
     백그라운드 변환 스레드와 Tkinter 모달 팝업을 연계하여 UI 프리징 없는 즉시 재생 환경 제공.
@@ -114,44 +118,75 @@ class AVPreviewHandler:
     def _run_preview_task_with_popup(self, worker_func: Callable[[], Any], callback_func: Callable[[Any], None]) -> None:
         """미리보기 생성을 위한 백그라운드 작업 실행 및 진행 팝업 표시.
 
+        진행 팝업은 뷰 표준 팝업(create_progress_popup)을 사용해 기존 표시(제목/문구/크기/애니메이션)를
+        그대로 유지하고, 워커 스레드는 결과를 큐에 전달만 한다(Tk 직접 접근 방지).
+        폴링(after)은 팝업이 아닌 뷰에 예약하므로 팝업이 먼저 파기되어도 결과가 유실되지 않으며,
+        성공/예외와 무관하게 팝업(grab 포함)은 정확히 1회 정리된다.
+
         Args:
             worker_func: 실제 미리보기를 생성하는 백그라운드 함수.
             callback_func: 작업 완료 후 결과를 받아 처리할 콜백 함수.
         """
         lang_dict = self._get_lang_data()
-        progress_win = tk.Toplevel(self._view)
-        progress_win.title(lang_dict.get('preview_progress_title', 'Preview Preparation'))
-        progress_win.geometry("320x100")
-        progress_win.resizable(False, False)
-        progress_win.transient(self._view)
-        progress_win.grab_set()
+        popup = self._view.create_progress_popup()
+        result_q: queue.Queue = queue.Queue()
+        closed = False
 
-        progress_label = tk.Label(
-            progress_win,
-            text=lang_dict.get('preview_progress_msg', 'Preparing preview file...\nPlease wait.'),
-            padx=10,
-            pady=10
-        )
-        progress_label.pack(expand=True)
+        def close_popup() -> None:
+            """진행 팝업 파기를 정확히 1회만 수행 (이미 파기된 경우에도 무해)."""
+            nonlocal closed
+            if closed:
+                return
+            closed = True
+            self._view.destroy_popup_safely(popup)
 
-        progress_win.update_idletasks()
-        x = self._view.winfo_rootx() + (self._view.winfo_width() // 2) - (progress_win.winfo_width() // 2)
-        y = self._view.winfo_rooty() + (self._view.winfo_height() // 2) - (progress_win.winfo_height() // 2)
-        progress_win.geometry(f"+{x}+{y}")
+        def poll() -> None:
+            """메인 스레드에서 워커 결과를 수신해 팝업을 정리하고 콜백을 실행."""
+            try:
+                result, error = result_q.get_nowait()
+            except queue.Empty:
+                # 팝업 존재 여부와 무관하게 뷰에 폴링을 재예약 → 팝업이 먼저 닫혀도 결과 유실 방지.
+                try:
+                    self._view.after(_PREVIEW_POLL_INTERVAL_MS, poll)
+                except (tk.TclError, RuntimeError, AttributeError):
+                    logger.debug("Preview polling stopped: view is unavailable", exc_info=True)
+                return
+
+            close_popup()
+            if error is None:
+                callback_func(result)
+                return
+
+            logger.error("AV preview worker failed: %s", error)
+            if callable(self._generate_error_log):
+                self._generate_error_log('preview', [('', str(error))])
+            error_template = lang_dict.get('preview_error', 'Preview failed: {error}')
+            try:
+                error_message = error_template.format(error=error)
+            except (KeyError, IndexError, ValueError):
+                error_message = f"{error_template}: {error}"
+            messagebox.showerror(
+                lang_dict.get('preview_menu', 'Preview'),
+                error_message,
+                parent=self._view
+            )
 
         def thread_target() -> None:
-            res = worker_func()
-            def update_ui() -> None:
-                with contextlib.suppress(tk.TclError, RuntimeError):
-                    if progress_win.winfo_exists():
-                        progress_win.grab_release()
-                        progress_win.destroy()
-                callback_func(res)
+            result: Any = None
+            error: BaseException | None = None
             try:
-                self._view.after(0, update_ui)
-            except tk.TclError:
-                pass
+                result = worker_func()
+            except BaseException as exc:
+                error = exc
+            result_q.put((result, error))
 
+        try:
+            self._view.after(_PREVIEW_POLL_INTERVAL_MS, poll)
+        except (tk.TclError, RuntimeError, AttributeError):
+            # 뷰가 없으면 결과 전달이 불가하므로 팝업만 정리하고 중단 (잔류 grab 방지).
+            close_popup()
+            logger.debug("Preview task aborted: view is unavailable", exc_info=True)
+            return
         threading.Thread(target=thread_target, daemon=True).start()
 
     def _preview_audio(self, file_path: str) -> None:
@@ -165,7 +200,6 @@ class AVPreviewHandler:
         vgmstream_path = tool_paths.get('vgmstream')
 
         if not vgmstream_path or not vgmstream_path.exists():
-            from tkinter import messagebox
             if messagebox.askyesno(
                 lang_dict.get('preview_menu', 'Preview'),
                 lang_dict.get('vgmstream_missing_confirm', 'vgmstream is required for audio preview. Would you like to download it now?'),
@@ -222,11 +256,12 @@ class AVPreviewHandler:
         clean_name = sanitize_stream_filename(stream_name) if stream_name else ""
         filename = f"{clean_name}.wav" if clean_name else f"preview_{os.path.basename(file_path)}_{stream_num}.wav"
         temp_dir = os.path.join(self._preview_temp_dir, f"audio_{os.path.basename(file_path)}_{stream_num}_{int(time.time() * 1000)}")
+        # 잔여 미리보기 정리는 임시 폴더 생성 전에 수행해야 방금 만든 폴더가 지워지지 않는다.
+        self._cleanup_old_audio_previews(keep_dir=temp_dir)
         os.makedirs(temp_dir, exist_ok=True)
         temp_wav = os.path.join(temp_dir, filename)
 
         def extract_worker() -> tuple[bool, str | None]:
-            self._cleanup_old_audio_previews()
             return cast(tuple[bool, str | None], self._logic.preview_single_audio(file_path, stream_num, temp_wav, vgmstream_path))
 
         def on_done(result: Any) -> None:
@@ -243,13 +278,19 @@ class AVPreviewHandler:
 
         self._run_preview_task_with_popup(extract_worker, on_done)
 
-    def _cleanup_old_audio_previews(self) -> None:
-        """기존에 생성된 오디오 미리보기 임시 디렉터리 및 잔여 파일 정리."""
+    def _cleanup_old_audio_previews(self, keep_dir: str | None = None) -> None:
+        """기존에 생성된 오디오 미리보기 임시 디렉터리 및 잔여 파일 정리.
+
+        Args:
+            keep_dir (str | None): 삭제 대상에서 제외할 현재 작업 디렉터리 경로.
+        """
         if not os.path.exists(self._preview_temp_dir):
             return
         current_time = time.time()
         for item in os.listdir(self._preview_temp_dir):
             item_path = os.path.join(self._preview_temp_dir, item)
+            if keep_dir is not None and os.path.abspath(item_path) == os.path.abspath(keep_dir):
+                continue
             if item.startswith("preview_stream_") and item.endswith(".wav"):
                 try:
                     if current_time - os.path.getmtime(item_path) > 300:
@@ -262,14 +303,20 @@ class AVPreviewHandler:
                 except OSError as _e:
                     logger.debug('AV preview cleanup failed: %s', _e)
 
-    def _cleanup_old_video_previews(self) -> None:
-        """기존에 생성된 비디오 미리보기 임시 디렉터리 정리."""
+    def _cleanup_old_video_previews(self, keep_dir: str | None = None) -> None:
+        """기존에 생성된 비디오 미리보기 임시 디렉터리 정리.
+
+        Args:
+            keep_dir (str | None): 삭제 대상에서 제외할 현재 작업 디렉터리 경로.
+        """
         if not os.path.exists(self._preview_temp_dir):
             return
         current_time = time.time()
         for item in os.listdir(self._preview_temp_dir):
             if item.startswith("video_preview_") or item.startswith("video_"):
                 item_path = os.path.join(self._preview_temp_dir, item)
+                if keep_dir is not None and os.path.abspath(item_path) == os.path.abspath(keep_dir):
+                    continue
                 try:
                     if current_time - os.path.getmtime(item_path) > 300:
                         try:
@@ -290,7 +337,6 @@ class AVPreviewHandler:
         usmtoolkit_path = tool_paths.get('usmtoolkit')
 
         if not usmtoolkit_path or not usmtoolkit_path.exists():
-            from tkinter import messagebox
             if messagebox.askyesno(
                 lang_dict.get('preview_menu', 'Preview'),
                 lang_dict.get('usmtoolkit_missing_confirm', 'UsmToolkit is required for video preview. Would you like to download it now?'),
@@ -300,10 +346,11 @@ class AVPreviewHandler:
             return
 
         temp_dir = os.path.join(self._preview_temp_dir, f"video_{os.path.basename(file_path)}_{int(time.time() * 1000)}")
+        # 잔여 미리보기 정리는 임시 폴더 생성 전에 수행해야 방금 만든 폴더가 지워지지 않는다.
+        self._cleanup_old_video_previews(keep_dir=temp_dir)
         os.makedirs(temp_dir, exist_ok=True)
 
         def convert_worker() -> tuple[Path | None, str | None]:
-            self._cleanup_old_video_previews()
             return cast(tuple[Path | None, str | None], self._logic.preview_single_video(file_path, temp_dir, usmtoolkit_path))
 
         def on_convert_done(result: Any) -> None:

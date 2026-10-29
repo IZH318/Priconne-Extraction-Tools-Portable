@@ -1,4 +1,4 @@
-"""ZIP 아카이브 안전 압축 해제 및 Zip-Slip 취약점 방어 모듈.
+"""ZIP 아카이브 안전 압축 해제 및 Zip-Slip 경로 순회 방지 모듈.
 
 외부에서 다운로드하거나 사용자가 제공한 ZIP 파일을 해제할 때 발생할 수 있는
 경로 순회(Path Traversal / Zip-Slip) 공격 및 심볼릭 링크를 통한 임의 파일 덮어쓰기
@@ -15,13 +15,30 @@ class UnsafeZipMemberError(ValueError):
     """ZIP 아카이브 멤버가 경로 순회 시도(..), 절대 경로 또는 심볼릭 링크를 포함할 때 발생하는 보안 예외."""
 
 
+# Windows 예약 디바이스명 (확장자와 무관하게 예약되어 파일 생성이 불가/오동작)
+_WINDOWS_RESERVED_DEVICE_NAMES: frozenset[str] = frozenset(
+    {
+        "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$",
+        *[f"COM{i}" for i in range(1, 10)],
+        *[f"LPT{i}" for i in range(1, 10)],
+    }
+)
+
+# Zip Bomb(비정상 고압축률 아카이브) 방지 기본 상한
+DEFAULT_MAX_ARCHIVE_BYTES: int = 2 * 1024 * 1024 * 1024
+DEFAULT_MAX_COMPRESSION_RATIO: int = 10_000
+
+
 def _is_safe_member_name(name: str) -> bool:
-    """ZIP 멤버 이름의 경로 순회 위험 여부 검사.
+    """ZIP 멤버 이름의 경로 순회 및 위험 패턴 여부 검사 (무결성 검사).
 
     검증 항목:
-    1. 슬래시(/)로 시작하는 절대 경로 거부
-    2. Windows 드라이브 레터(예: C:) 포함 여부 거부
-    3. 상위 디렉터리 탐색 세그먼트(..) 포함 여부 거부
+    1. 빈 이름 및 전체 이름이 "." / ".." 인 경우 거부
+    2. 슬래시(/)로 시작하는 절대 경로 거부
+    3. 콜론(:) 위치 무관 거부 → NTFS 대체 데이터 스트림(ADS) 방지
+    4. 상위 디렉터리 탐색 세그먼트(..) 포함 여부 거부
+    5. 세그먼트별 후행 공백/점 제거 후 "." / ".." / 빈 세그먼트 거부
+       (Windows가 ".. " / "..." 등을 ".." 로 정규화하는 동작 방지)
 
     Args:
         name (str): 검사할 ZIP 내부 멤버 파일 경로 문자열.
@@ -29,19 +46,60 @@ def _is_safe_member_name(name: str) -> bool:
     Returns:
         bool: 안전한 상대 경로이면 True, 위험 요소 감지 시 False.
     """
-    if not name:
-        return True
+    if not name or name in (".", ".."):
+        return False
     # 백슬래시를 슬래시로 정규화 (Windows 혼용 대비)
     normalized = name.replace("\\", "/")
+    # NTFS 대체 데이터 스트림(ADS) 생성 방지: 콜론(:) 포함 경로 거부
+    if ":" in normalized:
+        return False
     if normalized.startswith("/"):
         return False
     if os.path.isabs(normalized):
         return False
-    # 드라이브 레터 (예: C:/...) 거부
-    if len(normalized) >= 2 and normalized[1] == ":":
-        return False
-    parts = normalized.split("/")
-    return not any(part == ".." for part in parts)
+    for part in normalized.split("/"):
+        if part == "..":
+            return False
+        # Windows는 세그먼트 후행 공백/점을 제거하므로 정규화 결과로 재검사
+        stripped = part.rstrip(" .")
+        if not stripped or stripped in (".", ".."):
+            return False
+        # Windows 예약 디바이스명(CON, NUL, COM1 등) 거부
+        if stripped.split(".", 1)[0].upper() in _WINDOWS_RESERVED_DEVICE_NAMES:
+            return False
+    return True
+
+
+def validate_zip_limits(
+    zip_ref: Any,
+    max_total_bytes: int = DEFAULT_MAX_ARCHIVE_BYTES,
+    max_compression_ratio: int = DEFAULT_MAX_COMPRESSION_RATIO,
+) -> None:
+    """아카이브 전체 해제 크기 및 압축률 상한 검증 (Zip Bomb 방지).
+
+    압축 해제 전에 호출하여 디스크 고갈로 이어지는 비정상 아카이브 압축 해제를 중단한다.
+
+    Args:
+        zip_ref (Any): 열려 있는 zipfile.ZipFile 인스턴스.
+        max_total_bytes (int): 전체 해제 크기 상한(바이트).
+        max_compression_ratio (int): 단일 멤버 허용 최대 압축률(해제 크기 / 압축 크기).
+
+    Raises:
+        UnsafeZipMemberError: 전체 해제 크기 또는 단일 멤버 압축률이 상한을 초과한 경우.
+    """
+    total_uncompressed = 0
+    for member in zip_ref.infolist():
+        size = getattr(member, "file_size", 0) or 0
+        compressed = getattr(member, "compress_size", 0) or 0
+        total_uncompressed += size
+        if total_uncompressed > max_total_bytes:
+            raise UnsafeZipMemberError(
+                f"ZIP archive exceeds total size limit: {total_uncompressed} bytes > {max_total_bytes} bytes"
+            )
+        if compressed > 0 and size > compressed * max_compression_ratio:
+            raise UnsafeZipMemberError(
+                f"ZIP member compression ratio too high: {getattr(member, 'filename', member)!r}"
+            )
 
 
 def _is_symlink_member(member: Any) -> bool:
@@ -64,13 +122,15 @@ def _is_symlink_member(member: Any) -> bool:
 def safe_extract(zip_ref: Any, member: Any, dest_dir: str | Path) -> Path:
     """ZIP 멤버 단건 안전 추출.
 
-    zipfile.ZipFile.extract() 잠재 취약점 방어를 위해,
-    목적지 경로 상위 디렉터리 포함 여부(os.path.commonpath) 엄격 검증 후
+    zipfile.ZipFile.extract() 경로 순회 취약점 방지를 위해,
+    목적지 경로 상위 디렉터리 포함 여부(os.path.commonpath) 경로 검증 후
     shutil.copyfileobj 기반 안전 스트리밍 복사.
 
     Args:
         zip_ref (Any): 열려 있는 zipfile.ZipFile 인스턴스.
         member (Any): 추출 대상 멤버 (파일 경로 문자열 또는 ZipInfo 객체).
+            문자열로 전달되면 내부에서 동일 이름의 ZipInfo로 승격하여 검사하므로,
+            external_attr 기반 심볼릭 링크 탐지가 누락되지 않음.
         dest_dir (str | Path): 추출 대상 최상위 목적지 디렉터리 경로.
 
     Returns:
@@ -79,6 +139,13 @@ def safe_extract(zip_ref: Any, member: Any, dest_dir: str | Path) -> Path:
     Raises:
         UnsafeZipMemberError: 심볼릭 링크이거나, 경로 순회 시도(..), 절대 경로가 포함된 경우.
     """
+    # 문자열 멤버는 ZipInfo로 승격하여 심볼릭 링크 비트(external_attr) 검사 누락 방지
+    if isinstance(member, str):
+        try:
+            member = zip_ref.getinfo(member)
+        except KeyError:
+            # 아카이브에 없는 이름은 문자열 그대로 두고 아래 이름 검증에서 거부
+            pass
     if _is_symlink_member(member):
         name = getattr(member, "filename", str(member))
         raise UnsafeZipMemberError(f"Symlink ZIP member rejected: {name!r}")
@@ -100,36 +167,16 @@ def safe_extract(zip_ref: Any, member: Any, dest_dir: str | Path) -> Path:
 
     dest.mkdir(parents=True, exist_ok=True)
     target.parent.mkdir(parents=True, exist_ok=True)
-    # 안전한 스트리밍 복사
-    with zip_ref.open(member, "r") as src, open(target, "wb") as out:
+    # 안전한 스트리밍 복사 (중단/CRC 오류 시 부분 파일을 남기지 않음)
+    try:
         import shutil
-        shutil.copyfileobj(src, out)
+
+        with zip_ref.open(member, "r") as src, open(target, "wb") as out:
+            shutil.copyfileobj(src, out)
+    except BaseException:
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
     return target
-
-
-def safe_extractall(zip_ref: Any, dest_dir: str | Path, skip_names: set[str] | None = None) -> list[Path]:
-    """ZIP 아카이브 내 모든 파일 안전 일괄 추출.
-
-    디렉터리 엔트리 및 심볼릭 링크 스킵, skip_names 지정 파일(대소문자 무시) 제외 처리.
-
-    Args:
-        zip_ref (Any): 열려 있는 zipfile.ZipFile 인스턴스.
-        dest_dir (str | Path): 압축을 풀 루트 대상 디렉터리.
-        skip_names (set[str] | None): 건너뛸 파일 기본 이름(basename) 집합 (소문자 비교).
-
-    Returns:
-        list[Path]: 추출 완료된 모든 파일들의 Path 객체 리스트.
-    """
-    skip = {s.lower() for s in (skip_names or set())}
-    extracted: list[Path] = []
-    for member in zip_ref.infolist():
-        if member.is_dir():
-            continue
-        if _is_symlink_member(member):
-            continue
-        base_name = os.path.basename(member.filename).lower()
-        if base_name in skip:
-            continue
-        extracted.append(safe_extract(zip_ref, member, dest_dir))
-    return extracted
-

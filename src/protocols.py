@@ -30,20 +30,20 @@ class ModuleController(Protocol):
 
 
 def validate_module_controller(obj: object) -> bool:
-    """객체의 ModuleController 프로토콜 준수 및 시그니처 검증.
+    """객체의 ModuleController 필수 메서드 시그니처 검증.
 
-    isinstance(obj, ModuleController)뿐만 아니라 inspect.signature 기반
-    필수 메서드(cleanup, get_lang_dict)의 인자 개수(0개)와 호출 가능 여부 엄격 검증.
+    호출자는 사전에 isinstance(obj, ModuleController) 검사를 완료한 객체만
+    전달해야 한다. 본 함수는 프로토콜 준수 여부(isinstance)를 재검사하지 않고,
+    inspect.signature 기반 필수 메서드(cleanup, get_lang_dict)의
+    인자 개수(0개)와 호출 가능 여부 유효성 검증.
 
     Args:
-        obj (object): 검증 대상 컨트롤러 인스턴스.
+        obj (object): ModuleController 프로토콜을 준수하는 것으로 가정된 컨트롤러 인스턴스.
 
     Returns:
-        bool: 프로토콜 요구사항과 파라미터 시그니처 일치 시 True, 미일치 시 False.
+        bool: 필수 메서드 파라미터 시그니처 일치 시 True, 미일치 시 False.
     """
     import inspect
-    if not isinstance(obj, ModuleController):
-        return False
     for name in ("cleanup", "get_lang_dict"):
         method = getattr(obj, name, None)
         if not callable(method):

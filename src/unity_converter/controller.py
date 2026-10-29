@@ -15,7 +15,6 @@ import multiprocessing
 import os
 import threading
 import tkinter as tk
-from datetime import datetime
 from multiprocessing import Manager
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -26,10 +25,13 @@ from src.cancellation_token import CancellationToken
 from src.constants import DEFAULT_UNITY_VERSION, UNITY_VERSION_PRESETS
 from src.constants import UNITY_SUPPORTED_EXTENSIONS as SUPPORTED_EXTENSIONS
 from src.languages import UNITY_CONVERTER_LANGUAGES as LANGUAGES
+from src.languages import pick_language
 from src.queue_events import CompletionEvent, LogEvent
 from src.queue_polling import QueuePollingMixin
 from src.shared_state import SharedState
 from src.utils.file_list_mixin import FileListMixin
+from src.utils.log_history import new_log_timestamp
+from src.utils.task_pool import register_process_pool, unregister_process_pool
 
 from .asset_browser import AssetBrowserWindow
 from .extractor import AssetProcessor, process_file_batch
@@ -64,10 +66,12 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         lang_var: 전역 애플리케이션 언어 코드 추적 StringVar.
         view: UI 위젯 관리 프레젠테이션 뷰.
         shared_state: 콜백 주입용 공유 상태 객체.
-        extraction_service: 배치 분할 및 오류 로그 생성 관리 서비스.
+        _extraction_service: 배치 분할 및 오류 로그 생성 관리 서비스.
     """
 
-    # --- 생명주기 및 초기화 ---
+    # cleanup() 시 데몬 추출 스레드 조인 대기 상한(초).
+    _EXTRACTION_JOIN_TIMEOUT: float = 5.0
+
     def __init__(
         self,
         frame: ttk.Frame,
@@ -94,6 +98,8 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         self.output_path: str = ""
         self.is_running: bool = False
         self.processed_files_count: int = 0
+        self.total_extracted_assets: int = 0
+        self.failed_files: list[tuple[str, str]] = []
         self.base_input_path: str | None = None
         self.log_events: list[Any] = []
         self.unity_version_var: tk.StringVar = tk.StringVar(value=DEFAULT_UNITY_VERSION)
@@ -108,11 +114,14 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
             self.lang_var = tk.StringVar(value='ko')
 
         self._manager: Any = None
-        self._state_lock: threading.RLock = threading.RLock()
         self._atexit_registered: bool = False
         self._log_queue: Any = None
         self._completion_queue: Any = None
-
+        self._extraction_thread: threading.Thread | None = None
+        self._executor: concurrent.futures.ProcessPoolExecutor | None = None
+        self._worker_pids: set[int | None] = set()
+        self._extraction_done_fallback: bool = False
+        self._finalize_done: bool = False
         self.UNITY_VERSION_PRESETS = list(UNITY_VERSION_PRESETS)
 
         self.view = AssetExtractorView(frame, self)
@@ -122,10 +131,6 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         self.shared_state.get_base_path = lambda: self.base_path
         self.shared_state.get_view = lambda: self.view
         self._extraction_service: UnityExtractionService = UnityExtractionService(shared_state=self.shared_state, controller=self)
-        self._unity_service: UnityExtractionService = self._extraction_service
-        self._unity_extraction_service: UnityExtractionService = self._extraction_service
-        self.extraction_service: UnityExtractionService = self._extraction_service
-        self.service: UnityExtractionService = self._extraction_service
 
         self.lang_var.trace_add('write', self._on_language_change)
 
@@ -158,7 +163,8 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         return self._completion_queue
 
     def cleanup(self) -> None:
-        """큐 폴링 중단 및 multiprocessing Manager 정상 종료."""
+        """실행 중 추출 취소/워커 종료, 큐 폴링 중단 및 multiprocessing Manager 정상 종료."""
+        self._cancel_running_extraction()
         self._stop_polling()
         if self._manager is not None:
             try:
@@ -174,6 +180,46 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
                     self._atexit_registered = False
             except (ValueError, RuntimeError) as _exc:
                 logger.debug("Failed to unregister atexit cleanup: %s", _exc)
+
+    def _terminate_pool_workers(self) -> None:
+        """현재 추출 작업 풀에 속한 워커 프로세스를 강제 종료."""
+        worker_pids = set(self._worker_pids)
+        processes = getattr(self._executor, "_processes", None)
+        if processes:
+            with contextlib.suppress(OSError, RuntimeError, AttributeError):
+                worker_pids.update(p.pid for p in processes.values() if p.pid is not None)
+        if not worker_pids:
+            return
+        for p in multiprocessing.active_children():
+            if p.pid in worker_pids:
+                try:
+                    p.terminate()
+                except (OSError, ProcessLookupError) as _exc:
+                    logger.debug("Failed to terminate worker process: %s", _exc)
+
+    def _cancel_running_extraction(self) -> None:
+        """실행 중인 추출 작업 취소, 워커 프로세스 종료 및 추출 스레드 조인.
+
+        실행 중인 추출이 없으면 아무 동작도 수행하지 않음. 취소 신호를 전파한 뒤
+        ProcessPoolExecutor 워커를 강제 종료하고, 데몬 추출 스레드가 완료 이벤트
+        (`__EXTRACTION_DONE__`)를 발행할 시간을 확보하도록 짧은 타임아웃으로 조인.
+        """
+        thread = self._extraction_thread
+        executor = self._executor
+        if thread is None and executor is None and not self.is_running:
+            return
+
+        with contextlib.suppress(RuntimeError, AttributeError, OSError):
+            self.cancel_token.cancel()
+
+        self._terminate_pool_workers()
+
+        if executor is not None:
+            with contextlib.suppress(RuntimeError, AttributeError, OSError):
+                executor.shutdown(wait=False, cancel_futures=True)
+
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=self._EXTRACTION_JOIN_TIMEOUT)
 
     def _get_enabled_types(self) -> set[str]:
         """필터 체크박스에서 현재 활성화된 에셋 유형 집합 수집 및 반환.
@@ -228,7 +274,7 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         Returns:
             번역 키와 다국어 문자열 매핑 딕셔너리.
         """
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))  # type: ignore[no-any-return]
+        return pick_language(self.lang_var.get(), LANGUAGES)
 
     def _on_language_change(self, *args: str) -> None:
         """애플리케이션 언어 StringVar 변경 시 호출되는 콜백.
@@ -254,10 +300,6 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         except tk.TclError:
             pass
 
-    def _render_single_entry(self, entry: Any, index: int, history: list, widget: tk.Text) -> None:
-        """단일 LogEvent 항목을 서식화하여 지정된 텍스트 위젯에 출력."""
-        self._render_log_event(entry, widget)
-
     def _add_log_event(
         self,
         message_key: str,
@@ -282,7 +324,7 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
             level=level,
             kwargs=format_args or {},
             un_timestamped=False,
-            timestamp=datetime.now().strftime("%H:%M:%S.%f")[:-3]
+            timestamp=new_log_timestamp()
         )
 
     def _render_log_event(self, event: LogEvent, widget: Any = None) -> None:
@@ -293,14 +335,14 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
             widget: 출력 대상 Text 위젯(미지정 시 self.view.log_text 사용).
         """
         target_widget = widget or self.view.log_text
-        timestamp = event.timestamp or datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        timestamp = event.timestamp or new_log_timestamp()
         prefix = event.target
         message_key = event.key
         level = event.level
         format_args = event.kwargs
 
         lang = self.lang_var.get()
-        message_template = LANGUAGES.get(lang, LANGUAGES.get('ko', {})).get(message_key, message_key)
+        message_template = pick_language(lang, LANGUAGES).get(message_key, message_key)
 
         if message_key == 'raw_text':
             message = format_args.get('text', '') if format_args else ''
@@ -323,7 +365,7 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         format_args: dict[str, Any] | None = None,
         prefix: str | None = None,
     ) -> None:
-        """LogEvent 생성, 최대 10,000건 히스토리 버퍼 추가 및 UI 즉시 출력.
+        """LogEvent 생성, 히스토리 버퍼 추가 및 UI 즉시 출력.
 
         Args:
             message_key: 번역 딕셔너리 키.
@@ -333,13 +375,23 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         """
         event = self._add_log_event(message_key, level, format_args, prefix)
         self.log_events.append(event)
-        if len(self.log_events) > 10000:
-            del self.log_events[:len(self.log_events) - 10000]
         self._render_log_event(event)
         self.view.log_text.see(tk.END)
 
+    def _should_poll(self) -> bool:
+        """에셋 추출 작업이 진행 중일 때만 활성 주기로 폴링 (유휴 시 폴링 대기 간격 적용)."""
+        return bool(self.is_running)
+
     def _on_poll_cycle(self) -> None:
         """주기적 UI 타이머 틱: IPC 로그 및 완료 큐 비우기 및 UI 상태 동기화."""
+        if self.is_running and self.cancel_token.is_cancelled:
+            # 취소 요청 시 현재 배치 완료를 기다리지 않고 워커 프로세스를 즉시 종료
+            self._terminate_pool_workers()
+        if self._extraction_done_fallback:
+            # 큐 사용이 불가능한 상태에서도 UI 잠금이 남지 않도록 폴링 틱에서 직접 완료 처리한다.
+            self._extraction_done_fallback = False
+            self._on_extraction_complete()
+            return
         log_batch = self._drain_queue(self.log_queue)
 
         completion_batch_size = 0
@@ -361,12 +413,9 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
                     else:
                         if log_item.key == 'worker_process_error':
                             error_msg = str(log_item.kwargs.get('error', 'Unknown Error'))
-                            if hasattr(self, 'failed_files'):
-                                self.failed_files.append((log_item.target, error_msg))
+                            self.failed_files.append((log_item.target, error_msg))
                         event = self._add_log_event(log_item.key, log_item.level, log_item.kwargs, log_item.target)
                     self.log_events.append(event)
-                    if len(self.log_events) > 10000:
-                        del self.log_events[:len(self.log_events) - 10000]
                     self._render_log_event(event)
             self.view.log_text.config(state=tk.DISABLED)
             self.view.log_text.see(tk.END)
@@ -399,7 +448,8 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         folder_path = filedialog.askdirectory(title=d.get('folder_dialog_title', 'Select a folder containing Unity3D files'))
         if folder_path:
             self.base_input_path = folder_path
-            found_paths = [os.path.join(r, f) for r, _, fs in os.walk(folder_path) for f in fs if f.lower().endswith(SUPPORTED_EXTENSIONS)]
+            # 공용 FileListMixin 헬퍼로 통일 (심볼릭 링크 순환(루프) 방지 + 수집 상한 적용)
+            found_paths = self._collect_files_from_paths([folder_path], SUPPORTED_EXTENSIONS)
             if found_paths:
                 self._add_files_to_list(found_paths)
             else:
@@ -525,43 +575,51 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
         add_breadcrumb("conv", "Started asset extraction", {"files": len(self.file_paths), "output": self.output_path})
         self.view.toggle_controls(False)
         self.processed_files_count = 0
-        self.total_extracted_assets: int = 0
-        self.failed_files: list[tuple[str, str]] = []
+        self.total_extracted_assets = 0
+        self.failed_files = []
+        self._extraction_done_fallback = False
+        self._finalize_done = False
         self.view.progress_bar.config(maximum=len(self.file_paths))
         self.view.update_progress_bar()
         self._current_enabled_types: set[str] = self._get_enabled_types()
         unity_version = self.unity_version_var.get().strip()
         if not unity_version: unity_version = DEFAULT_UNITY_VERSION
         self._current_unity_version: str = unity_version
-        threading.Thread(target=self._run_process_pool, daemon=True).start()
+        self._extraction_thread = threading.Thread(target=self._run_process_pool, daemon=True)
+        self._extraction_thread.start()
 
     def _run_process_pool(self) -> None:
         """워커 스레드 진입점: ProcessPoolExecutor 배치 워커 풀 관리 및 취소 토큰 처리."""
-        batches = self._extraction_service.prepare_batches(self.file_paths)
-        if not batches:
-            batches = [list(self.file_paths)]
-        num_workers = len(batches)
-        self.log_queue.put(LogEvent(target="", key='processing_started', level='INFO', kwargs={'num_workers': num_workers}))
-
-        unity_version = self._current_unity_version
-        enabled_types = self._current_enabled_types
-        baseline_pids = {p.pid for p in multiprocessing.active_children()}
+        completion_queue: Any = None
         try:
-            with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+            # 종료 시 completion_queue 프로퍼티가 이미 shutdown 된 Manager 를 대체 생성하지 않도록 1회만 확보.
+            completion_queue = self.completion_queue
+            batches = self._extraction_service.prepare_batches(self.file_paths)
+            if not batches:
+                batches = [list(self.file_paths)]
+            num_workers = len(batches)
+            self.log_queue.put(LogEvent(target="", key='processing_started', level='INFO', kwargs={'num_workers': num_workers}))
+
+            unity_version = self._current_unity_version
+            enabled_types = self._current_enabled_types
+            baseline_pids = {p.pid for p in multiprocessing.active_children()}
+
+            executor = register_process_pool(concurrent.futures.ProcessPoolExecutor(max_workers=num_workers))
+            try:
+                self._executor = executor
                 future_to_batch = {
-                    executor.submit(process_file_batch, batch, self.output_path, self.base_input_path, self.log_queue, self.completion_queue, unity_version, enabled_types): batch
+                    executor.submit(
+                        process_file_batch, batch, self.output_path, self.base_input_path,
+                        self.log_queue, completion_queue, unity_version, enabled_types
+                    ): batch
                     for batch in batches
                 }
                 worker_pids = {p.pid for p in multiprocessing.active_children()} - baseline_pids
+                self._worker_pids = worker_pids
                 for future in concurrent.futures.as_completed(future_to_batch):
                     if self.cancel_token.is_cancelled:
                         self.log_queue.put(LogEvent(target="", key='extraction_cancelled', level='ERROR'))
-                        for p in multiprocessing.active_children():
-                            if p.pid in worker_pids:
-                                try:
-                                    p.terminate()
-                                except (OSError, ProcessLookupError) as _exc:
-                                    logger.debug("Failed to terminate worker process: %s", _exc)
+                        self._terminate_pool_workers()
                         executor.shutdown(wait=False, cancel_futures=True)
                         break
                     try:
@@ -571,27 +629,50 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
                             for file_p in batch:
                                 b_name = os.path.basename(file_p)
                                 self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(exc)}))
-                                self.completion_queue.put(CompletionEvent(success=False, result=0))
+                                completion_queue.put(CompletionEvent(success=False, result=0))
                     except (OSError, RuntimeError, ValueError, TypeError) as future_err:
                         batch = future_to_batch.get(future, [])
                         for file_p in (batch or ["unknown"]):
                             b_name = os.path.basename(file_p) if file_p != "unknown" else "unknown"
                             self.log_queue.put(LogEvent(target=b_name, key='worker_process_error', level='ERROR', kwargs={'error': str(future_err)}))
-                            self.completion_queue.put(CompletionEvent(success=False, result=0))
+                            completion_queue.put(CompletionEvent(success=False, result=0))
+            finally:
+                unregister_process_pool(executor)
+                # 컨텍스트 매니저 종료 시의 암묵적 wait=True 조인을 피하고 논블로킹(Non-blocking) 종료로 고정
+                with contextlib.suppress(RuntimeError, AttributeError, OSError):
+                    executor.shutdown(wait=False, cancel_futures=True)
         except Exception as e:  # noqa: BLE001
-            logger.error("ProcessPoolExecutor encountered an unexpected failure: %s", e)
+            logger.exception("ProcessPoolExecutor encountered an unexpected failure: %s", e)
         finally:
+            self._worker_pids = set()
+            self._executor = None
+            self._extraction_thread = None
             with contextlib.suppress(RuntimeError, AttributeError):
                 self.cancel_token.finish()
-            self.completion_queue.put(CompletionEvent(target='__EXTRACTION_DONE__'))
+            if completion_queue is not None:
+                try:
+                    completion_queue.put(CompletionEvent(target='__EXTRACTION_DONE__'))
+                except Exception as exc:  # noqa: BLE001
+                    # 센티넬 전달이 불가능한 경우에도 폴링 루프가 UI 잠금을 해제하도록 폴백 플래그를 세운다.
+                    logger.debug("Failed to publish extraction completion event: %s", exc)
+                    self._extraction_done_fallback = True
+            else:
+                logger.debug("Completion queue unavailable; falling back to poll-cycle completion.")
+                self._extraction_done_fallback = True
 
     def _on_extraction_complete(self) -> None:
         """모든 워커 배치가 종료되었을 때 호출되는 콜백 예약."""
         self.frame.after(200, self._finalize_completion)
 
     def _finalize_completion(self) -> None:
-        """오류 발생 시 에러 로그 리포트 생성 및 UI 조작 컨트롤 재활성화."""
-        if hasattr(self, 'failed_files') and len(self.failed_files) > 0:
+        """오류 발생 시 에러 로그 리포트 생성 및 UI 조작 컨트롤 재활성화.
+
+        동일 실행에 대해 두 번 호출되더라도(센티넬과 폴백 신호의 중복 전달) 한 번만 수행한다.
+        """
+        if self._finalize_done:
+            return
+        self._finalize_done = True
+        if len(self.failed_files) > 0:
             self._generate_error_log(self.failed_files)
             from tkinter import messagebox
             d = self.get_lang_dict()
@@ -600,7 +681,7 @@ class AssetExtractorController(QueuePollingMixin, FileListMixin):
             messagebox.showwarning(title, text, parent=self.view)
 
         self._log("raw_text", format_args={'text': "========================================"})
-        if hasattr(self, 'total_extracted_assets') and self.total_extracted_assets > 0:
+        if self.total_extracted_assets > 0:
             self._log("total_extracted_assets", format_args={'count': self.total_extracted_assets})
         if not self.cancel_token.is_cancelled:
             self._log('all_tasks_completed', "SUCCESS")

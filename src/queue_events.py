@@ -6,7 +6,6 @@
 """
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,7 +15,7 @@ class QueueEvent:
     """모든 큐 통신 메시지 기본 추상 이벤트 클래스.
 
     불변(frozen=True) 선언 기반 다중 스레드 큐 전송 시
-    객체 변경으로 인한 데이터 레이스 방어.
+    객체 변경으로 인한 데이터 레이스 방지.
     """
 
 
@@ -49,7 +48,7 @@ class LogEvent(QueueEvent):
 class LogBlockEvent(QueueEvent):
     """다수 로그 엔트리 일괄(Batch) 묶음 전달 이벤트.
 
-    대량 파일 변환 시 GUI 큐 병목 및 UI 프리징 방어용.
+    대량 파일 변환 시 GUI 큐 병목 및 UI 프리징 방지용.
 
     Attributes:
         target (str): 대상 탭 또는 로그 위젯 식별자.
@@ -91,17 +90,4 @@ class CompletionEvent(QueueEvent):
     target: str = ""
     success: bool = True
     result: Any = None
-
-
-@dataclass(frozen=True)
-class ActionEvent(QueueEvent):
-    """메인 GUI 스레드 동기 실행 콜백 래퍼 이벤트.
-
-    Story Viewer 등에서 백그라운드 스레드 작업 완료 후 메인 스레드 컨텍스트 내
-    UI 위젯 조작 시 사용.
-
-    Attributes:
-        action (Callable[[], None] | None): 메인 스레드에서 실행할 매개변수 없는 함수.
-    """
-    action: Callable[[], None] | None = None
 

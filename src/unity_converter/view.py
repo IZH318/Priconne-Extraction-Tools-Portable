@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import PanedWindow, Scrollbar, Text, font, ttk
+from tkinter import Scrollbar, Text, font, ttk
 from typing import TYPE_CHECKING, Any
 
 from tkinterdnd2 import DND_FILES  # type: ignore[import-untyped]
@@ -52,12 +52,13 @@ class AssetExtractorView(ttk.Frame):
 
     def setup_ui(self) -> None:
         """3분할 PanedWindow 기반 전체 UI 위젯 생성 및 배치."""
-        main_paned_window = PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED)
+        main_paned_window = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
         main_paned_window.pack(fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
 
         # 1. 좌측 패널: 파일 선택 및 목록 위젯
-        left_pane = ttk.Frame(main_paned_window)
-        main_paned_window.add(left_pane, width=240)
+        left_pane = ttk.Frame(main_paned_window, width=210)
+        left_pane.pack_propagate(False)
+        main_paned_window.add(left_pane, weight=0)
 
         self.open_frame = ttk.LabelFrame(left_pane, text="")
         self.open_frame.pack(fill=tk.X, pady=(0, 5))
@@ -82,13 +83,14 @@ class AssetExtractorView(ttk.Frame):
             pass
 
         # 2. 중앙 패널: 에셋 유형 필터 체크박스 목록
-        center_pane = ttk.Frame(main_paned_window)
-        main_paned_window.add(center_pane, width=200)
+        center_pane = ttk.Frame(main_paned_window, width=190)
+        center_pane.pack_propagate(False)
+        main_paned_window.add(center_pane, weight=0)
         self._build_type_filter_panel(center_pane)
 
         # 3. 우측 패널: 색상 태그 지원 로그 콘솔 및 진행률 표시줄
         self.log_frame = ttk.LabelFrame(main_paned_window, text="")
-        main_paned_window.add(self.log_frame)
+        main_paned_window.add(self.log_frame, weight=1)
         self.log_frame.grid_rowconfigure(0, weight=1)
         self.log_frame.grid_columnconfigure(0, weight=1)
         log_text_frame = ttk.Frame(self.log_frame)
@@ -117,7 +119,7 @@ class AssetExtractorView(ttk.Frame):
 
         # 4. 하단 툴바: 출력 대상 경로, 유니티 엔진 버전 및 실행 버튼
         bottom_controls_frame = ttk.Frame(self)
-        bottom_controls_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
+        bottom_controls_frame.pack(fill=tk.X, padx=10, pady=(0, 5))
         bottom_controls_frame.grid_columnconfigure(0, weight=1)
         self.output_frame = ttk.LabelFrame(bottom_controls_frame, text="")
         self.output_frame.grid(row=0, column=0, sticky='ew', padx=(0, 10))

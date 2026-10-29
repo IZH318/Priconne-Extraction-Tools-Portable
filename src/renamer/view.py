@@ -1,7 +1,7 @@
 """Manifest File Renamer 프레젠테이션 뷰(View) 모듈.
 
 대상 폴더 선택 바, 프로그레스 바, 시작 버튼 및 읽기 전용 스크롤 로그 콘솔을 렌더링하고,
-위젯 레이아웃 구성 및 다국어 텍스트 반영을 전담.
+위젯 레이아웃 구성 및 다국어 텍스트 반영 담당.
 """
 
 from __future__ import annotations

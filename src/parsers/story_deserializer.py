@@ -192,7 +192,7 @@ class StoryDataDeserializer:
     def _deserialize_story_raw(bytes_: bytes) -> list[tuple[StoryDataDeserializer.CommandId, list[str]]]:
         """바이너리 바이트 스트림 전체 순회 기반 명령어 및 인자 단위 분할 파싱 수행.
 
-        스트림 조작 기반 무한 루프 공격 방어 목적의 반복 횟수
+        무한 루프 방지 목적의 최대 반복 횟수
         MAX_COMMAND_LIMIT (100,000) 초과 시 예외 발생 처리.
 
         Args:
@@ -224,7 +224,7 @@ class StoryDataDeserializer:
                 # 2바이트 빅엔디언 부호 없는 정수로 명령어 Opcode 파싱
                 index = int(unpack(">H", bytes_[fs : fs + 2])[0])
             except (struct_error, IndexError):
-                break  # 스트림 소진 또는 EOF 도달
+                break  # 스트림 끝(EOF) 도달
             fs += 2
             args.append(index)
             num = i
@@ -240,7 +240,7 @@ class StoryDataDeserializer:
                 if length <= 0:  # 길이가 0 이하이면 현재 명령어의 인자 목록 종료
                     break
                 if fs + length > buffer_len:
-                    # 비정상적 길이 오버플로우 방어: 잔여 버퍼만 읽고 탈출
+                    # 버퍼 오버플로우 방지: 잔여 버퍼만 읽고 탈출
                     array = bytes_[fs:buffer_len]
                     fs = buffer_len
                     args.append(array)

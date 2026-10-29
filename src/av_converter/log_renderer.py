@@ -1,8 +1,7 @@
 """AV Converter 다국어 텍스트 로그 렌더러 모듈.
 
 단일 로그 이벤트 포맷팅, 동일 타임스탬프 들여쓰기 정렬, 동적 언어 전환 시
-로그 히스토리 일괄 재렌더링(Redraw) 및 시작 시점 환경 검사(.NET, FFmpeg,
-UsmToolkit, vgmstream) 보고 기능 등 전담.
+로그 히스토리 일괄 재렌더링(Redraw) 및 초기 환경 점검 로그 출력 담당.
 """
 
 from __future__ import annotations
@@ -14,25 +13,30 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from src.queue_events import LogEvent
+from src.utils.log_history import LOG_INDENT, timestamp_prefix
 
 if TYPE_CHECKING:
     from .logic import ConversionLogic, FFmpegDownloader
 
 
 class AVLogRenderer:
-    """AV Converter의 로그 메시지 포맷팅 및 ScrolledText 위젯 렌더링 전담 클래스.
+    """AV Converter의 로그 메시지 포맷팅 및 ScrolledText 위젯 렌더링 클래스.
 
-    다국어 템플릿 보간, 타임스탬프 접두사 처리, 다중 라인 들여쓰기 정렬,
-    런타임 언어 변경 시 로그 재출력 및 초기 툴체인 진단 로그 생성 담당.
+    다국어 템플릿 보간, 타임스탬프 접두사 처리, 다중 라인 들여쓰기 정렬, 런타임
+    언어 변경 시 로그 재출력 및 초기 환경 점검 로그 출력 담당.
+
+    Note:
+        Controller와의 순환 참조를 방지하기 위해, Controller 전체를 참조하지 않고
+        필요한 콜백과 데이터 접근자만 개별 인자로 주입받습니다.
 
     Attributes:
         _get_lang_data (Callable[[], dict[str, str]]): 다국어 사전 조회 콜백.
-        _add_log_entry (Callable[..., None]): 단일 로그 큐 전송 콜백.
-        _add_spacing (Callable[..., None]): 빈 줄 추가 콜백.
-        _log_queue (queue.Queue[LogEvent]): 실시간 로그 이벤트 큐.
-        _logic (ConversionLogic): 상대 경로 계산 및 환경 조회를 위한 비즈니스 로직 인스턴스.
-        _get_tool_paths (Callable[[], dict[str, Path | None]]): 툴체인 경로 맵 콜백.
-        _get_ffmpeg_downloader (Callable[[], FFmpegDownloader]): FFmpeg 다운로더 인스턴스 콜백.
+        _add_log_entry (Callable[..., None]): 로그 이벤트 큐 전달 콜백.
+        _add_spacing (Callable[..., None]): 로그 빈 줄 추가 콜백.
+        _log_queue (queue.Queue[LogEvent]): 타임스탬프 미표기 로그 직접 전달용 큐.
+        _logic (ConversionLogic): 경로 변환·.NET 런타임 조회용 변환 로직 인스턴스.
+        _get_tool_paths (Callable[[], dict[str, Path | None]]): 도구 경로 사전 조회 콜백.
+        _get_ffmpeg_downloader (Callable[[], FFmpegDownloader]): FFmpeg 다운로더 조회 콜백.
     """
 
     def __init__(
@@ -44,19 +48,17 @@ class AVLogRenderer:
         logic: ConversionLogic,
         get_tool_paths: Callable[[], dict[str, Path | None]],
         get_ffmpeg_downloader: Callable[[], FFmpegDownloader],
-        shared_state: Any = None,
     ) -> None:
         """AVLogRenderer 초기화.
 
         Args:
             get_lang_data (Callable[[], dict[str, str]]): 현재 언어 딕셔너리 반환 콜백.
-            add_log_entry (Callable[..., None]): 로그 이벤트를 큐에 추가하는 콜백.
-            add_spacing (Callable[..., None]): 로그 위젯에 빈 줄을 추가하는 콜백.
-            log_queue (queue.Queue[LogEvent]): 로그 이벤트 큐.
-            logic (ConversionLogic): ConversionLogic 인스턴스.
-            get_tool_paths (Callable[[], dict[str, Path | None]]): 도구 경로 딕셔너리 반환 콜백.
-            get_ffmpeg_downloader (Callable[[], FFmpegDownloader]): FFmpegDownloader 반환 콜백.
-            shared_state (Any): 상위 상태 컨테이너 (선택 사항).
+            add_log_entry (Callable[..., None]): 로그 이벤트를 큐에 전달하는 콜백.
+            add_spacing (Callable[..., None]): 로그 빈 줄을 추가하는 콜백.
+            log_queue (queue.Queue[LogEvent]): 타임스탬프 없는 원시 로그 전달용 큐 참조.
+            logic (ConversionLogic): 경로 변환 및 .NET 런타임 조회용 변환 로직.
+            get_tool_paths (Callable[[], dict[str, Path | None]]): 도구 경로 사전 반환 콜백.
+            get_ffmpeg_downloader (Callable[[], FFmpegDownloader]): FFmpeg 다운로더 반환 콜백.
         """
         self._get_lang_data = get_lang_data
         self._add_log_entry = add_log_entry
@@ -110,11 +112,8 @@ class AVLogRenderer:
         first_line_prefix = ""
         subsequent_line_prefix = ""
         if timestamp:
-            if timestamp != last_ts:
-                first_line_prefix = f"[{timestamp}] "
-            else:
-                first_line_prefix = " " * 13
-            subsequent_line_prefix = " " * 13
+            first_line_prefix = timestamp_prefix(timestamp, timestamp == last_ts)
+            subsequent_line_prefix = LOG_INDENT
 
         lines = content.splitlines()
         if not lines:
@@ -147,16 +146,13 @@ class AVLogRenderer:
 
             # 동일 타임스탬프 블록 내 중복 표시 억제 처리:
             # 연속된 항목이 동일 타임스탬프를 가지면 첫 항목만 타임스탬프를 표시하고 나머지는 들여쓰기 적용
-            block_ts_map: dict[Any, Any] = {}
             for i, (timestamp, key, kwargs) in enumerate(history_list):
                 if timestamp:
+                    render_ts = timestamp
                     if i > 0 and timestamp == history_list[i-1][0] and key != 'raw' and history_list[i-1][1] != 'raw':
-                         render_ts = timestamp
-                         last_ts_for_render = block_ts_map.get((timestamp, key), timestamp)
+                        last_ts_for_render = timestamp
                     else:
-                         render_ts = timestamp
-                         last_ts_for_render = last_ts
-                         block_ts_map[(timestamp, key)] = timestamp
+                        last_ts_for_render = last_ts
                 else:
                     render_ts = None
                     last_ts_for_render = last_ts
@@ -172,13 +168,13 @@ class AVLogRenderer:
             log_widget.see(tk.END)
 
     def log_tool_status(self, tab: str, tool_path: Path | None, tool_name: str, error_desc_key: str) -> None:
-        """도구 경로 찾기 결과를 로그로 출력.
+        """도구 경로 탐색 결과를 환경 점검 로그로 출력.
 
         Args:
             tab: 로그를 출력할 탭 ('video' 또는 'audio').
             tool_path: 도구 파일 경로 객체 또는 None.
-            tool_name: 도구의 식별용 이름.
-            error_desc_key: 실패 시 출력할 에러 설명 다국어 키.
+            tool_name: 도구 식별용 표시 이름.
+            error_desc_key: 도구 미발견 시 출력할 에러 설명 다국어 키.
         """
         if tool_path:
             self._add_log_entry(tab, 'env_success', tool_name=tool_name)
@@ -188,7 +184,7 @@ class AVLogRenderer:
             self._add_log_entry(tab, error_desc_key)
 
     def log_initial_status(self) -> None:
-        """프로그램 시작 시 초기 환경 검사 상태 로그 출력."""
+        """프로그램 시작 시 초기 환경 점검 상태를 비디오/오디오 탭 로그로 출력."""
         tool_paths = self._get_tool_paths()
         usmtoolkit_path = tool_paths.get('usmtoolkit')
         vgmstream_path = tool_paths.get('vgmstream')

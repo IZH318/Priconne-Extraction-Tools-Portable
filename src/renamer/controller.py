@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import queue
 import threading
@@ -20,9 +21,10 @@ from src.constants import (
     APP_LAST_UPDATE,
     APP_VERSION,
     APP_WEBSITE,
-    GUI_UPDATE_INTERVAL_MS,
+    RENAMER_CLEANUP_JOIN_TIMEOUT,
 )
 from src.languages import RENAMER_LANGUAGES as LANGUAGES
+from src.languages import pick_language
 from src.queue_polling import QueuePollingMixin
 from src.shared_state import SharedState
 
@@ -32,6 +34,55 @@ from .service import RenameService
 from .view import RenamerView
 
 logger = logging.getLogger(__name__)
+
+# languages.json 로드 실패(손상/부재) 시 최후 폴백으로 사용하는 내장 영어 리터럴.
+# 다른 서브도구가 호출부의 .get(key, '영어 문자열')로 보장하는 것과 동일한 동작을,
+# get_string() 기반인 Renamer에서 키별 내장 문구로 보장한다.
+_RENAMER_ENGLISH_FALLBACK: dict[str, str] = {
+    "about_header": "[ Program Information ]",
+    "about_label_developer": "Developer",
+    "about_label_license": "License",
+    "about_label_program": "Program",
+    "about_label_updated": "Updated",
+    "about_label_version": "Version",
+    "about_label_website": "Website",
+    "backend_file_process_fail": "\t\tFailed to process file {path}: {exc}\n\n",
+    "backend_found_files": "\t\t[ COMPLETE ] Found a total of {count} files to process. Starting rename.\n\n\n",
+    "backend_info_auto_rename": "\t\t\tAll files will be renamed automatically after being loaded.\n\n",
+    "backend_info_long_time": "\t\t[ INFO ] This may take a long time if there are many files or the storage device is slow.\n",
+    "backend_job_summary": "\t\tA total of {total_processed} files have been processed.\n\n",
+    "backend_no_files_found": "\t\tNo files to process were found in the target folders.\n\n",
+    "backend_rename_block": "\t\t- Status: File renamed successfully\n\t\t\t- Original: \\{original}\n\t\t\t- New: \\{new}\n\n",
+    "backend_rename_error": "\t\tError: {error}\n\n",
+    "backend_rename_exception_block": "\t\t- Status: Renamed file via exception handling\n\t\t\t- Original: \\{original}\n\t\t\t- New: \\{new}\n\n",
+    "backend_searching_files": "\t\t[ PROGRESS ] Searching for files in target folders...\n\n",
+    "backend_unprocessed_error": "\t\tAn unknown error occurred. ({error})\n\n",
+    "backend_unprocessed_header": "\t\t[ INFO ] Files not recognized by manifest.db were handled or skipped as follows.\n\n",
+    "backend_unprocessed_summary": "\t\t{count} files were not processed.\n\n",
+    "backend_warning_db_not_found": "\t\t[ WARNING ] 'manifest.db' does not exist in the selected folder.\n\n",
+    "dialog_select_folder": "Select Game Client Folder",
+    "error_db_not_found": "\t\t'manifest.db' file not found.\n",
+    "error_title": "Error",
+    "folder_item_branch": "\t\t\t├─ {folder_name}\\ (← Target Folder)",
+    "folder_item_last": "\t\t\t└─ {folder_name}\\ (← Target Folder)\n",
+    "folder_open": "Open Folder",
+    "game_client_folder": "Select Game Client Folder:",
+    "initial_info_db": "\t\t[ WARNING ] 'manifest.db' and the target resource files must be in the selected folder with their original structure.\n\n\t\t[ Structure Example ]\n\t\t\t(Selected Folder Path)\\\n\t\t\t├─ manifest.db\n{folder_structure}\n",
+    "initial_info_start": "\t\t[ INFO ] Please press the 'Start Process' button.\n",
+    "job_start_log": "\t\t[ START PROCESS ] Starting a new job.\n\n",
+    "menu_about": "About",
+    "menu_language": "Language",
+    "msgbox_error_log_saved_msg": "An error occurred during the operation. An error log has been saved in the logs folder.",
+    "msgbox_error_log_saved_title": "Error Log Created",
+    "program_started": "\t\tProgram started.\n",
+    "start_button": "Start Process",
+    "status_complete": "Status: Complete",
+    "status_complete_count": "Complete: {count} / {count}",
+    "status_processing": "Processing: {current} / {total}",
+    "status_searching": "Searching files...",
+    "status_waiting": "Status: Waiting",
+    "window_title": "Manifest File Renamer",
+}
 
 
 class RenamerController(QueuePollingMixin):
@@ -51,7 +102,7 @@ class RenamerController(QueuePollingMixin):
         progress_queue: 작업 스레드로부터 ProgressEvent 데이터클래스를 수신하는 큐.
         shared_state: 의존성 주입을 위한 공유 매개변수 객체.
         file_processor: 활성 RenameHashedFile 인스턴스.
-        log_manager: 로그 포맷팅 및 이력 유지를 전담하는 RenamerLogRenderer 인스턴스.
+        log_manager: 로그 포맷팅 및 이력 관리를 담당하는 RenamerLogRenderer 인스턴스.
         queue_handler: UI 타이머 주기마다 큐를 비우고 UI를 갱신하는 RenamerQueueHandler 인스턴스.
     """
 
@@ -107,7 +158,6 @@ class RenamerController(QueuePollingMixin):
         self.shared_state.progress_queue = self.progress_queue
         self.shared_state.base_path_provider = lambda: self._base_path
         self._rename_service = RenameService(
-            shared_state=self.shared_state,
             get_string=self.get_string,
             log_queue=self.log_queue,
             progress_queue=self.progress_queue,
@@ -117,20 +167,21 @@ class RenamerController(QueuePollingMixin):
 
         self.log_manager = RenamerLogRenderer(
             get_string=self.get_string,
-            get_lang_dict=self.get_lang_dict,
-            get_lang_code=lambda: self.lang_var.get(),
             target_folders_provider=lambda: self.file_processor.target_folders,
             view=self.view,
         )
         self.log_data = self.log_manager.log_data
-        self._render_cache = self.log_manager._render_cache
 
         self.queue_handler = RenamerQueueHandler(self, self.log_manager, self._rename_service, self.view)
 
         self.update_ui_language(is_initial_setup=True)
         self.view.set_base_path_text("")
 
-        self._init_queue_polling(self.view, interval_ms=GUI_UPDATE_INTERVAL_MS)
+        self._init_queue_polling(self.view)
+
+    def _should_poll(self) -> bool:
+        """파일 복원 작업이 진행 중일 때만 활성 주기로 폴링 (유휴 시 폴링 대기 간격 적용)."""
+        return bool(self.is_processing)
 
     def get_string(self, key: str, **kwargs: Any) -> str:
         """현재 활성화된 언어 사전에서 지정된 키에 대응하는 포맷팅된 번역 문자열 반환.
@@ -142,10 +193,13 @@ class RenamerController(QueuePollingMixin):
         Returns:
             포맷팅 완료된 번역 문자열 (조회 실패 시 키 자체 반환).
         """
-        lang_dict = LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))
+        lang_dict = pick_language(self.lang_var.get(), LANGUAGES)
         template = lang_dict.get(key)
         if template is None:
-            template = LANGUAGES.get('en', {}).get(key, key)
+            template = pick_language('en', LANGUAGES).get(key)
+        if template is None:
+            # JSON 손상/키 누락 시 최후 폴백: 내장 영어 리터럴 → 키 이름
+            template = _RENAMER_ENGLISH_FALLBACK.get(key, key)
         try:
             return str(template).format(**kwargs)
         except (KeyError, ValueError, IndexError, TypeError):
@@ -157,7 +211,7 @@ class RenamerController(QueuePollingMixin):
         Returns:
             번역 키와 템플릿 문자열 매핑 딕셔너리.
         """
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))  # type: ignore[no-any-return]
+        return pick_language(self.lang_var.get(), LANGUAGES)
 
     def _on_language_change(self, *args: Any) -> None:
         """전역 언어 변경 이벤트 수신 시 콜백 처리."""
@@ -242,7 +296,7 @@ class RenamerController(QueuePollingMixin):
     def start_processing_thread(self) -> None:
         """요구 조건 검증 후 백그라운드 파일 이름 복원 스레드 시작.
 
-        대상 폴더 선택 여부 및 매니페스트 DB/폴더 존재 여부 확인 후 작업자 스레드 시작.
+        대상 폴더 선택 여부 및 매니페스트 DB/폴더 존재 여부 확인 후 워커 스레드 시작.
         """
         from tkinter import messagebox
         if self.is_processing:
@@ -279,9 +333,17 @@ class RenamerController(QueuePollingMixin):
         self.queue_handler.on_poll_cycle()
 
     def cleanup(self) -> None:
-        """탭 파기 또는 종료 시 큐 폴링 중단 및 작업 스레드 안전 종료 대기 (ModuleController 프로토콜 준수)."""
+        """탭 파기 또는 종료 시 큐 폴링 중단 및 작업 스레드 안전 종료 대기 (ModuleController 프로토콜 준수).
+
+        종료가 모든 파일 처리를 기다리며 블로킹되지 않도록, 조인 이전에 협력적 취소
+        신호를 전파하여 미시작 예약 작업을 폐기하고 짧은 조인 타임아웃만 대기.
+        """
         self._stop_polling()
+        # 조인 이전에 취소 신호를 먼저 전파: 예약 작업 폐기 및 조기 종료 유도
+        with contextlib.suppress(Exception):
+            self._rename_service.cancel()
         if self._active_thread is not None and self._active_thread.is_alive():
-            self._active_thread.join(timeout=3.0)
+            # 전체 파일 완료를 기다리지 않도록 짧은 조인만 수행
+            self._active_thread.join(timeout=RENAMER_CLEANUP_JOIN_TIMEOUT)
             if self._active_thread.is_alive():
                 logger.warning("Renamer worker thread did not terminate in time")

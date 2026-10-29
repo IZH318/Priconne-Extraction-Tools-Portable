@@ -1,17 +1,17 @@
-"""전역 에러 로깅 및 3계층 크래시 덤프(Crash Dump) 시스템 모듈.
+"""전역 에러 로깅 및 예외 처리 모듈.
 
-애플리케이션 전역 발생 예외 3계층 가로채기(Intercept) 기록:
+애플리케이션 전역 예외 포착 및 기록:
 1. 메인 스레드 미처리 예외 (sys.excepthook)
 2. 백그라운드 워커 스레드 예외 (threading.excepthook)
 3. Tkinter GUI 이벤트 루프 콜백 예외 (tk_root.report_callback_exception)
 
-시스템 사양, 스택 트레이스, 브레드크럼 기록 및 최근 50개 로그 유지.
+시스템 사양, 스택 트레이스, 브레드크럼 기록 및 세션 로그 파일 기록(자동 삭제 없음).
+세션 진단 로그도 기존 작업 로그(write_log_header)와 동일한 형식으로 logs/AppLog_*.log 에 기록.
 """
 from __future__ import annotations
 
 import logging
 import os
-import platform
 import sys
 import threading
 import tkinter as tk
@@ -26,8 +26,33 @@ from src.breadcrumbs import format_breadcrumbs
 logger = logging.getLogger("priconne")
 
 
-_LOG_FILENAME_COUNTER: list[int] = [0]
-_LOG_FILENAME_COUNTER_LOCK = threading.Lock()
+_ERROR_LOG_WRITE_LOCK = threading.Lock()
+
+
+def _resolve_log_dir() -> Path:
+    """로그 파일 저장 디렉터리(<base>/logs) 결정 및 생성.
+
+    실행 디렉터리에 쓰기 권한이 없어 생성에 실패(OSError/PermissionError)하면
+    OS 임시 폴더 하위의 priconne_logs 폴더로 폴백한다.
+
+    Returns:
+        Path: 로그 파일을 기록할 디렉터리 경로 (쓰기 가능 상태로 생성 완료).
+
+    Raises:
+        OSError: 기본 로그 경로 및 임시 폴더 폴백 생성까지 모두 실패한 경우.
+    """
+    import tempfile
+
+    from src.utils.base_path import get_application_base_path
+
+    log_dir = get_application_base_path() / "logs"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+    except (OSError, PermissionError):
+        # 실행 디렉터리 쓰기 권한 부재 시 OS 임시 폴더 폴백
+        log_dir = Path(tempfile.gettempdir()) / "priconne_logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir
 
 
 def write_error_log(
@@ -37,10 +62,9 @@ def write_error_log(
     exc_value: BaseException | None,
     exc_traceback: TracebackType | None,
 ) -> str:
-    """예외 상세 정보, 시스템 사양 및 사용자 궤적을 포함한 에러 로그 파일 생성.
+    """예외 상세 정보, 시스템 사양 및 최근 동작 이력(Breadcrumbs)을 포함한 에러 로그 파일 생성.
 
-    .tmp 임시 파일에 기록 후 os.replace로 원자적 교체.
-    50개 초과 시 오래된 로그부터 자동 삭제.
+    동일 파일명(같은 초)이 이미 존재하면 이어서 기록(append)하며, 로그는 자동 삭제하지 않는다.
 
     Args:
         app_info (dict[str, Any]): 앱 버전, 빌드 날짜, 개발자 정보 등을 담은 딕셔너리.
@@ -56,38 +80,15 @@ def write_error_log(
     base_path = get_application_base_path()
     exec_path = str(base_path)
 
-    import tempfile
-    import uuid
-    log_dir = base_path / "logs"
-    try:
-        log_dir.mkdir(parents=True, exist_ok=True)
-    except (OSError, PermissionError):
-        # 실행 디렉터리 쓰기 권한 부재 시 OS 임시 폴더 폴백
-        log_dir = Path(tempfile.gettempdir()) / "priconne_logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
+    log_dir = _resolve_log_dir()
 
     now = datetime.now()
-    timestamp_str = now.strftime("%Y-%m-%d_%H%M%S_%f")
-    # 동일 마이크로초 내 다중 스레드 동시 에러 시 파일명 충돌 방지용 카운터
-    with _LOG_FILENAME_COUNTER_LOCK:
-        _LOG_FILENAME_COUNTER[0] += 1
-        counter = _LOG_FILENAME_COUNTER[0]
-    log_filename = f"ErrorLog_{timestamp_str}_{counter}_{uuid.uuid4().hex[:8]}.log"
-    log_filepath = log_dir / log_filename
+    log_filepath = log_dir / f"ErrorLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
 
     from src.constants import SEPARATOR_LONG
-    separator = SEPARATOR_LONG
+    from src.utils.error_log import write_log_header, write_log_item
 
-    # 1. 시스템 환경 및 메타데이터 수집
-    app_version = app_info.get('APP_VERSION', 'Unknown')
-    app_update = app_info.get('APP_LAST_UPDATE', 'Unknown')
-    app_dev = app_info.get('APP_DEVELOPER', 'Unknown')
-
-    python_ver = platform.python_version()
-    os_ver = platform.platform()
-    cpu_cores = os.cpu_count() or 1
-
-    # 2. 스택 트레이스 포맷팅
+    # 1. 스택 트레이스 포맷팅
     if exc_type is None:
         exc_type = type(exc_value) if exc_value is not None else Exception
     if exc_value is None:
@@ -96,74 +97,97 @@ def write_error_log(
         stack_trace_lines = traceback.format_exception(exc_type, exc_value, exc_traceback)
     except (TypeError, ValueError, AttributeError, RuntimeError):
         stack_trace_lines = [f"{exc_type.__name__}: {exc_value}\n"]
-    stack_trace_text = "".join(stack_trace_lines).strip()
+    stack_trace_text = "".join(stack_trace_lines).strip() or "No stack trace available."
 
-    # 3. 로그 본문 조립
-    _lines = []
-    _lines.append(f"{separator}\n")
-    _lines.append(f"[SESSION] {context_name} Error Log Started at {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-    _lines.append(f"{separator}\n")
-    _lines.append(f"[TOOL]    App Version:     {app_version} ({app_update})\n")
-    _lines.append(f"[TOOL]    Developer:       {app_dev}\n")
-    _lines.append(f"[ENGINE]  Python Version:  {python_ver}\n")
-    _lines.append(f"[SYSTEM]  OS Version:      {os_ver}\n")
-    _lines.append(f"[SYSTEM]  Processor Count: {cpu_cores} Cores\n")
-    _lines.append(f"[PATH]    Exec Path:       {exec_path}\n")
-    _lines.append("[REPORT]  Total Errors:    1\n")
-    _lines.append(f"{separator}\n\n")
-
-    _lines.append("[ERROR ITEM #1]\n")
-    _lines.append(f"Timestamp : {now.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}\n")
-    _lines.append(f"Context   : {context_name}\n")
-    _lines.append(f"Exception : {exc_type.__name__ if exc_type else 'Unknown'}\n")
-    _lines.append(f"Message   : {exc_value!s}\n")
-    _lines.append("Stack Trace :\n")
-    _lines.append(f"{stack_trace_text if stack_trace_text else 'No stack trace available.'}\n")
-    _lines.append(f"{separator}\n\n")
-
-    # 4. 최근 사용자 조작 궤적(Breadcrumbs) 첨부
-    breadcrumb_text = format_breadcrumbs()
-    if breadcrumb_text:
-        _lines.append(f"{breadcrumb_text}\n")
-        _lines.append(f"{separator}\n\n")
-
-    content = "".join(_lines)
-
-    # 5. 임시 파일 작성 후 교체 (원자적 쓰기)
-    tmp_path = log_filepath.with_suffix(log_filepath.suffix + ".tmp")
-    with open(tmp_path, 'w', encoding='utf-8') as f:
-        f.write(content)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp_path, log_filepath)
-
-    # 6. 임시 파일 정리 및 오래된 에러 로그 로테이션 (최대 50개 유지)
-    try:
-        for tmp_file in log_dir.glob("ErrorLog_*.tmp"):
-            try:
-                tmp_file.unlink(missing_ok=True)
-            except OSError:
-                pass
-        log_files = list(log_dir.glob("ErrorLog_*.log"))
-        entries: list[tuple[float, Path]] = []
-        for p in log_files:
-            try:
-                entries.append((p.stat().st_mtime, p))
-            except OSError as _exc:
-                logger.debug("Failed to stat error log %s: %s", p, _exc)
-                continue
-        entries.sort(key=lambda x: x[0])
-        while len(entries) > 50:
-            _, oldest = entries.pop(0)
-            try:
-                oldest.unlink()
-            except OSError as exc:
-                logger.warning("Failed to remove old error log %s: %s", oldest, exc)
-                continue
-    except OSError as exc:
-        logger.warning("Failed to rotate error logs in %s: %s", log_dir, exc)
+    # 2. 동일 파일명(같은 초)에는 이어서 기록 (덮어쓰지 않음)
+    with _ERROR_LOG_WRITE_LOCK:
+        with open(log_filepath, "a", encoding="utf-8") as f:
+            write_log_header(
+                f,
+                f"{context_name} Error Log",
+                exec_path,
+                app_info,
+                extra_report=["[REPORT]  Total Errors:    1"],
+            )
+            write_log_item(
+                f,
+                item_header="[ERROR ITEM #{idx}]",
+                idx=1,
+                timestamp=now,
+                context=context_name,
+                target=exc_type.__name__ if exc_type else "Unknown",
+                message=exc_value,
+                detail=stack_trace_text,
+            )
+            breadcrumb_text = format_breadcrumbs()
+            if breadcrumb_text:
+                f.write(f"{breadcrumb_text}\n")
+                f.write(f"{SEPARATOR_LONG}\n")
+            f.flush()
 
     return str(log_filepath)
+
+
+class _AppLogFileHandler(logging.Handler):
+    """세션 진단 로그를 기존 작업 로그와 동일한 형식으로 파일에 기록하는 핸들러.
+
+    상단에 표준 세션/시스템 헤더(write_log_header)를 기록하고, 각 레코드는
+    공통 항목 규격([레벨 ITEM #n] + Target/Message)으로 남긴다.
+    파일은 <base>/logs/AppLog_*.log 이며, 같은 파일명(같은 초)이면 이어서 기록한다.
+    """
+
+    def __init__(self, app_info: dict[str, Any]) -> None:
+        super().__init__()
+        self._app_info = app_info
+        self._file: Any = None
+        self._item_index = 0
+        self._open()
+
+    def _open(self) -> None:
+        from src.utils.base_path import get_application_base_path
+        from src.utils.error_log import write_log_header
+
+        base_path = get_application_base_path()
+        log_dir = _resolve_log_dir()
+
+        now = datetime.now()
+        filename = f"AppLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
+        self._file = open(log_dir / filename, "a", encoding="utf-8")
+        write_log_header(self._file, "Application Log", base_path, self._app_info)
+        self._file.flush()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self._file is None:
+            return
+        from src.utils.error_log import write_log_item
+
+        try:
+            self._item_index += 1
+            detail = None
+            if record.exc_info:
+                detail = "".join(traceback.format_exception(*record.exc_info)).strip()
+            write_log_item(
+                self._file,
+                item_header=f"[{record.levelname} ITEM #{{idx}}]",
+                idx=self._item_index,
+                timestamp=datetime.now(),
+                context=record.threadName or "",
+                target=record.name,
+                message=record.getMessage(),
+                detail=detail,
+            )
+            self._file.flush()
+        except (OSError, ValueError):
+            self.handleError(record)
+
+    def close(self) -> None:
+        if self._file is not None:
+            try:
+                self._file.close()
+            except OSError:
+                pass
+            self._file = None
+        super().close()
 
 
 def setup_global_logging(
@@ -183,15 +207,22 @@ def setup_global_logging(
     if app_info is None:
         app_info = {}
 
-    # 1. 전역 로그 레벨 설정 (환경 변수 PRICONNE_LOG_LEVEL 지원, 기본값: ERROR)
-    log_level_name = os.environ.get('PRICONNE_LOG_LEVEL', 'ERROR').upper()
-    log_level = getattr(logging, log_level_name, logging.ERROR)
+    # 1. 전역 로그 레벨 설정 (환경 변수 PRICONNE_LOG_LEVEL 지원, 기본값: WARNING)
+    log_level_name = os.environ.get('PRICONNE_LOG_LEVEL', 'WARNING').upper()
+    log_level = getattr(logging, log_level_name, logging.WARNING)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(log_level)
 
-    if not root_logger.handlers:
-        root_logger.addHandler(logging.NullHandler())
+    # 기존 작업 로그와 동일한 형식의 세션 로그 파일 핸들러 부착 (중복 부착 방지)
+    if not any(isinstance(h, _AppLogFileHandler) for h in root_logger.handlers):
+        try:
+            root_logger.addHandler(_AppLogFileHandler(app_info))
+        except (OSError, PermissionError) as exc:
+            # 로그 파일 생성 실패 시 로그 유실 방지용 NullHandler 폴백 (크래시 금지)
+            logger.warning("Failed to attach application log file handler: %s", exc)
+            if not root_logger.handlers:
+                root_logger.addHandler(logging.NullHandler())
 
     # 2. 메인 스레드 미처리 예외 훅
     def handle_exception(
@@ -249,7 +280,7 @@ def setup_global_logging(
             # 언어 설정 가져오기 (기본값 'en')
             try:
                 lang_code = lang_var.get() if lang_var else 'en'
-            except (tk.TclError, RuntimeError, AttributeError):  # 폴백: 위젯 파괴 시점 예외 방어
+            except (tk.TclError, RuntimeError, AttributeError):  # 폴백: 위젯 파괴 시점 예외 처리
                 lang_code = 'en'
             if lang_data_map and 'main_menu' in lang_data_map:
                 menu_data = lang_data_map['main_menu']

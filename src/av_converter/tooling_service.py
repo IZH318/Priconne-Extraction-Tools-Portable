@@ -11,12 +11,13 @@ import logging
 import shutil
 import subprocess
 import tkinter as tk
+from tkinter import messagebox
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
 from src.av_converter.logic import ConversionLogic
-from src.constants import GUI_POLLING_INTERVAL_MS, TabType
+from src.constants import FFMPEG_MIN_SUPPORTED, FFMPEG_TARGET_VERSION, GUI_POLLING_INTERVAL_MS, USMTOOLKIT_VERSION_PROBE_TIMEOUT, TabType
 from src.shared_state import SharedState
 from src.subprocess_runner import SubprocessRunner
 
@@ -130,7 +131,7 @@ class AVToolingService:
         """UsmToolkit 실행에 필요한 .NET 런타임 환경 시스템 설치 여부 검증.
 
         UsmToolkit 실행 파일이 존재하면 --version 서브프로세스를 시험 실행하며,
-        없으면 dotnet --list-runtimes 출력을 파싱하여 런타임 설치 여부 판별.
+        실행에 실패하면 dotnet --list-runtimes 출력을 파싱하여 런타임 설치 여부로 재판별한다.
 
         Returns:
             bool: .NET 런타임이 유효하게 사용 가능하면 True.
@@ -138,12 +139,24 @@ class AVToolingService:
         usm = self._get_usmtoolkit_path()
         if usm is not None and hasattr(usm, "exists") and usm.exists():
             try:
-                res = SubprocessRunner.run([str(usm), "--version"], timeout=3)
-                return res.returncode == 0
+                res = SubprocessRunner.run([str(usm), "--version"], timeout=USMTOOLKIT_VERSION_PROBE_TIMEOUT)
+                if res.returncode == 0:
+                    return True
             except (OSError, RuntimeError, ValueError, subprocess.SubprocessError):
-                return False
+                pass
         runtimes = ConversionLogic.get_installed_dotnet_runtimes()
-        return len(runtimes) > 0
+        # 롤포워드는 전방 전용이므로 netcoreapp3.1 앱은 3.1 이상 런타임이 있어야 구동된다
+        for entry in runtimes:
+            parts = entry.split()
+            if len(parts) < 2:
+                continue
+            try:
+                major_minor = tuple(int(part) for part in parts[1].split('.')[:2])
+            except ValueError:
+                continue
+            if len(major_minor) == 2 and major_minor >= (3, 1):
+                return True
+        return False
 
     def start_tool_preparation(self, tab_type: TabType, output_dir: str, next_func: Callable[[str], None]) -> None:
         """필수 도구 다운로드를 트리거하고 완료 시까지 GUI 이벤트 루프로 상태 감시.
@@ -183,10 +196,12 @@ class AVToolingService:
                         next_func(output_dir)
                     else:
                         view.reset_ui_state(tab_type, reset_status=True)
-                except (OSError, RuntimeError, ValueError) as e:
+                        self._notify_prepare_failure()
+                except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
                     if ss is not None and callable(getattr(ss, "add_log_entry", None)):
                         ss.add_log_entry(tab_type, "conv_log_error_exception", error=str(e))
                     view.reset_ui_state(tab_type, reset_status=True)
+                    self._notify_prepare_failure()
             else:
                 try:
                     view.after(self._polling_interval_ms, check_tool_status)
@@ -199,6 +214,37 @@ class AVToolingService:
         except (tk.TclError, RuntimeError):
             self._preparing[str(tab_type)] = False
             logger.debug("view.after failed in start_tool_preparation", exc_info=True)
+
+    def _notify_prepare_failure(self) -> None:
+        """도구 준비 실패 시 실패한 도구를 안내하는 팝업을 표시.
+
+        FFmpeg 실패인 경우 수동 배치 안내와 권장/최소 지원 버전을 함께 표시.
+        """
+        lang = self._get_lang_dict() if callable(self._get_lang_dict) else {}
+        fail_key_raw = getattr(self._tool_pipeline, "last_prepare_fail", None) if self._tool_pipeline is not None else None
+        fail_key: str = fail_key_raw if isinstance(fail_key_raw, str) else ""
+        tool = {
+            'usmtoolkit_prepare_fail': 'UsmToolkit',
+            'vgmstream_prepare_fail': 'vgmstream',
+            'ffmpeg_prepare_fail': 'FFmpeg',
+        }.get(fail_key, 'Unknown')
+
+        title = lang.get('tools_prepare_fail_title', 'Tool Preparation Failed')
+        msg = lang.get(
+            'tools_prepare_fail_msg',
+            "Cannot start conversion because tool preparation failed.\n\n- Failed tool: {tool}",
+        ).format(tool=tool)
+
+        if fail_key == 'ffmpeg_prepare_fail':
+            hint = lang.get('ffmpeg_manual_place_hint')
+            if hint:
+                min_display = f"{FFMPEG_MIN_SUPPORTED[0]}.{FFMPEG_MIN_SUPPORTED[1]}"
+                msg = msg + "\n\n" + hint.format(target=FFMPEG_TARGET_VERSION, min_supported=min_display)
+
+        try:
+            messagebox.showwarning(title, msg, parent=self._view)
+        except (tk.TclError, TypeError, AttributeError):
+            logger.debug("Failed to show prepare-failure dialog", exc_info=True)
 
     def _add_log_entry(self, target_tab: TabType, log_key: str, **kwargs: Any) -> None:
         """상태 객체 또는 로그 큐를 통해 UI 로그 렌더러에 이벤트 발행.

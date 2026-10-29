@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-import shlex
 import tkinter as tk
 
 logger = logging.getLogger(__name__)
@@ -19,7 +18,7 @@ class FileListMixin:
     """파일 목록 갱신 및 TkinterDnD 이벤트 경로 해석 공통 기능을 제공하는 믹스인 클래스.
 
     Tkinter 드래그 앤 드롭 시 공백 포함 경로는 중괄호({path with space}) 묶음 전달되므로,
-    Tcl splitlist -> shlex.split -> 정규식 순서의 3중 폴백으로 안전하게 경로 분리.
+    Tcl splitlist -> 정규식 순서의 2중 폴백으로 안전하게 경로 분리.
     """
 
     @staticmethod
@@ -28,8 +27,8 @@ class FileListMixin:
 
         파싱 전략:
         1. Tcl C-API 레벨의 tk.splitlist 우선 시도 (중괄호 공백 경로 기본 지원).
-        2. TclError 또는 AttributeError 발생 시 표준 라이브러리 shlex.split 시도.
-        3. 따옴표 불일치 등으로 실패 시 중괄호 매칭 정규식(\\{[^{}]*\\}|[^ ]+) 폴백 적용.
+        2. TclError 또는 AttributeError 발생 시 중괄호 매칭 정규식 폴백 적용
+           (shlex.split은 Windows 백슬래시를 이스케이프로 해석해 경로를 훼손하므로 사용하지 않음).
 
         Args:
             tk_root (tk.Misc): Tcl 인터프리터 컨텍스트 접근용 Tk 위젯 인스턴스.
@@ -42,14 +41,10 @@ class FileListMixin:
             return list(tk_root.tk.splitlist(data))
         except (AttributeError, tk.TclError):
             try:
-                return shlex.split(data)
-            except (ValueError, OSError) as _exc:
-                logger.debug("shlex.split failed: %s", _exc)
-                try:
-                    return [p.strip('{}') for p in re.findall(r'\{[^{}]*\}|[^ ]+', data) if p.strip()]
-                except (re.error, ValueError) as _exc2:
-                    logger.debug("regex fallback failed: %s", _exc2)
-                    return [data]
+                return [p.strip('{}') for p in re.findall(r'\{[^{}]*\}|[^ ]+', data) if p.strip()]
+            except (re.error, ValueError) as _exc:
+                logger.debug("regex fallback failed: %s", _exc)
+                return [data]
 
     @staticmethod
     def _add_paths_to_file_list(
@@ -67,17 +62,18 @@ class FileListMixin:
         Returns:
             list[str]: 실제로 새롭게 추가된 고유 파일 경로 리스트.
         """
-        existing = set(file_paths)
+        # Windows는 대소문자를 구분하지 않으므로 정규화 키로 중복 판정
+        exts = tuple(e.lower() for e in supported_exts) if supported_exts else None
+        existing = {os.path.normcase(os.path.abspath(p)) for p in file_paths}
         added: list[str] = []
         for p in new_paths:
-            if p in existing:
+            key = os.path.normcase(os.path.abspath(p))
+            if key in existing:
                 continue
-            if supported_exts:
-                _exts = tuple(e.lower() for e in supported_exts)
-                if not p.lower().endswith(_exts):
-                    continue
+            if exts is not None and not p.lower().endswith(exts):
+                continue
             file_paths.append(p)
-            existing.add(p)
+            existing.add(key)
             added.append(p)
         return added
 
@@ -120,8 +116,6 @@ class FileListMixin:
         file_paths.clear()
         return count
 
-    _MAX_COLLECTED_FILES: int = 100_000
-
     @staticmethod
     def _collect_files_from_paths(
         paths: list[str],
@@ -130,7 +124,7 @@ class FileListMixin:
     ) -> list[str]:
         """경로 목록을 검색하여 지원 확장자에 맞는 파일 수집.
 
-        폴더 포함 시 os.walk(followlinks=False) 기반 심볼릭 링크 루프 방어 재귀 탐색 및
+        폴더 포함 시 os.walk(followlinks=False) 기반 심볼릭 링크 순환(루프) 방지 재귀 탐색 및
         메모리 고갈 방지 목적의 max_files 초과 시 즉시 탐색 중단 처리.
 
         Args:
@@ -148,8 +142,9 @@ class FileListMixin:
             if len(found) >= max_files:
                 break
             if os.path.isfile(path) and path.lower().endswith(_exts):
-                if path not in seen:
-                    seen.add(path)
+                key = os.path.normcase(os.path.abspath(path))
+                if key not in seen:
+                    seen.add(key)
                     found.append(path)
             elif os.path.isdir(path):
                 for root, _, files in os.walk(path, followlinks=False):
@@ -160,8 +155,9 @@ class FileListMixin:
                             break
                         if f.lower().endswith(_exts):
                             full = os.path.join(root, f)
-                            if full not in seen:
-                                seen.add(full)
+                            key = os.path.normcase(os.path.abspath(full))
+                            if key not in seen:
+                                seen.add(key)
                                 found.append(full)
         return found
 

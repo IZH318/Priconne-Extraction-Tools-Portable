@@ -18,7 +18,9 @@ from tkinter import messagebox, ttk
 from typing import Any, ClassVar
 
 from src.constants import DEFAULT_UNITY_VERSION
+from src.utils.dialogs import center_window
 from src.utils.platform_open import open_with_default_app
+from src.utils.tk_safe import post_to_ui
 
 logger = logging.getLogger(__name__)
 
@@ -122,15 +124,11 @@ class AssetBrowserWindow(tk.Toplevel):
 
         # 화면 중앙에 윈도우 배치
         win_w, win_h = 600, 500
-        screen_w = self.winfo_screenwidth()
-        screen_h = self.winfo_screenheight()
-        x = (screen_w // 2) - (win_w // 2)
-        y = (screen_h // 2) - (win_h // 2)
-        self.geometry(f'{win_w}x{win_h}+{x}+{y}')
+        center_window(self, win_w, win_h)
         self.transient(master)
 
         self._build_ui()
-        self._load_assets()
+        self._start_loading()
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.deiconify()
@@ -158,49 +156,86 @@ class AssetBrowserWindow(tk.Toplevel):
 
         self.tree.bind('<Double-Button-1>', self._on_double_click)
 
-    def _load_assets(self) -> None:
-        """UnityPy로 번들을 로드하고 에셋 타입별로 그룹화하여 트리에 배치."""
+    def _start_loading(self) -> None:
+        """번들 로딩을 백그라운드 스레드에서 시작.
+
+        UnityPy.load + 에셋 파싱은 번들 크기에 비례해 수 초가 걸릴 수 있으므로
+        메인 스레드에서 수행하지 않는다(창이 즉시 표시되고 UI는 계속 반응).
+        """
+        try:
+            self.tree.insert('', 'end', text=self.lang_dict.get('asset_loading', 'Loading...'))
+        except tk.TclError:
+            pass
+        threading.Thread(target=self._load_assets_worker, daemon=True).start()
+
+    def _load_assets_worker(self) -> None:
+        """워커 스레드: 번들 로드 및 트리에 표시할 항목 메타데이터 수집."""
         try:
             import UnityPy
             from UnityPy import config
             config.FALLBACK_UNITY_VERSION = self.unity_version  # type: ignore[assignment]
             env = UnityPy.load(self.file_path)
-        except (OSError, ValueError, RuntimeError) as e:
-            if self._generate_error_log:
-                self._generate_error_log([(self.file_path, str(e))], context="Asset Browser Load")
-            title = self.lang_dict.get('asset_error_title', 'Error')
-            notice = self.lang_dict.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
-            messagebox.showerror(title, f"{e!s}\n\n{notice}", parent=self)
+
+            entries: list[tuple[str, str, str, str, Any]] = []
+            for obj in env.objects:
+                type_name = obj.type.name
+                group_name = self.TYPE_GROUPS.get(type_name, type_name)
+                try:
+                    data = obj.parse_as_object()
+                    name = getattr(data, 'm_Name', '') or f"PathID_{obj.path_id}"
+                except AttributeError:
+                    name = f"PathID_{obj.path_id}"
+                try:
+                    size_str = self._format_file_size(obj.byte_size)
+                except AttributeError:
+                    size_str = "?"
+                entries.append((group_name, name, type_name, size_str, obj))
+        except Exception as e:  # noqa: BLE001
+            # 워커 스레드이므로 어떤 예외든 메인 스레드로 넘겨 에러 로그/안내창으로 처리한다
+            # (여기서 놓치면 스레드가 조용히 죽고 'Loading...' 표시가 남는다).
+            def _report_load_error(error: Exception = e) -> None:
+                self._on_load_error(error)
+
+            post_to_ui(_report_load_error)
             return
 
-        group_nodes = {}
+        post_to_ui(lambda: self._populate_asset_tree(entries))
 
-        for obj in env.objects:
-            type_name = obj.type.name
-            group_name = self.TYPE_GROUPS.get(type_name, type_name)
+    def _populate_asset_tree(self, entries: list[tuple[str, str, str, str, Any]]) -> None:
+        """메인 스레드: 수집된 항목을 타입별 그룹 노드 아래에 배치."""
+        try:
+            if not self.winfo_exists():
+                return
+            self.tree.delete(*self.tree.get_children())
+            group_nodes: dict[str, str] = {}
+            for group_name, name, type_name, size_str, obj in entries:
+                if group_name not in group_nodes:
+                    group_nodes[group_name] = self.tree.insert('', 'end', text=group_name, open=False)
+                item_id = self.tree.insert(
+                    group_nodes[group_name], 'end', text=name, values=(type_name, size_str)
+                )
+                self._asset_map[item_id] = (obj, type_name)
+        except tk.TclError:
+            pass
 
-            if group_name not in group_nodes:
-                group_nodes[group_name] = self.tree.insert('', 'end', text=group_name, open=False)
-
-            try:
-                data = obj.parse_as_object()
-                name = getattr(data, 'm_Name', '') or f"PathID_{obj.path_id}"
-            except AttributeError:
-                name = f"PathID_{obj.path_id}"
-
-            try:
-                size_str = self._format_file_size(obj.byte_size)
-            except AttributeError:
-                size_str = "?"
-
-            item_id = self.tree.insert(group_nodes[group_name], 'end',
-                                        text=name, values=(type_name, size_str))
-            self._asset_map[item_id] = (obj, type_name)
+    def _on_load_error(self, error: Exception) -> None:
+        """메인 스레드: 로드 실패 시 에러 로그 작성 및 안내 대화상자 표시."""
+        try:
+            if not self.winfo_exists():
+                return
+            self.tree.delete(*self.tree.get_children())
+        except tk.TclError:
+            pass
+        if self._generate_error_log:
+            self._generate_error_log([(self.file_path, str(error))], context="Asset Browser Load")
+        title = self.lang_dict.get('asset_error_title', 'Error')
+        notice = self.lang_dict.get('msgbox_error_log_saved_msg', 'An error occurred during the operation. An error log has been saved in the logs folder.')
+        messagebox.showerror(title, f"{error!s}\n\n{notice}", parent=self)
 
     def _on_double_click(self, event: tk.Event) -> None:
         """항목 더블 클릭 이벤트 처리 (선택 에셋 추출 및 기본 앱 미리보기 실행).
 
-        진행률 모달 팝업 표시, 데몬 작업자 스레드에서 에셋 추출 실행 후
+        진행률 모달 팝업 표시, 데몬 워커 스레드에서 에셋 추출 실행 후
         운영체제 기본 프로그램으로 파일 열기 수행.
 
         Args:
@@ -229,9 +264,7 @@ class AssetBrowserWindow(tk.Toplevel):
         popup.withdraw()
         popup.title(self.lang_dict.get('preview_converting', 'Processing...'))
         win_w, win_h = 360, 105
-        sx = popup.winfo_screenwidth()
-        sy = popup.winfo_screenheight()
-        popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
+        center_window(popup, win_w, win_h)
         popup.transient(self)
         popup.grab_set()
         popup.resizable(False, False)
@@ -269,10 +302,7 @@ class AssetBrowserWindow(tk.Toplevel):
             except Exception as e:  # noqa: BLE001
                 error = e
             finally:
-                try:
-                    self.after(0, lambda: on_done(error))
-                except tk.TclError:
-                    pass
+                post_to_ui(lambda: on_done(error))
 
         def on_done(error: Any) -> None:
             try:
@@ -405,7 +435,7 @@ class AssetBrowserWindow(tk.Toplevel):
                     raw_bytes = bytes(text_content)
                 deserialized = StoryDataDeserializer.deserialize(raw_bytes)
                 temp_path = self._get_preview_file_path(name, path_id, ".json")
-                with open(temp_path, "w", encoding="utf-8") as f:
+                with open(temp_path, "w", encoding="utf-8", errors="replace") as f:
                     json.dump(deserialized, f, indent=4, ensure_ascii=False)
                 self._open_with_os(temp_path)
                 return
@@ -441,4 +471,6 @@ class AssetBrowserWindow(tk.Toplevel):
                 shutil.rmtree(self._preview_temp_dir, ignore_errors=True)
             except OSError as _e:
                 logger.debug('Asset browser temp cleanup failed: %s', _e)
+        # 로드된 ObjectReader(→ UnityPy Environment 전체) 참조를 해제해 메모리 반환
+        self._asset_map.clear()
         self.destroy()

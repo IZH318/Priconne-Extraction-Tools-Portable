@@ -12,12 +12,97 @@ import logging
 import os
 import re
 import sqlite3
+import threading
+import weakref
+from collections.abc import Iterator
 from typing import Any
 
 
 from src.exceptions import UnsafeIdentifierError
 
 logger = logging.getLogger(__name__)
+
+# 읽기 전용 SQLite 연결 재사용 캐시.
+# 실측(52MB DB): 신규 연결의 첫 쿼리 약 17~20ms vs 재사용 연결 약 0.06ms.
+# 스레드별로 연결을 보관하며, DB 파일 교체/삭제 전에는 반드시
+# close_cached_connections()로 해제해야 한다(Windows 파일 잠금 방지).
+_CONNECTION_LOCAL = threading.local()
+_CONNECTION_CACHES: weakref.WeakSet[_ConnectionCache] = weakref.WeakSet()
+_CONNECTION_LOCK = threading.Lock()
+
+
+class _ConnectionCache:
+    """스레드별 읽기 전용 연결 보관소 (스레드 종료 시 WeakSet에서 자동 제거)."""
+
+    __slots__ = ("connections", "__weakref__")
+
+    def __init__(self) -> None:
+        self.connections: dict[str, sqlite3.Connection] = {}
+
+
+def _thread_connection_cache() -> _ConnectionCache:
+    """현재 스레드의 연결 캐시를 반환(없으면 생성 후 등록)."""
+    cache: _ConnectionCache | None = getattr(_CONNECTION_LOCAL, "cache", None)
+    if cache is None:
+        cache = _ConnectionCache()
+        _CONNECTION_LOCAL.cache = cache
+        with _CONNECTION_LOCK:
+            _CONNECTION_CACHES.add(cache)
+    return cache
+
+
+def get_readonly_connection(db_path: str | os.PathLike[str]) -> sqlite3.Connection:
+    """스레드별로 재사용되는 읽기 전용 SQLite 연결을 반환.
+
+    Args:
+        db_path (str | os.PathLike[str]): 열려는 SQLite 파일 경로.
+
+    Returns:
+        sqlite3.Connection: 해당 스레드가 보유한 읽기 전용 연결.
+    """
+    raw_path = os.fspath(db_path)
+    key = os.path.normcase(os.path.abspath(raw_path))
+    cache = _thread_connection_cache()
+    conn = cache.connections.get(key)
+    if conn is None:
+        # check_same_thread=False: 연결 사용은 소유 스레드로 한정하되,
+        # DB 교체 전 다른 스레드가 정리(close)할 수 있도록 허용.
+        conn = sqlite3.connect(f"file:{raw_path}?mode=ro", uri=True, check_same_thread=False)
+        cache.connections[key] = conn
+    return conn
+
+
+@contextlib.contextmanager
+def _readonly_connection(db_path: str | os.PathLike[str]) -> Iterator[sqlite3.Connection]:
+    """캐시된 읽기 전용 연결을 닫지 않고 사용하는 컨텍스트 매니저."""
+    yield get_readonly_connection(db_path)
+
+
+def close_cached_connections(db_path: str | os.PathLike[str] | None = None) -> int:
+    """캐시된 읽기 전용 연결을 해제한다(DB 파일 교체/삭제 전 필수 호출).
+
+    Args:
+        db_path (str | os.PathLike[str] | None): 특정 파일만 해제할 경로.
+            None이면 모든 캐시 연결을 해제.
+
+    Returns:
+        int: 닫은 연결 개수.
+    """
+    key = os.path.normcase(os.path.abspath(os.fspath(db_path))) if db_path is not None else None
+    closed = 0
+    with _CONNECTION_LOCK:
+        caches = list(_CONNECTION_CACHES)
+    for cache in caches:
+        for cache_key, conn in list(cache.connections.items()):
+            if key is not None and cache_key != key:
+                continue
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+            cache.connections.pop(cache_key, None)
+            closed += 1
+    return closed
 
 # 데이터베이스 SQL 식별자(테이블/컬럼명) 화이트리스트 패턴: 영숫자, 언더스코어만 허용.
 # 참고: priconne-database의 해시 기반 테이블/컬럼명은 'v1_' prefix가 있어
@@ -86,7 +171,7 @@ def _get_db_path(db_info: dict[str, Any]) -> str:
     db_path = db_info.get('db_path') if isinstance(db_info, dict) else None
     if not db_path:
         raise ValueError("db_info missing 'db_path'")
-    # 보안 강화: 경로 순회 방어 (db_path가 project_root 하위에 머무는지 검증)
+    # 경로 순회(Path Traversal) 방지 검증 (db_path가 project_root 하위에 머무는지 검증)
     resolved = os.path.normpath(os.path.join(script_dir, db_path))
     try:
         if os.path.commonpath([script_dir, resolved]) != script_dir:
@@ -173,7 +258,7 @@ def fetch_event_names(db_info: dict[str, Any]) -> list[str]:
         cached = _EVENT_NAMES_CACHE.get(cache_key)
         if cached is not None:
             return list(cached)
-    with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+    with _readonly_connection(db_path) as conn:
         cursor = conn.cursor()
         query = _build_query(
             table=table,
@@ -215,7 +300,7 @@ def fetch_event_story_ids(db_info: dict[str, Any], event_name: str) -> set[str]:
         f'WHERE trim(replace(replace(replace(l."{name_col}", char(13), \'\'), char(10), \' \'), \'\\n\', \' \')) = ? '
         f'OR l."{name_col}" = ?'
     )
-    with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+    with _readonly_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute(query, (cleaned_name, event_name))
         return {f"storydata_{row[0]}.json" for row in cursor.fetchall()}
@@ -237,7 +322,7 @@ def fetch_birthday_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> 
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             chunk_size = 500
@@ -254,8 +339,8 @@ def fetch_birthday_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> 
                 for row in cursor.fetchall():
                     if row[0] and row[1]:
                         result_map[str(row[0])] = _clean_title_text(row[1])
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_birthday_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -263,15 +348,15 @@ def fetch_birthday_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> 
 def fetch_quest_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dict[str, str]:
     """adv_id 목록 기반 quest_data 테이블 대상 quest_name 일괄 조회.
 
-    story_id_wavestart_3 일치 시 '{quest_name}_start',
-    story_id_waveend_3 일치 시 '{quest_name}_end'로 매핑.
+    story_id_wavestart_3 일치 시 '{quest_name} (start)',
+    story_id_waveend_3 일치 시 '{quest_name} (end)'로 매핑.
 
     Args:
         db_info (dict): 서버별 DB 정보 딕셔너리.
         adv_ids (list[str]): 검색할 adv_id 문자열 리스트.
 
     Returns:
-        dict[str, str]: adv_id를 키로, '{quest_name}_start' 또는 '{quest_name}_end'를 값으로 갖는 딕셔너리.
+        dict[str, str]: adv_id를 키로, '{quest_name} (start)' 또는 '{quest_name} (end)'를 값으로 갖는 딕셔너리.
     """
     db_path = _get_db_path(db_info).replace('\\', '/')
     if not os.path.exists(db_path) or not adv_ids:
@@ -279,7 +364,7 @@ def fetch_quest_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dic
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             chunk_size = 500
@@ -301,11 +386,11 @@ def fetch_quest_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) -> dic
                     if not name:
                         continue
                     if start_id in chunk_set and start_id != '0':
-                        result_map[start_id] = f"{name}_start"
+                        result_map[start_id] = f"{name} (start)"
                     if end_id in chunk_set and end_id != '0':
-                        result_map[end_id] = f"{name}_end"
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+                        result_map[end_id] = f"{name} (end)"
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_quest_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -328,7 +413,7 @@ def fetch_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str])
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             chunk_size = 500
@@ -356,8 +441,8 @@ def fetch_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str])
                     else:
                         continue
                     result_map[story_id] = formatted
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_story_detail_titles_batch failed: %s", exc)
 
     rem_ids = [aid for aid in adv_ids if aid not in result_map]
     if rem_ids:
@@ -365,7 +450,7 @@ def fetch_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[str])
         if p_base and os.path.exists(p_base):
             norm_base = p_base.replace('\\', '/')
             try:
-                with contextlib.closing(sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True)) as conn_b:
+                with _readonly_connection(norm_base) as conn_b:
                     cursor_b = conn_b.cursor()
                     for i in range(0, len(rem_ids), 500):
                         chunk = rem_ids[i:i + 500]
@@ -411,7 +496,7 @@ def fetch_dear_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             chunk_size = 500
@@ -439,8 +524,8 @@ def fetch_dear_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list[
                     else:
                         continue
                     result_map[story_id] = formatted
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_dear_story_detail_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -464,7 +549,7 @@ def _get_jp_situation_to_canonical_id() -> dict[str, str]:
         norm_p = os.path.abspath(p).replace('\\', '/')
         if os.path.exists(norm_p):
             try:
-                with contextlib.closing(sqlite3.connect(f"file:{norm_p}?mode=ro", uri=True)) as conn:
+                with _readonly_connection(norm_p) as conn:
                     cursor = conn.cursor()
                     cursor.execute('SELECT story_id, sub_title FROM dear_story_detail')
                     for r in cursor.fetchall():
@@ -531,7 +616,7 @@ def fetch_dear_story_detail_fallback_titles_batch(
             f"replace(replace(replace(replace(replace(replace({norm_col}, '\\n', ' '), char(9), ''), char(10), ''), char(11), ''), char(12), ''), char(13), ''), ' ', '')"
         )
 
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
             id_to_title = {}
             sub_to_title = {}
@@ -601,8 +686,8 @@ def fetch_dear_story_detail_fallback_titles_batch(
                         canonical_id = jp_sit_map[clean_sit]
                         if str(canonical_id) in id_to_title:
                             result_map[aid] = id_to_title[str(canonical_id)]
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_dear_story_detail_fallback_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -626,7 +711,7 @@ def fetch_tower_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             chunk_size = 500
@@ -654,8 +739,8 @@ def fetch_tower_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: list
                     else:
                         continue
                     result_map[story_id] = formatted
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_tower_story_detail_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -680,7 +765,7 @@ def fetch_alchemy_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: li
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             chunk_size = 500
@@ -698,8 +783,8 @@ def fetch_alchemy_story_detail_titles_batch(db_info: dict[str, Any], adv_ids: li
                     t = _clean_title_text(row[1])
                     if t:
                         result_map[story_id] = t
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_alchemy_story_detail_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -757,7 +842,7 @@ def fetch_sekai_story_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) 
     default_event_name = ""
 
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             tbl_top = _validate_identifier(top_tbl_name)
@@ -830,8 +915,8 @@ def fetch_sekai_story_titles_batch(db_info: dict[str, Any], adv_ids: list[str]) 
                         time_range = _format_sekai_time_range(t_from, t_to)
                         result_map[sid] = f"{default_event_name} - {time_range}" if time_range else default_event_name
 
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_sekai_story_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -861,7 +946,7 @@ def fetch_event_top_adv_titles_batch(
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             tbl_top = _validate_identifier(tbl_name)
@@ -904,7 +989,11 @@ def fetch_event_top_adv_titles_batch(
                 # 2. 캐릭터 ID, 이벤트 ID 기반 매핑
                 chara_ids = list({r[1] for r in rows if r[1] is not None})
                 event_ids = list({r[2] for r in rows if r[2] is not None})
-                group_ids = list({int(r[0]) // 1000 for r in rows if r[0] is not None and str(r[0]).isdigit()})
+                group_ids = list({
+                    int(r[0]) // 1000
+                    for r in rows
+                    if r[0] is not None and str(r[0]).isascii() and str(r[0]).isdigit()
+                })
 
                 # 캐릭터 기본 정보 조회
                 unit_map = {}
@@ -937,8 +1026,8 @@ def fetch_event_top_adv_titles_batch(
                     cursor.execute(f'PRAGMA table_info("{tbl_event}")')
                     cols = [c[1] for c in cursor.fetchall()]
                     has_value_col = 'value' in cols
-                except sqlite3.Error:
-                    pass
+                except sqlite3.Error as exc:
+                    logger.debug("fetch_event_top_adv_titles_batch failed: %s", exc)
 
                 target_grps = list(set(group_ids))
                 if target_grps:
@@ -979,7 +1068,7 @@ def fetch_event_top_adv_titles_batch(
                     ev_id = r[2]
 
                     chara_name = unit_map.get(cid, "")
-                    grp_id = int(sid_raw) // 1000 if str(sid_raw).isdigit() else 0
+                    grp_id = int(sid_raw) // 1000 if sid_str.isascii() and sid_str.isdigit() else 0
                     event_title = event_map_by_val.get(ev_id) or event_map_by_grp.get(grp_id) or ""
 
                     # 이벤트 스토리 상세 조회
@@ -1008,8 +1097,8 @@ def fetch_event_top_adv_titles_batch(
                             result_map[target_aid] = f"[{event_title}]"
                         elif chara_name:
                             result_map[target_aid] = chara_name
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_event_top_adv_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -1032,7 +1121,7 @@ def fetch_event_boss_battle_titles_batch(db_info: dict[str, Any], adv_ids: list[
 
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             # 이벤트 보스 배틀 스토리 조회
@@ -1113,8 +1202,8 @@ def fetch_event_boss_battle_titles_batch(db_info: dict[str, Any], adv_ids: list[
                             m_str = f"SPECIAL MODE {mode} (mode_end)"
                             result_map[sid_str] = f"[{ev_title}] {m_str}" if ev_title else m_str
 
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_event_boss_battle_titles_batch failed: %s", exc)
 
     return result_map
 
@@ -1145,7 +1234,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
     adv_set = set(adv_ids)
     result_map = {}
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             # 1. 이벤트 서브스토리 조회
@@ -1164,8 +1253,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                         for r in cursor.fetchall():
                             if r[0] is not None and r[1] is not None:
                                 event_map[r[0]] = _clean_title_text(r[1])
-            except (sqlite3.Error, UnsafeIdentifierError):
-                pass
+            except (sqlite3.Error, UnsafeIdentifierError) as exc:
+                logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
             # 베이스라인 default(10052900) 이벤트 매핑
             p_base = _get_baseline_db_path(db_info, 'default')
@@ -1173,7 +1262,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
                 norm_base = p_base.replace('\\', '/')
                 with (
                     contextlib.suppress(sqlite3.Error, OSError, ValueError, TypeError, KeyError, AttributeError),
-                    contextlib.closing(sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True)) as conn_b,
+                    _readonly_connection(norm_base) as conn_b,
                 ):
                     cur_b = conn_b.cursor()
                     _rows_b = []
@@ -1198,7 +1287,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
             if p_676 and os.path.exists(p_676):
                 norm_676 = p_676.replace('\\', '/')
                 try:
-                    with contextlib.closing(sqlite3.connect(f"file:{norm_676}?mode=ro", uri=True)) as conn_676:
+                    with _readonly_connection(norm_676) as conn_676:
                         cur_676 = conn_676.cursor()
                         cur_676.execute(f'SELECT [bc69627001b433fade0a20e641d68ecd7f8b1e8b66370f29099c48ecc3c65afc], [c6064be3e0ab536646b7ce09315a0bda7958e82c6da3194472c2431345a34c35] FROM "{v2_table}"')
                         for ev_id, full_t in cur_676.fetchall():
@@ -1245,8 +1334,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                                         for r in cur_676.fetchall():
                                             if r[0] is not None and r[1] is not None:
                                                 story_to_mypage[str(r[0])] = r[1]
-                                except (UnsafeIdentifierError, sqlite3.Error):
-                                    pass
+                                except (UnsafeIdentifierError, sqlite3.Error) as exc:
+                                    logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
                         mypage_table = 'v1_e249e1c41d6767271e5bc0df243fe5f0de2eff1e70cb2e5c501318ef33f59f64'
                         _validate_identifier(mypage_table)
@@ -1271,7 +1360,7 @@ def fetch_event_minigame_and_sub_scenes_batch(
             if p_base_arc and os.path.exists(p_base_arc):
                 norm_base_arc = p_base_arc.replace('\\', '/')
                 try:
-                    with contextlib.closing(sqlite3.connect(f"file:{norm_base_arc}?mode=ro", uri=True)) as conn_arc:
+                    with _readonly_connection(norm_base_arc) as conn_arc:
                         cur_arc = conn_arc.cursor()
                         arc_map = {}
                         cur_arc.execute('PRAGMA table_info("arcade_list")')
@@ -1330,8 +1419,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                                 val = sub_clean or t_clean
                                 if val:
                                     result_map[sid_str] = val
-                except (sqlite3.Error, UnsafeIdentifierError):
-                    pass
+                except (sqlite3.Error, UnsafeIdentifierError) as exc:
+                    logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
             # 3. 이벤트 상세 / 서브스토리 조회 (event_details_table)
             tbl_ev_det = db_info.get('event_details_table')
@@ -1376,8 +1465,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                                 if sub_clean:
                                     ev_p = get_ev_prefix(int(sid))
                                     result_map[sid_str] = f"{ev_p}{sub_clean}"
-                except (sqlite3.Error, UnsafeIdentifierError):
-                    pass
+                except (sqlite3.Error, UnsafeIdentifierError) as exc:
+                    logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
             # 4. 시나리오 보스 배틀 (hatsune_boss_v2 / hatsune_scenario_boss)
             boss_tbls = [
@@ -1484,8 +1573,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                         if sid_str in adv_ids and sid_str not in result_map:
                             ev_p = get_ev_prefix(int(sid))
                             result_map[sid_str] = f"{ev_p}EX (ex_battle)"
-                except (sqlite3.Error, UnsafeIdentifierError):
-                    pass
+                except (sqlite3.Error, UnsafeIdentifierError) as exc:
+                    logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
             # 7. 요리 교실 미니게임 (event_cooking_minigame)
             tbl_cook = db_info.get('event_cooking_minigame_table')
@@ -1508,8 +1597,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                             if t_clean:
                                 ev_p = get_ev_prefix(int(sid))
                                 result_map[sid_str] = f"{ev_p}{t_clean}"
-                except (sqlite3.Error, UnsafeIdentifierError):
-                    pass
+                except (sqlite3.Error, UnsafeIdentifierError) as exc:
+                    logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
             # 8. 몬스터 박물관 미니게임 (event_museum_minigame)
             tbl_mus = db_info.get('event_museum_minigame_table')
@@ -1535,8 +1624,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                             if full_t:
                                 ev_p = get_ev_prefix(int(sid))
                                 result_map[sid_str] = f"{ev_p}{full_t}"
-                except (sqlite3.Error, UnsafeIdentifierError):
-                    pass
+                except (sqlite3.Error, UnsafeIdentifierError) as exc:
+                    logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
             # 9. 수수께끼/추리 미니게임 (event_riddle_minigame / hatsune_quiz)
             riddle_configs = [
@@ -1719,8 +1808,8 @@ def fetch_event_minigame_and_sub_scenes_batch(
                     elif sit:
                         result_map[aid] = sit
 
-    except (sqlite3.Error, KeyError, UnsafeIdentifierError):
-        pass
+    except (sqlite3.Error, KeyError, UnsafeIdentifierError) as exc:
+        logger.debug("fetch_event_minigame_and_sub_scenes_batch failed: %s", exc)
 
     return result_map
 
@@ -1743,7 +1832,7 @@ def fetch_legion_and_byway_battle_titles_batch(db_info: dict[str, Any], adv_ids:
     result_map = {}
 
     try:
-        with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+        with _readonly_connection(db_path) as conn:
             cursor = conn.cursor()
 
             # 1. 왕도종말결전 (legion_special_battle)
@@ -1807,7 +1896,7 @@ def fetch_legion_and_byway_battle_titles_batch(db_info: dict[str, Any], adv_ids:
                 if p_base and os.path.exists(p_base):
                     norm_base = p_base.replace('\\', '/')
                     try:
-                        with contextlib.closing(sqlite3.connect(f"file:{norm_base}?mode=ro", uri=True)) as conn_b:
+                        with _readonly_connection(norm_base) as conn_b:
                             cur_b = conn_b.cursor()
                             # 우회로 상세 타이틀 조회 (byway_story_detail)
                             for i in range(0, len(rem_ids), 500):

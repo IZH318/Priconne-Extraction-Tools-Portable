@@ -1,4 +1,4 @@
-"""Manifest 기반 파일 이름 복원(Renamer) 백엔드 로직 엔진 모듈.
+"""Manifest 기반 파일 이름 복원(Renamer) 백엔드 로직 모듈.
 
 프린세스 커넥트 Re:Dive에서 덤프된 40자리 SHA1 16진수 해시 파일명을 원본 에셋 경로 및 이름으로 복원.
 SQLite 데이터베이스(manifest.db) 및 CSV 매니페스트 파일을 활용하여 원본 디렉터리 계층 구조를 재구성하며,
@@ -23,9 +23,12 @@ from typing import Any
 
 import xxhash
 
+from src.cancellation_token import CancellationToken
 from src.constants import HASH_CHUNK_SIZE, RENAMER_TARGET_FOLDERS, SHA1_LENGTH
 from src.queue_events import LogEvent, ProgressEvent
 from src.utils.base_path import get_application_base_path
+from src.utils.file_scan import iter_files
+from src.utils.task_pool import DaemonThreadPoolExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,7 @@ class RenameHashedFile:
         processed_count_check: 폴백 시그니처 검사로 복원 완료된 파일 수.
         has_error: 복구 불가능한 예외 발생 여부 플래그.
         error_message: 예외 발생 시 포맷된 에러 메시지.
+        _cancel_token: 협력적 취소 신호 전파용 CancellationToken (새 작업 스레드 시작 직전 reset_cancel()로 초기화).
     """
 
     def __init__(
@@ -85,6 +89,8 @@ class RenameHashedFile:
         self.progress_queue = progress_queue
         self.get_string = get_string_func
         self._rename_lock = threading.Lock()
+        # 협력적 취소 신호 전파용 토큰 (새 작업 스레드 시작 직전 reset_cancel()로 초기화)
+        self._cancel_token = CancellationToken()
 
         self.total_files: int = 0
         self.processed_count_rename: int = 0
@@ -108,7 +114,35 @@ class RenameHashedFile:
         """
         self.base_path = new_base_path
 
-    # --- GUI 통신 메서드 ---
+    def cancel(self) -> None:
+        """진행 중인 파일 이름 복원 작업에 협력적 취소 신호 전파.
+
+        백그라운드 워커 스레드는 process_files() 내부 루프에서 본 신호를 주기적으로
+        확인하여 잔여 파일 처리를 조기 중단. 아직 시작되지 않은(미시작) 예약 작업은
+        executor.shutdown(wait=False, cancel_futures=True)로 폐기되며, 이미 실행 중인
+        워커 스레드는 완료까지 계속 실행됨. 인터프리터 종료 시에는 해당 워커 스레드
+        조인이 수행되어 종료가 지연될 수 있음.
+        """
+        self._cancel_token.cancel()
+
+    def reset_cancel(self) -> None:
+        """이전 실행의 취소 신호 초기화 (새 작업 스레드 시작 직전 호출).
+
+        start_processing()이 워커 스레드 시작 직전에 호출하여 이전 실행에서 설정된
+        취소 상태가 다음 실행에 잔존하지 않도록 보장. 본 호출 이후 전파된 cancel()
+        신호는 유지되어 실행 중 조기 중단에 사용됨.
+        """
+        self._cancel_token.reset()
+
+    @property
+    def is_cancelled(self) -> bool:
+        """현재 작업에 취소 신호가 설정되었는지 여부 반환.
+
+        Returns:
+            bool: cancel() 호출로 취소가 요청된 경우 True, 아니면 False.
+        """
+        return self._cancel_token.is_cancelled
+
     def _add_log_event(self, key: str, **kwargs: Any) -> None:
         """UI 이벤트 큐에 구조화된 로그 이벤트 삽입.
 
@@ -157,7 +191,7 @@ class RenameHashedFile:
 
         보안(Security):
             절대 경로이거나 상위 디렉터리 이동(..) 세그먼트를 포함하는 경로는 거부하여
-            경로 순회(Path Traversal) 공격 방어.
+            경로 순회(Path Traversal) 방지 검증.
         """
         self.hash_list.clear()
         self.content_hash_map.clear()
@@ -239,7 +273,6 @@ class RenameHashedFile:
                         if content_hash:
                             self.content_hash_map[content_hash] = target_clean
 
-    # --- 파일 처리 메인 로직 ---
     def process_files(self) -> None:
         """전체 파일 복원 파이프라인 일괄 실행.
 
@@ -251,6 +284,12 @@ class RenameHashedFile:
         5. ThreadPoolExecutor 기반 다중 작업 스레드에서 파일 병렬 처리.
         6. 1차 해시 매칭에 실패한 파일에 대해 첫 줄 시그니처 검사 기반 폴백 복원.
         7. 처리 완료 수 및 잔여 미처리 파일 요약 로그 발행.
+
+        취소(Cancellation):
+            cancel()로 취소 신호가 전파되면 병렬 처리 루프 및 폴백 루프가 조기 중단되고,
+            아직 시작되지 않은 예약 작업은 executor.shutdown(cancel_futures=True)로
+            폐기됨. 단, 이미 실행 중인 워커 스레드는 완료까지 계속 실행되며,
+            인터프리터 종료 시 해당 워커 스레드 조인이 수행될 수 있음.
         """
         self.has_error = False
         self.error_message = None
@@ -290,10 +329,17 @@ class RenameHashedFile:
 
             # 5. 다중 작업 스레드 기반 병렬 파일 매칭 및 복원 실행
             final_unprocessed_files = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, (getattr(os, "cpu_count", lambda: 4)() or 4))) as executor:
+            executor = DaemonThreadPoolExecutor(
+                max_workers=min(8, (getattr(os, "cpu_count", lambda: 4)() or 4))
+            )
+            try:
                 futures = {executor.submit(self.process, file): file for file in files}
 
                 for processed_futures, future in enumerate(concurrent.futures.as_completed(futures), start=1):
+                    # 협력적 취소 신호 수신 시 잔여 파일 처리 조기 중단
+                    if self.is_cancelled:
+                        break
+
                     progress = int((processed_futures / self.total_files) * 100.0)
                     self.update_progress(progress, processed_futures, self.total_files)
 
@@ -307,11 +353,18 @@ class RenameHashedFile:
                         file_path = futures[future]
                         self.log('backend_file_process_fail', path=file_path, exc=str(exc))
                         self.unprocessed_files.append(file_path)
+            finally:
+                # 미시작 예약 작업을 폐기하고 즉시 반환 (실행 중 워커 스레드는 완료까지 진행됨)
+                executor.shutdown(wait=False, cancel_futures=True)
 
             # 6. 미처리 파일 대상 폴백 복원 (매니페스트 첫 줄 시그니처 탐지)
-            if self.unprocessed_files:
+            if self.unprocessed_files and not self.is_cancelled:
                 self.log('backend_unprocessed_header')
                 for file_path in self.unprocessed_files:
+                    # 협력적 취소 신호 수신 시 폴백 루프도 조기 중단
+                    if self.is_cancelled:
+                        break
+
                     renamed_by_content = False
                     try:
                         # 매니페스트 시그니처 판별을 위한 첫 줄 읽기 수행
@@ -325,9 +378,11 @@ class RenameHashedFile:
                         elif 'b/' in first_line: new_filename = os.path.join("manifest", "soundmanifest")
 
                         if new_filename:
-                            new_filepath = self.get_unique_filename(self.base_path / new_filename)
-                            new_filepath.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.move(str(file_path), str(new_filepath))
+                            # 폴백 복원도 락 안에서 수행해 워커 스레드의 파일 이동과의 경쟁 상태(덮어쓰기)를 방지
+                            with self._rename_lock:
+                                new_filepath = self.get_unique_filename(self.base_path / new_filename)
+                                new_filepath.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.move(str(file_path), str(new_filepath))
                             self.processed_count_check += 1
                             try:
                                 relative_file_path = Path(file_path).relative_to(self.base_path)
@@ -352,8 +407,10 @@ class RenameHashedFile:
             self.has_error = True
             self.error_message = str(exc)
             self.log('backend_file_process_fail', path='manifest', exc=str(exc))
+        finally:
+            # 취소 토큰의 진행 상태(In-Flight)를 마무리해 다음 실행 reset() 경고를 방지
+            self._cancel_token.finish()
 
-    # --- 개별 파일 처리 메서드 ---
     def process(self, file_path: str) -> tuple[bool, str]:
         """3단계 전략을 순차 적용하여 단일 파일 매칭 및 이름 복원 시도.
 
@@ -372,11 +429,17 @@ class RenameHashedFile:
         """
         file_name = Path(file_path).name.lower()
 
+        # 취소 요청 시 추가 파일 해시/이동 없이 즉시 반환
+        if self.is_cancelled:
+            return False, file_path
+
         # 1. SHA1 맵과 파일명 정확 매칭 (O(1) 메모리 조회)
         if file_name in self.hash_list:
             return self.rename_file(file_path, self.hash_list[file_name])
 
         # 2. 파일 Stem 매칭 (이차 확장자가 덧붙은 파일 처리)
+        #    수집 단계(get_all_files_in_folders)가 40자리 SHA1 파일명만 통과시키므로
+        #    현재는 도달하지 않는 예약 경로이다 (확장자 부착 덤프 지원 시 사용).
         file_stem = Path(file_path).stem.lower()
         if file_stem in self.hash_list:
             return self.rename_file(file_path, self.hash_list[file_stem])
@@ -452,7 +515,6 @@ class RenameHashedFile:
                 self.log('backend_rename_error', error=str(e))
                 return False, file_path
 
-    # --- 유틸리티 메서드 ---
     def calculate_dual_hashes(self, file_path: str) -> tuple[str, str]:
         """단일 스트리밍 패스로 xxHash64 및 MD5 16진수 다이제스트 동시 계산.
 
@@ -469,6 +531,9 @@ class RenameHashedFile:
         md5_hash = hashlib.md5()
         with open(file_path, "rb") as file:
             for chunk in iter(lambda: file.read(HASH_CHUNK_SIZE), b""):
+                # 대용량 파일 해시 도중에도 취소 요청에 반응 (부분 해시는 매칭 실패로 처리됨)
+                if self.is_cancelled:
+                    break
                 xxhash64_hash.update(chunk)
                 md5_hash.update(chunk)
         return xxhash64_hash.hexdigest().lower(), md5_hash.hexdigest().lower()
@@ -484,14 +549,17 @@ class RenameHashedFile:
         Returns:
             SHA1 명명 규칙과 일치하는 파일 경로 문자열 리스트.
         """
-        all_files = []
+        all_files: list[str] = []
         for folder in target_folders:
             folder_path = self.base_path / folder
             if folder_path.is_dir():
-                for root, _, files in os.walk(folder_path):
-                    for file_name in files:
-                        if self.is_sha1(file_name):
-                            all_files.append(str(Path(root) / file_name))
+                all_files.extend(
+                    iter_files(
+                        folder_path,
+                        predicate=self.is_sha1,
+                        cancel=lambda: self.is_cancelled,
+                    )
+                )
         return all_files
 
     def is_sha1(self, s: str) -> bool:

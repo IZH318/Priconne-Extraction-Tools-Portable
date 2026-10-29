@@ -1,86 +1,72 @@
-"""Tkinter 위젯 생명주기 안전 조작(Defensive Tk Operation) 유틸리티 모듈.
+"""Tkinter 위젯 생명주기 안전 조작 및 스레드 마샬링 유틸리티 모듈.
 
-Tkinter 애플리케이션에서 창이 닫히거나 위젯이 파괴(destroy)된 이후
-지연 타이머(after), 설정 변경(config), 취소(after_cancel)가 호출될 때 발생하는
-TclError: bad window path name 및 RuntimeError 안전 방어.
+백그라운드 스레드에서 발생한 UI 갱신 요청을 메인 스레드로 안전하게 전달하기 위한
+전역 UI 콜백 큐(post_to_ui / drain_ui_callbacks)를 제공한다.
+Tkinter/Tcl은 스레드 안전하지 않으므로 워커 스레드는 위젯을 직접 조작하거나
+after()/winfo_exists()를 호출해서는 안 되며, 반드시 post_to_ui()로 큐에 추가한 뒤
+메인 스레드(QueuePollingMixin._poll_queue 등)에서 drain_ui_callbacks()로 소비해야 한다.
 """
 from __future__ import annotations
 
 import logging
-import tkinter as tk
+import queue
+import threading
 from collections.abc import Callable
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# 워커 스레드 → 메인 스레드 UI 콜백 전달용 전역 큐
+_ui_callback_queue: queue.Queue[Callable[[], None]] = queue.Queue()
 
-def safe_after(widget: Any, ms: int, callback: Callable[[], None]) -> str | None:
-    """위젯이 유효할 때만 after() 타이머 콜백 안전 등록.
-
-    winfo_exists() 검사 선행 및 Tcl 인터프리터 예외 발생 시 크래시 방어 (None 반환).
-
-    Args:
-        widget (Any): 타이머를 등록할 Tkinter 위젯 인스턴스.
-        ms (int): 실행 지연 시간 (밀리초).
-        callback (Callable[[], None]): 지연 후 호출될 콜백 함수.
-
-    Returns:
-        str | None: 등록 성공 시 Tkinter 타이머 식별자(ID 문자열), 실패 시 None.
-    """
-    try:
-        if widget is None or not getattr(widget, "winfo_exists", lambda: True)():
-            return None
-        return widget.after(ms, callback)  # type: ignore[no-any-return]
-    except (tk.TclError, RuntimeError, AttributeError) as exc:
-        logger.debug("safe_after failed: %s", exc)
-        return None
+# 1회 드레인에서 실행할 최대 콜백 수 (콜백이 다시 콜백을 예약하는 경우 UI 독점 방지)
+_MAX_CALLBACKS_PER_DRAIN: int = 200
 
 
-def safe_after_cancel(widget: Any, after_id: Any) -> None:
-    """등록된 after 지연 작업 안전 취소.
+def post_to_ui(callback: Callable[[], None]) -> None:
+    """워커 스레드에서 메인 스레드로 UI 콜백 실행을 안전하게 위임.
+
+    메인 스레드에서 호출되면 즉시 실행하고, 그 외 스레드에서 호출되면 전역 큐에
+    추가하여 메인 스레드의 drain_ui_callbacks() 호출 시 실행한다.
+    Tk 위젯/after()를 워커 스레드에서 직접 호출하지 않기 위한 단일 통로.
 
     Args:
-        widget (Any): 타이머가 등록되었던 Tkinter 위젯 인스턴스.
-        after_id (Any): 취소할 타이머 ID 문자열. None인 경우 무시 처리.
+        callback (Callable[[], None]): 메인 스레드에서 실행할 콜백 함수.
     """
-    if after_id is None or widget is None:
+    if threading.current_thread() is threading.main_thread():
+        try:
+            callback()
+        except Exception:
+            logger.exception("UI callback failed")
         return
-    try:
-        widget.after_cancel(after_id)
-    except (tk.TclError, ValueError, AttributeError) as exc:
-        logger.debug("safe_after_cancel failed: %s", exc)
+    _ui_callback_queue.put(callback)
 
 
-def safe_destroy(widget: Any) -> None:
-    """위젯 안전 파기.
+def post_to_ui_deferred(callback: Callable[[], None]) -> None:
+    """메인 스레드에서 호출해도 다음 드레인 주기로 실행을 미루는 UI 콜백 예약.
 
-    Args:
-        widget (Any): 파기 대상 Tkinter 위젯 인스턴스.
-    """
-    if widget is None:
-        return
-    try:
-        widget.destroy()
-    except (tk.TclError, RuntimeError, AttributeError) as exc:
-        logger.debug("safe_destroy failed: %s", exc)
-
-
-def safe_config(widget: Any, **kwargs: Any) -> bool:
-    """위젯 대상 설정(config/configure) 옵션 안전 적용.
+    위젯 상태 변경이 현재 처리 중인 UI 흐름과 분리되어야 하는 경우(예: DB 점검 완료
+    콜백)에 사용한다. 워커 스레드에서는 post_to_ui와 동일하게 동작한다.
 
     Args:
-        widget (Any): 설정을 변경할 Tkinter 위젯 인스턴스.
-        **kwargs (Any): 위젯 옵션 키워드 인자 (예: text="...", state="disabled").
-
-    Returns:
-        bool: 설정 적용 성공 시 True, 위젯 소멸 또는 예외 발생 시 False.
+        callback (Callable[[], None]): 메인 스레드에서 실행할 콜백 함수.
     """
-    if widget is None:
-        return False
-    try:
-        widget.config(**kwargs)
-        return True
-    except (tk.TclError, RuntimeError, AttributeError) as exc:
-        logger.debug("safe_config failed: %s", exc)
-        return False
+    _ui_callback_queue.put(callback)
 
+
+def drain_ui_callbacks() -> None:
+    """메인 스레드에서 대기 중인 UI 콜백을 일괄 실행.
+
+    QueuePollingMixin._poll_queue 등 메인 스레드 타이머에서 주기적으로 호출한다.
+    개별 콜백에서 예외가 발생해도 다른 콜백 실행에 영향을 주지 않도록 보호하며, 콜백이 다시 콜백을
+    예약하는 경우에도 UI 스레드가 한 주기에 독점되지 않도록 처리 개수를 제한한다
+    (남은 콜백은 다음 폴링 주기에 이어서 처리).
+    """
+    for _ in range(_MAX_CALLBACKS_PER_DRAIN):
+        try:
+            callback = _ui_callback_queue.get_nowait()
+        except queue.Empty:
+            return
+        try:
+            callback()
+        except Exception:
+            logger.exception("Deferred UI callback failed")

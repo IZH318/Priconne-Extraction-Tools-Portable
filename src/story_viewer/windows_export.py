@@ -13,7 +13,8 @@ from collections.abc import Callable
 from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
-from src.utils.tk_safe import safe_after
+from src.utils.tk_safe import post_to_ui
+from src.utils.dialogs import center_window
 from src.utils.tooltip import ToolTip
 
 
@@ -72,11 +73,7 @@ class ExportProgressDialog(tk.Toplevel):
         self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-        x = (sw - width) // 2
-        y = (sh - height) // 2
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        center_window(self, width, height)
 
     def _cancel_clicked(self) -> None:
         self.is_cancelled = True
@@ -109,7 +106,7 @@ _NAMING_KEYS = ['original', 'title', 'id_title']
 
 
 class ExportWindow(tk.Toplevel):
-    """데이터 추출 옵션 설정 대화상자 클래스."""
+    """데이터 내보내기 옵션 설정 대화상자 클래스."""
 
     def __init__(
         self,
@@ -162,17 +159,13 @@ class ExportWindow(tk.Toplevel):
         self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width // 2) - (width // 2)
-        y = (screen_height // 2) - (height // 2)
-        self.geometry(f'{width}x{height}+{x}+{y}')
+        center_window(self, width, height)
 
     def _setup_ui(self) -> None:
         main_frame = ttk.Frame(self, padding="15")
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # 1. 스토리 데이터 추출 설정 프레임
+        # 1. 스토리 데이터 내보내기 설정 프레임
         self.story_data_group = ttk.LabelFrame(main_frame, text="", padding="10")
         self.story_data_group.pack(fill=tk.X, pady=(0, 10))
 
@@ -185,7 +178,7 @@ class ExportWindow(tk.Toplevel):
         self.story_sub_frame = ttk.Frame(self.story_data_group, padding="5")
         self.story_sub_frame.pack(fill=tk.X, padx=5)
 
-        # 1-1. 추출 범위 드롭박스
+        # 1-1. 내보내기 범위 드롭다운
         self.scope_label = ttk.Label(self.story_sub_frame, text="", anchor="w")
         self.scope_label.grid(row=0, column=0, sticky="w", padx=(0, 10), pady=2)
         self.combo_scope = ttk.Combobox(self.story_sub_frame, state="readonly")
@@ -215,7 +208,7 @@ class ExportWindow(tk.Toplevel):
 
         self.story_sub_frame.columnconfigure(1, weight=1)
 
-        # 2. 기타 데이터 추출 프레임
+        # 2. 기타 데이터 내보내기 프레임
         self.other_options_frame = ttk.LabelFrame(main_frame, text="", padding="10")
         self.other_options_frame.pack(fill=tk.X, pady=(0, 10))
 
@@ -420,11 +413,11 @@ class ExportWindow(tk.Toplevel):
 
         self._update_status_bar('status_bar_export_prep')
 
-        # 진행 팝업 대화상자 생성 (안 B 연동)
+        # 진행 팝업 대화상자 생성
         progress_dialog = ExportProgressDialog(self._master, self._get_lang_dict)
 
         def _progress_cb(cur: int, tot: int, tname: str) -> None:
-            safe_after(self._master, 0, lambda: progress_dialog.update_progress(cur, tot, tname))
+            post_to_ui(lambda: progress_dialog.update_progress(cur, tot, tname))
 
         def _check_cancelled() -> bool:
             return bool(progress_dialog.is_cancelled)
@@ -434,7 +427,7 @@ class ExportWindow(tk.Toplevel):
             nonlocal finished
             if not finished:
                 finished = True
-                safe_after(self._master, 0, progress_dialog.close)
+                post_to_ui(progress_dialog.close)
 
         def _run_export() -> None:
             try:
@@ -488,11 +481,7 @@ class SingleExportWindow(tk.Toplevel):
         self.deiconify()
 
     def _center_window(self, width: int, height: int) -> None:
-        sw = self.winfo_screenwidth()
-        sh = self.winfo_screenheight()
-        x = (sw - width) // 2
-        y = (sh - height) // 2
-        self.geometry(f"{width}x{height}+{x}+{y}")
+        center_window(self, width, height)
 
     def _setup_ui(self) -> None:
         lang_dict = self._get_lang_dict()
@@ -621,7 +610,7 @@ class SingleExportWindow(tk.Toplevel):
         progress_dialog = ExportProgressDialog(self._master, self._get_lang_dict)
 
         def _progress_cb(cur: int, tot: int, tname: str) -> None:
-            safe_after(self._master, 0, lambda: progress_dialog.update_progress(cur, tot, tname))
+            post_to_ui(lambda: progress_dialog.update_progress(cur, tot, tname))
 
         def _check_cancelled() -> bool:
             return bool(progress_dialog.is_cancelled)
@@ -631,7 +620,7 @@ class SingleExportWindow(tk.Toplevel):
             nonlocal finished
             if not finished:
                 finished = True
-                safe_after(self._master, 0, progress_dialog.close)
+                post_to_ui(progress_dialog.close)
 
         def _run_export() -> None:
             try:

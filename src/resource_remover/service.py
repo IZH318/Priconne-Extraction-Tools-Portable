@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from .logic import ResourceRemoverLogic
@@ -62,6 +62,7 @@ class ResourceRemovalService:
         target_files: Sequence[Any],
         extensions_to_remove: Sequence[str],
         use_trash: bool = True,
+        progress_cb: Callable[[int, int], None] | None = None,
     ) -> tuple[int, list[str], str]:
         """대상 파일들을 안전하게 삭제하거나 휴지통으로 이동.
 
@@ -69,6 +70,7 @@ class ResourceRemovalService:
             target_files (Sequence[Any]): 삭제 대상 파일 경로 시퀀스.
             extensions_to_remove (Sequence[str]): 삭제 허용 확장자 시퀀스.
             use_trash (bool): True이면 휴지통 이동, False이면 영구 삭제.
+            progress_cb (Callable[[int, int], None] | None): 진행 콜백.
 
         Returns:
             tuple[int, list[str], str]: (삭제 성공 수, 실패 사유 목록, 로그 파일 경로).
@@ -77,18 +79,6 @@ class ResourceRemovalService:
             target_files=target_files,
             extensions_to_remove=extensions_to_remove,
             use_trash=use_trash,
+            progress_cb=progress_cb,
         )
-
-    def count_files(self, extensions_to_remove: Sequence[str]) -> list[Any]:
-        """count_resources() 편의 별칭 메서드."""
-        return self.count_resources(extensions_to_remove)
-
-    def delete_resources(
-        self,
-        target_files: Sequence[Any],
-        extensions_to_remove: Sequence[str],
-        use_trash: bool = True,
-    ) -> tuple[int, list[str], str]:
-        """remove_resources() 편의 별칭 메서드."""
-        return self.remove_resources(target_files, extensions_to_remove, use_trash)
 

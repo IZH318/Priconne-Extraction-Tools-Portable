@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import stat
 import tempfile
 import tkinter as tk
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from src.constants import (
     APP_WEBSITE,
 )
 from src.logger import setup_global_logging
+from src.utils.process_check import is_pid_alive
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 class SharedDependencies:
     """서브 도구 모듈에 주입되는 공유 의존성 객체.
 
-    frozen=True 선언으로 런타임 공유 참조 교체 및 변조 방어.
+    frozen=True 선언으로 런타임 공유 참조의 임의 변경 방지.
 
     Attributes:
         app_lang_var (tk.StringVar): 앱 전역 언어 설정 추적 Tk 변수 ('ko', 'en', 'ja').
@@ -124,45 +126,22 @@ class AppContainer:
 
     @staticmethod
     def _is_pid_alive(pid: int) -> bool:
-        """지정 PID 프로세스의 활성 실행 여부 검사.
-
-        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION) 및
-        GetExitCodeProcess의 STILL_ACTIVE (259) 반환 여부 확인.
+        """지정 PID 프로세스의 활성 실행 여부 검사 (utils.process_check 위임).
 
         Args:
             pid (int): 검사 대상 운영체제 프로세스 ID.
 
         Returns:
-            bool: 해당 PID의 프로세스가 현재 활성 실행 중이면 True, 종료되었으면 False.
+            bool: 프로세스가 활성이거나 생존 여부를 확정할 수 없으면 True,
+                확실히 종료되었으면 False.
         """
-        if pid <= 0:
-            return False
-        import sys
-        if sys.platform == 'win32':
-            import ctypes
-            kernel32 = ctypes.windll.kernel32
-            # 윈도우 프로세스 쿼리 권한 플래그: 0x1000 = PROCESS_QUERY_LIMITED_INFORMATION
-            handle = kernel32.OpenProcess(0x1000, False, pid)
-            if not handle:
-                return False
-            try:
-                exit_code = ctypes.c_ulong()
-                if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
-                    return exit_code.value == 259  # 259 = STILL_ACTIVE
-                return False
-            finally:
-                kernel32.CloseHandle(handle)
-        else:
-            try:
-                os.kill(pid, 0)
-                return True
-            except OSError:
-                return False
+        return is_pid_alive(pid)
 
     def _cleanup_old_session_dirs(self) -> None:
-        """과거 세션 폴더 중 이미 종료된 프로세스의 폴더 선별 삭제.
+        """과거 세션 폴더 중 이미 종료된 프로세스의 폴더만 선별 삭제.
 
-        실행 중인 다른 인스턴스의 작업 파일을 보호하기 위해 PID 생존 검증 수행.
+        PID 생존이 '확정적으로 종료'된 경우에만 파기하며, PID 토큰이 없는 폴더와
+        심볼릭 링크/정션은 삭제 대상에서 제외한다.
         """
         try:
             self._base_temp_dir.mkdir(parents=True, exist_ok=True)
@@ -171,25 +150,37 @@ class AppContainer:
             return
         try:
             for child in list(self._base_temp_dir.iterdir()):
-                if not (child.is_dir() and child.name.startswith("session_") and child != self.app_temp_dir):
+                if not (child.name.startswith("session_") and child != self.app_temp_dir):
+                    continue
+                # 심볼릭 링크는 is_dir()/rmtree 가 대상 경로를 따라가므로 우선 제외
+                if child.is_symlink():
+                    continue
+                try:
+                    st = os.lstat(child)
+                except OSError as e:
+                    logger.warning("Failed to inspect old temp dir %s: %s", child, e)
+                    continue
+                # 실제 디렉터리만 대상 (lstat 기준이라 링크를 따라가지 않음)
+                if not stat.S_ISDIR(st.st_mode):
+                    continue
+                # 윈도우 정션/재분석 지점은 실디렉터리로 보이므로 별도 제외
+                if getattr(st, 'st_file_attributes', 0) & getattr(stat, 'FILE_ATTRIBUTE_REPARSE_POINT', 0):
                     continue
                 # 세션 폴더명(session_{pid}_* 또는 session_{pid}) 형태에서 PID 추출
                 parts = child.name.split("_")
-                if len(parts) >= 2 and parts[1].isdigit():
-                    pid = int(parts[1])
-                    if self._is_pid_alive(pid):
-                        # 실행 중인 다른 인스턴스의 작업 폴더이므로 보호
-                        continue
+                if len(parts) < 2 or not parts[1].isdigit():
+                    # PID 토큰 미식별 폴더는 생존 여부 판정 불가 → 삭제하지 않음
+                    continue
+                pid = int(parts[1])
+                if self._is_pid_alive(pid):
+                    # 실행 중이거나 생존 판정 불가한 다른 인스턴스의 작업 폴더이므로 보호
+                    continue
                 try:
                     shutil.rmtree(child)
                 except OSError as e:
                     logger.warning("Failed to remove old temp dir %s: %s", child, e)
         except OSError as e:
             logger.warning("Failed to scan temp dir %s: %s", self._base_temp_dir, e)
-
-    def _reset_app_temp_dir(self) -> None:
-        """하위 호환용 별칭 메서드."""
-        self._cleanup_old_session_dirs()
 
     def cleanup_shared(self) -> None:
         """앱 정상 종료 시 현재 세션 전용 임시 디렉터리 삭제.

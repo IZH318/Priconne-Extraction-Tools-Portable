@@ -10,7 +10,6 @@ import concurrent.futures
 import json
 import logging
 import os
-import queue
 import sqlite3
 import threading
 import tkinter as tk
@@ -20,7 +19,10 @@ from typing import Any
 
 from src.exceptions import AppBaseError
 from src.languages import STORY_VIEWER_LANGUAGES as LANGUAGES
-from src.queue_events import ActionEvent
+from src.languages import pick_language
+from src.utils.dialogs import center_window
+from src.utils.task_pool import DaemonThreadPoolExecutor
+from src.utils.tk_safe import post_to_ui
 
 from .logic import SearchEngine
 
@@ -45,7 +47,6 @@ class SearchWindow(tk.Toplevel):
         get_lang_dict: Callable[[], dict[str, str]],
         get_lang_code: Callable[[], str],
         search_callback: Callable[[list[str]], None],
-        task_queue: queue.Queue[ActionEvent],
         update_status_bar: Callable[..., None],
         all_files_dict: dict[str, str],
         search_data: dict[str, Any],
@@ -61,7 +62,6 @@ class SearchWindow(tk.Toplevel):
             get_lang_dict: 현재 언어 딕셔너리를 반환하는 콜백.
             get_lang_code: 현재 언어 코드를 반환하는 콜백.
             search_callback: 검색 결과를 전달받을 콜백 함수.
-            task_queue: 메인 스레드로 액션을 전달할 큐.
             update_status_bar: 상태바를 업데이트하는 콜백.
             all_files_dict: 전체 스토리 파일 딕셔너리.
             search_data: 콤보박스에 표시할 자동완성 데이터 딕셔너리.
@@ -76,7 +76,6 @@ class SearchWindow(tk.Toplevel):
         self._get_lang_dict = get_lang_dict
         self._get_lang_code = get_lang_code
         self._search_callback = search_callback
-        self._task_queue = task_queue
         self._update_status_bar = update_status_bar
         self.all_files_dict = all_files_dict
         self.search_data = search_data
@@ -107,11 +106,7 @@ class SearchWindow(tk.Toplevel):
             width: 창 너비.
             height: 창 높이.
         """
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width // 2) - (width // 2)
-        y = (screen_height // 2) - (height // 2)
-        self.geometry(f'{width}x{height}+{x}+{y}')
+        center_window(self, width, height)
 
     def _setup_ui(self) -> None:
         """대화상자 UI 요소 초기화 및 배치."""
@@ -242,7 +237,6 @@ class SearchWindow(tk.Toplevel):
             'db_status': self.db_status,
             'server_db_info': self.server_db_info,
             'lang_var_value': self._get_lang_code(),
-            'task_queue': self._task_queue,
             'update_status_bar': self._update_status_bar,
             'master': self._master,
             'get_lang_dict': self._get_lang_dict,
@@ -269,11 +263,10 @@ class SearchWindow(tk.Toplevel):
         search_callback = refs['search_callback']
         db_status = refs['db_status']
         server_db_info = refs['server_db_info']
-        task_queue = refs['task_queue']
         update_status_bar = refs['update_status_bar']
         master_ref = refs['master']
         get_lang_dict_ref = refs['get_lang_dict']
-        lang_dict = LANGUAGES.get(refs['lang_var_value'], LANGUAGES.get('ko', {}))
+        lang_dict = pick_language(refs['lang_var_value'], LANGUAGES)
 
         try:
             initial_matched_files = set(all_files_dict.keys())
@@ -289,7 +282,7 @@ class SearchWindow(tk.Toplevel):
                     except sqlite3.Error as e:
                         def _show_db_error(exc: Any = e) -> None:
                             messagebox.showerror(lang_dict.get('db_error_title', 'Database Error'), lang_dict.get('db_error_msg', 'An error occurred during database processing:\n{e}').format(e=exc), parent=master_ref)
-                        task_queue.put(ActionEvent(action=_show_db_error))
+                        post_to_ui(_show_db_error)
 
             # 이벤트명(event_name)은 DB 필터로 기처리되었으므로 파일 내용 대조 기준에서 제외
             content_criteria = {k: v for k, v in criteria.items() if k != 'event_name'}
@@ -297,7 +290,7 @@ class SearchWindow(tk.Toplevel):
             if not content_criteria:
                 final_matched_files = list(initial_matched_files)
             else:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 4))) as executor:
+                with DaemonThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 4))) as executor:
                     future_to_filename = {
                         executor.submit(SearchEngine.check_file_for_search, filename, content_criteria, all_files=all_files_dict, is_speaker=is_speaker): filename
                         for filename in initial_matched_files
@@ -307,19 +300,19 @@ class SearchWindow(tk.Toplevel):
                             if future.result():
                                 final_matched_files.append(future_to_filename[future])
                         except (OSError, json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError) as e:
-                            logger.error("SearchEngine future exception: %s", e)
+                            logger.exception("SearchEngine future exception: %s", e)
 
-            task_queue.put(ActionEvent(action=lambda: search_callback(sorted(final_matched_files))))
+            post_to_ui(lambda: search_callback(sorted(final_matched_files)))
 
         except (OSError, sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, RuntimeError) as e:
             # 객체(Toplevel) 소멸 후 상태 대응을 위해 self 위젯 접근을 배제하고
             # 캡처된 참조만 사용하여 처리.
-            logger.error("Story search failed: %s", e)
+            logger.exception("Story search failed: %s", e)
             def _show_error(error: Any = e) -> None:
                 ld = get_lang_dict_ref()
                 messagebox.showerror(ld.get('search_error_title', 'Search Error'), ld.get('search_error_msg', 'An error occurred during search:\n{e}').format(e=error), parent=master_ref)
                 update_status_bar('status_bar_ready')
-            task_queue.put(ActionEvent(action=_show_error))
+            post_to_ui(_show_error)
 
     def _reset(self) -> None:
         """검색 조건 초기화 및 전체 파일 목록 재로드."""

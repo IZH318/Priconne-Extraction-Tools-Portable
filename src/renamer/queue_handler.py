@@ -8,16 +8,16 @@ from __future__ import annotations
 
 import logging
 import tkinter as tk
-from datetime import datetime
 from typing import Any
 
 from src.queue_events import LogEvent
+from src.utils.log_history import new_log_timestamp
 
 logger = logging.getLogger(__name__)
 
 
 class RenamerQueueHandler:
-    """Renamer의 비차단 큐 드레인 및 완료 상태 조정을 전담하는 이벤트 처리기 클래스.
+    """Renamer의 논블로킹 큐 이벤트 수신(Drain) 및 완료 상태 조정을 담당하는 이벤트 핸들러 클래스.
 
     QueuePollingMixin 타이머 틱에 의해 주기적으로 실행.
     스레드 안전 큐에서 이벤트를 꺼내 UI 로그 텍스트를 추가하고 프로그레스 위젯을 갱신하며,
@@ -44,19 +44,6 @@ class RenamerQueueHandler:
         self.rename_service = rename_service
         self.view = view
 
-    @property
-    def c(self) -> Any:
-        """컨트롤러 참조를 제공하는 편의 프로퍼티."""
-        return self.controller
-
-    def is_polling_needed(self) -> bool:
-        """큐 폴링의 지속 여부 판별.
-
-        Returns:
-            지속적인 UI 반응성을 유지하기 위해 항상 True 반환.
-        """
-        return True
-
     def on_poll_cycle(self) -> None:
         """단일 폴링 주기 스텝 실행, 큐 비우기 및 스레드 상태 확인."""
         c = self.controller
@@ -79,7 +66,7 @@ class RenamerQueueHandler:
                     incremental_buffer.append("\n")
 
             for event in log_items_batch:
-                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                timestamp = new_log_timestamp()
                 kwargs = event.kwargs if event.kwargs else None
                 is_same_group = len(c.log_data) > 0 and c.log_data[-1][0] == timestamp
                 c.log_data.append((timestamp, event.key, kwargs))
@@ -106,7 +93,7 @@ class RenamerQueueHandler:
             if final_log_items:
                 final_buffer = []
                 for event in final_log_items:
-                    timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                    timestamp = new_log_timestamp()
                     kwargs = event.kwargs if event.kwargs else None
                     is_same_group = len(c.log_data) > 0 and c.log_data[-1][0] == timestamp
                     c.log_data.append((timestamp, event.key, kwargs))
@@ -167,9 +154,3 @@ class RenamerQueueHandler:
             else:
                 c.view.set_progress_value(0)
                 c.view.set_progress_text(c.get_string('status_waiting'))
-
-
-# 다양한 명명 규칙 호환성을 위한 별칭
-RenamerQueueProcessor = RenamerQueueHandler
-RenamerQueueService = RenamerQueueHandler
-RenamerPollHandler = RenamerQueueHandler

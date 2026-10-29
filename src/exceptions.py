@@ -20,7 +20,7 @@ class AppBaseError(Exception):
     """
 
 
-# ---- Database 도메인 예외 ----
+# Database 도메인 예외
 
 class DatabaseError(AppBaseError):
     """데이터베이스 접근 및 쿼리 처리 관련 기본 예외."""
@@ -29,7 +29,7 @@ class DatabaseError(AppBaseError):
 class UnsafeIdentifierError(DatabaseError):
     """SQL 식별자(테이블/컬럼명) 화이트리스트 검증 실패 예외.
 
-    SQL 인젝션 방어 목적의 동적 쿼리 생성 전 식별자 검증 시 사용.
+    SQL 인젝션 방지 목적의 동적 쿼리 생성 전 식별자 검증 시 사용.
 
     Attributes:
         identifier (str): 허용되지 않아 거부된 식별자 문자열.
@@ -52,7 +52,7 @@ class DatabaseIntegrityError(DatabaseError):
         super().__init__(f"Database integrity check failed for '{filename}': {reason}")
 
 
-# ---- Conversion 도메인 예외 ----
+# Conversion 도메인 예외
 
 class ConversionError(AppBaseError):
     """파일 변환(AV, Unity3D 에셋 등) 처리 중 발생하는 기본 예외."""
@@ -74,18 +74,18 @@ class AssetProcessingError(ConversionError):
         super().__init__(msg)
 
 
-# ---- Download 도메인 예외 ----
+# Download 도메인 예외
 
 class DownloadError(AppBaseError):
     """외부 종속 도구 다운로드 및 네트워크 통신 중 발생하는 기본 예외."""
 
 
 class FileIntegrityError(DownloadError):
-    """다운로드 파일 해시(SHA-256) 또는 매직 바이트 무결성 검증 실패 예외.
+    """다운로드 파일 완결성(매직 바이트, ZIP 아카이브 무결성) 검증 실패 예외.
 
     Attributes:
         filename (str): 검증에 실패한 다운로드 파일명.
-        reason (str): 실패 상세 사유 (예: 'hash mismatch', 'magic bytes mismatch').
+        reason (str): 실패 상세 사유 (예: 'magic bytes mismatch', 'corrupted ZIP entry').
     """
     def __init__(self, filename: str, reason: str = "magic bytes mismatch") -> None:
         self.filename = filename

@@ -15,6 +15,10 @@ if TYPE_CHECKING:
     from .controller import StoryViewerController
 
 
+# tag_add 1회 호출에 전달할 (시작, 끝) 인덱스 쌍 최대 개수 (과도하게 긴 Tcl 명령 방지)
+_TAG_ADD_PAIR_CHUNK = 1000
+
+
 class StoryViewerView(ttk.Frame):
     """Story Viewer 그래픽 사용자 인터페이스(View) 클래스.
 
@@ -277,13 +281,34 @@ class StoryViewerView(ttk.Frame):
     def update_story_text(self, content_list: list[tuple[str, str | None]]) -> None:
         """스토리 텍스트 위젯에 서식화된 콘텐츠 출력.
 
+        위젯 호출 수를 줄이기 위해 전체 텍스트를 1회 삽입한 뒤, 태그별로 계산한 문자 범위를
+        tag_add로 일괄 적용 (기존 조각별 insert 대비 위젯 호출 수를 대폭 감소).
+
         Args:
             content_list: (텍스트, 태그명) 튜플 리스트. 태그가 None이면 기본 스타일 적용.
         """
         self.story_text.config(state=tk.NORMAL)
         self.story_text.delete('1.0', tk.END)
-        for content, tag in content_list:
-            self.story_text.insert(tk.END, content, (tag,) if tag else ())
+
+        if content_list:
+            self.story_text.insert('1.0', "".join(content for content, _ in content_list))
+
+            # 태그별 (시작, 끝) 문자 오프셋 수집 (태그가 없거나 길이가 0인 조각은 제외)
+            offset = 0
+            ranges_by_tag: dict[str, list[str]] = {}
+            for content, tag in content_list:
+                length = len(content)
+                if tag and length:
+                    ranges_by_tag.setdefault(tag, []).extend((f"1.0 + {offset} chars", f"1.0 + {offset + length} chars"))
+                offset += length
+
+            # 태그당 1회 호출 원칙, 단 과도하게 긴 Tcl 명령을 피하기 위해 청크 단위로 분할
+            step = _TAG_ADD_PAIR_CHUNK * 2
+            for tag, indices in ranges_by_tag.items():
+                for i in range(0, len(indices), step):
+                    chunk = indices[i:i + step]
+                    self.story_text.tag_add(tag, chunk[0], *chunk[1:])
+
         self.story_text.config(state=tk.DISABLED)
         self.btn_copy.config(state=tk.NORMAL if content_list else tk.DISABLED)
 

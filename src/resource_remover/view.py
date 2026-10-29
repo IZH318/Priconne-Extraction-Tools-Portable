@@ -80,6 +80,9 @@ class ResourceRemoverView(ttk.Frame):
         self.btn_start = ttk.Button(control_frame, text="", command=self.controller.start_removal)
         self.btn_start.pack(side=tk.RIGHT, padx=5)
 
+        self.btn_cancel = ttk.Button(control_frame, text="", command=self.controller.cancel_removal, state=tk.DISABLED)
+        self.btn_cancel.pack(side=tk.RIGHT, padx=5)
+
         # 5. 하단 작업 상태 알림 라벨
         self.lbl_status = ttk.Label(container, textvariable=self.controller.status_var, justify=tk.CENTER)
         self.lbl_status.pack(side=tk.BOTTOM, pady=10)
@@ -93,10 +96,11 @@ class ResourceRemoverView(ttk.Frame):
             self.btn_select_dir.config(text=lang_dict.get('btn_select_dir', 'Select Folder'))
             self.chk_frame.config(text=lang_dict.get('chk_frame_title', 'Select file types to delete'))
             if self.controller.is_use_trash_enabled:
-                self.lbl_warn.config(text=lang_dict.get('warn_trash', '※ Files will be safely moved to the Recycle Bin.'), foreground="blue")
+                self.lbl_warn.config(text=lang_dict.get('warn_trash', '※ Files will be sent to the Recycle Bin. (They may be permanently deleted on removable or network drives.)'), foreground="blue")
             else:
                 self.lbl_warn.config(text=lang_dict.get('warn_permanent', '※ Files are permanently deleted without going to the Recycle Bin.'), foreground="red")
             self.btn_start.config(text=lang_dict.get('btn_start', 'Start Removing Resources'))
+            self.btn_cancel.config(text=lang_dict.get('btn_cancel', 'Cancel'))
             self.chk_trash.config(text=lang_dict.get('use_trash', 'Move to Recycle Bin'))
         except AttributeError as e:
             logger.debug("ResourceRemoverView UI not fully initialized: %s", e)
@@ -116,7 +120,11 @@ class ResourceRemoverView(ttk.Frame):
             state (str): 적용할 Tkinter 위젯 상태 ('normal' 또는 'disabled').
         """
         if hasattr(self, 'btn_start'):
-            self.btn_start.config(state=state)
+            # 'normal' 복원 시에도 대상 경로 미선택이면 시작 버튼은 비활성 유지
+            if state == 'normal' and not self.controller.target_path_var.get().strip():
+                self.btn_start.config(state='disabled')
+            else:
+                self.btn_start.config(state=state)
         if hasattr(self, 'chk_trash'):
             self.chk_trash.config(state=state)
         if hasattr(self, 'btn_select_dir'):
@@ -124,6 +132,24 @@ class ResourceRemoverView(ttk.Frame):
         if hasattr(self, 'chk_widgets'):
             for chk in self.chk_widgets.values():
                 chk.config(state=state)
+
+    def set_start_button_enabled(self, enabled: bool) -> None:
+        """대상 경로 선택 여부에 따라 시작 버튼 활성 상태를 갱신.
+
+        Args:
+            enabled (bool): True이면 시작 버튼 활성화, False이면 비활성화.
+        """
+        if hasattr(self, 'btn_start'):
+            self.btn_start.config(state='normal' if enabled else 'disabled')
+
+    def set_cancel_button_state(self, state: str) -> None:
+        """취소 버튼의 활성화/비활성화 상태 설정.
+
+        Args:
+            state (str): Tkinter 위젯 상태 ('normal' 또는 'disabled').
+        """
+        if hasattr(self, 'btn_cancel'):
+            self.btn_cancel.config(state=state)
 
     def set_status_color(self, color: str) -> None:
         """하단 상태 안내 메시지 라벨의 텍스트 색상 동적 변경.

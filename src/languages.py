@@ -55,19 +55,19 @@ def _ensure_loaded() -> None:
             _loaded_ok = True
         except FileNotFoundError:
             _load_error = f"languages.json not found at {_json_path}"
-            logger.error("languages.json not found at %s. Using empty fallback.", _json_path)
+            logger.exception("languages.json not found at %s. Using empty fallback.", _json_path)
             _full_data = {}
         except json.JSONDecodeError as _e:
             _load_error = f"languages.json is malformed: {_e}"
-            logger.error("languages.json is malformed: %s. Using empty fallback.", _e)
+            logger.exception("languages.json is malformed: %s. Using empty fallback.", _e)
             _full_data = {}
         except (OSError, UnicodeDecodeError) as _e:
             _load_error = f"languages.json could not be read: {_e}"
-            logger.error("languages.json could not be read: %s. Using empty fallback.", _e)
+            logger.exception("languages.json could not be read: %s. Using empty fallback.", _e)
             _full_data = {}
         except (TypeError, ValueError) as _e:
             _load_error = str(_e)
-            logger.error("%s. Using empty fallback.", _e)
+            logger.exception("%s. Using empty fallback.", _e)
             _full_data = {}
 
         if isinstance(_full_data, dict):
@@ -114,6 +114,49 @@ def get_logger_lang_data_map() -> dict:
         if _logger_lang_data_cache is None:
             _logger_lang_data_cache = copy.deepcopy(_full_data)
         return copy.deepcopy(_logger_lang_data_cache)
+
+
+def pick_language(lang_code: str, table: dict[str, Any]) -> dict[str, str]:
+    """언어 코드에 해당하는 번역 딕셔너리 선택 (미지원 코드는 'ko'로 폴백).
+
+    모든 서브도구 컨트롤러가 동일한 폴백 정책(선택 언어 → 한국어)을 사용하도록
+    단일 진입점을 제공한다.
+
+    Args:
+        lang_code (str): 언어 코드 (예: 'ko', 'en', 'ja').
+        table (dict[str, Any]): 언어 코드 → 번역 딕셔너리 매핑 테이블.
+
+    Returns:
+        dict[str, str]: 선택된 언어의 번역 딕셔너리. 미지원/누락 시 한국어 폴백.
+    """
+    selected = table.get(lang_code)
+    if isinstance(selected, dict) and selected:
+        # 호출자가 반환값을 수정하더라도 전역 언어 테이블이 오염되지 않도록 사본을 반환
+        return dict(selected)
+    fallback = table.get('ko')
+    return dict(fallback) if isinstance(fallback, dict) else {}
+
+
+def format_text(lang_dict: dict[str, Any], key: str, default: str, **kwargs: Any) -> str:
+    """번역 템플릿을 안전하게 포맷 (키 누락/플레이스홀더 불일치 시 원문 반환).
+
+    플레이스홀더가 번역본과 맞지 않아 발생하는 KeyError/IndexError 등으로 UI 갱신
+    핸들러가 중단되는 것을 방지한다.
+
+    Args:
+        lang_dict (dict[str, Any]): 번역 딕셔너리.
+        key (str): 번역 키.
+        default (str): 키가 없을 때 사용할 기본 문구.
+        **kwargs: 포맷 인자.
+
+    Returns:
+        str: 포맷된 문자열. 포맷 실패 시 템플릿 원문.
+    """
+    template = lang_dict.get(key, default) if isinstance(lang_dict, dict) else default
+    try:
+        return str(template).format(**kwargs)
+    except (KeyError, ValueError, IndexError, TypeError):
+        return str(template)
 
 
 def get_language_load_error() -> str | None:

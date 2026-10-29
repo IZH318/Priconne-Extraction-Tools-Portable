@@ -7,9 +7,12 @@
 from __future__ import annotations
 
 import contextlib
+import re
 import tkinter as tk
 from collections.abc import Callable
 from typing import Any
+
+from src.story_viewer.workspace_state import StoryWorkspaceState
 
 
 class StoryFilterService:
@@ -32,41 +35,29 @@ class StoryFilterService:
     def __init__(
         self,
         view: Any,
+        workspace: StoryWorkspaceState,
         get_lang_dict: Callable[[], dict[str, str]],
-        get_base_search_files: Callable[[], list[str]],
-        set_base_search_files: Callable[[list[str]], None],
-        get_loaded_filenames: Callable[[], list[str]],
-        get_file_titles: Callable[[], dict[str, str]],
         update_file_list: Callable[..., None],
         filter_var: Any,
-        shared_state: Any = None,
     ) -> None:
         """StoryFilterService 인스턴스 초기화.
 
         Args:
             view (Any): 상위 뷰 인스턴스.
+            workspace (StoryWorkspaceState): 컨트롤러와 공유하는 작업 공간 상태.
             get_lang_dict (Callable[[], dict[str, str]]): 다국어 맵 반환 함수.
-            get_base_search_files (Callable[[], list[str]]): 검색 필터 기준 파일 목록 반환 함수.
-            set_base_search_files (Callable[[list[str]], None]): 검색 필터 기준 파일 목록 설정 함수.
-            get_loaded_filenames (Callable[[], list[str]]): 로드된 전체 파일 목록 반환 함수.
-            get_file_titles (Callable[[], dict[str, str]]): 파일별 제목 매핑 반환 함수.
             update_file_list (Callable[..., None]): 리스트박스 갱신 콜백.
             filter_var (Any): 필터 텍스트 변수.
-            shared_state (Any): 상위 상태 컨테이너.
         """
         self._view = view
+        self._workspace = workspace
         self._get_lang_dict = get_lang_dict
-        self._get_base_search_files = get_base_search_files
-        self._set_base_search_files = set_base_search_files
-        self._get_loaded_filenames = get_loaded_filenames
-        self._get_file_titles = get_file_titles
         self._update_file_list = update_file_list
         self._filter_var = filter_var
 
-
     def set_search_results(self, filenames: list[str]) -> None:
         """검색 결과 파일 목록 설정 후 필터 갱신."""
-        self._set_base_search_files(list(filenames))
+        self._workspace.base_search_files = list(filenames)
         self.apply_filter()
 
     def clear_filter(self) -> None:
@@ -79,7 +70,7 @@ class StoryFilterService:
         """현재 검색어 기준 파일 목록 필터링 및 리스트 갱신."""
         query = self._filter_var.get().strip().lower()
         placeholder = self._get_lang_dict().get('filter_placeholder', 'ID, title, filename...').strip().lower()
-        source_files = self._get_base_search_files() if self._get_base_search_files() else list(self._get_loaded_filenames())
+        source_files = self._workspace.base_search_files if self._workspace.base_search_files else list(self._workspace.loaded_filenames)
 
         if not query or query == placeholder:
             self._update_file_list(source_files)
@@ -90,12 +81,11 @@ class StoryFilterService:
             if query in fname.lower():
                 matched.append(fname)
                 continue
-            import re
             match = re.match(r'^storydata_(\d+)(?:\.[^.]+)?$', fname)
             if match and query in match.group(1):
                 matched.append(fname)
                 continue
-            title = self._get_file_titles().get(fname, "")
+            title = self._workspace.file_titles.get(fname, "")
             if query in title.lower():
                 matched.append(fname)
                 continue

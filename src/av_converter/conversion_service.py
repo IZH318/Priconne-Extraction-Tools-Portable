@@ -1,6 +1,6 @@
 """AV Converter 변환 서비스 모듈.
 
-비디오(.usm) 및 오디오(.hca, .awb, .acb) 변환 작업의 전처리 유효성 검사,
+비디오(.usm) 및 오디오(.awb) 변환 작업의 전처리 유효성 검사,
 .NET 런타임 및 외부 툴체인 준비 확인, 백그라운드 변환 스레드 생성과
 취소 토큰(CancellationToken) 연결 및 변환 제어.
 """
@@ -14,6 +14,9 @@ from collections.abc import Callable
 from tkinter import messagebox
 from typing import Any, cast
 
+from src.constants import SENTINEL_AUDIO_DONE, SENTINEL_VIDEO_DONE
+from src.queue_events import CompletionEvent
+
 
 class AVConversionService:
     """비디오/오디오 변환 스레드 및 UI 상태 관리 서비스.
@@ -25,6 +28,7 @@ class AVConversionService:
         _shared_state (Any): 상위 상태 컨테이너.
         _view (Any): UI 제어 뷰 인스턴스.
         _logic (Any): 실제 비디오/오디오 파일 변환 알고리즘 인스턴스.
+        _log_queue (Any): 변환 로직 및 로그 서비스와 공유하는 이벤트/완료 신호 전달용 큐.
         _converting (dict[str, bool]): 탭별('video', 'audio') 변환 작업 진행 여부 플래그.
         _start_lock (threading.Lock): 변환 스레드 중복 생성 방지용 락.
     """
@@ -51,6 +55,8 @@ class AVConversionService:
         self._add_log_entry = ald if callable(ald) else (lambda *a, **k: None)
         asp = getattr(ss, "add_spacing", None) if ss is not None else None
         self._add_spacing = asp if callable(asp) else (lambda *a, **k: None)
+        lq = getattr(ss, "log_queue", None) if ss is not None else None
+        self._log_queue: Any = lq if lq is not None else getattr(self._logic, "log_queue", None)
         gvfp = getattr(ss, "get_video_full_paths", None) if ss is not None else None
         self._get_video_full_paths: Callable[[], list[str]] = gvfp if callable(gvfp) else (list)
         gafp = getattr(ss, "get_audio_full_paths", None) if ss is not None else None
@@ -150,7 +156,8 @@ class AVConversionService:
         """변환 작업 스레드 생성 실행 및 UI 버튼을 '취소' 상태로 전환.
 
         동시 실행 방지를 위해 Lock으로 진입을 보호하며, 작업 종료 시 finally 블록에서
-        상태 플래그 해제 및 취소 토큰 마무리 수행.
+        상태 플래그 해제 및 취소 토큰 마무리 수행. 변환 함수가 예외로 중단되어도
+        완료 신호를 큐에 전달하여 UI가 비활성화 상태로 남지 않도록 복구.
 
         Args:
             tab_type (Any): 대상 탭 식별자 ('video' 또는 'audio').
@@ -177,16 +184,33 @@ class AVConversionService:
                 """백그라운드 변환 스레드 엔트리포인트."""
                 try:
                     target_func(*args)
+                except BaseException as e:
+                    # 예외 발생 시에도 완료 이벤트를 큐에 전달해 UI 상태 복구
+                    with contextlib.suppress(Exception):
+                        self._add_log_entry(tab_type, "conv_log_error_exception", error=str(e))
+                    self._emit_failure_completion(tab_type)
                 finally:
-                    self._converting[str(tab_type)] = False
+                    # 상태 플래그 해제 전 토큰을 먼저 정리하여 재시작 시 경쟁 상태(Race Condition) 방지
                     with contextlib.suppress(RuntimeError, AttributeError):
                         cancel_token.finish()
+                    self._converting[str(tab_type)] = False
 
             thread = threading.Thread(target=_run, daemon=True)
             self._converting[str(tab_type)] = True
             self._set_conversion_thread(tab_type, thread)
             self._resume_polling()
             thread.start()
+
+    def _emit_failure_completion(self, tab_type: Any) -> None:
+        """변환 스레드 예외 시 실패 CompletionEvent를 큐에 전달하여 UI 상태를 복원.
+
+        Args:
+            tab_type (Any): 대상 탭 식별자 ('video' 또는 'audio').
+        """
+        if self._log_queue is None:
+            return
+        sentinel = SENTINEL_VIDEO_DONE if str(tab_type) == "video" else SENTINEL_AUDIO_DONE
+        self._log_queue.put(CompletionEvent(target=sentinel, success=False, result=[]))
 
     def is_converting(self, tab_type: Any) -> bool:
         """지정된 탭의 변환 스레드가 현재 실행 중인지 반환.

@@ -1,7 +1,7 @@
 """Tkinter 메인 스레드 이벤트 큐 폴링(Queue Polling) 인프라 모듈.
 
 Tkinter 단일 스레드 제약 극복을 위해, 백그라운드 스레드 및 멀티프로세스가
-이벤트 큐에 적재한 메시지를 메인 GUI 스레드에서 주기적으로 꺼내 처리(Drain)하는
+이벤트 큐에 전달한 메시지를 메인 GUI 스레드에서 주기적으로 꺼내 처리(Drain)하는
 QueuePollingMixin 클래스 제공.
 """
 from __future__ import annotations
@@ -11,7 +11,8 @@ import queue
 import tkinter as tk
 from typing import Any
 
-from src.constants import GUI_POLLING_INTERVAL_MS
+from src.constants import GUI_POLLING_INTERVAL_MS, IDLE_POLLING_INTERVAL_MS
+from src.utils.tk_safe import drain_ui_callbacks
 
 logger = logging.getLogger(__name__)
 
@@ -50,47 +51,86 @@ class QueuePollingMixin:
             except (tk.TclError, RuntimeError):
                 self._polling_active = False
 
-    def _is_polling_needed(self) -> bool:
-        """하위 호환성 유지용 메서드. 항상 True(상시 폴링 모드) 반환.
-
-        Returns:
-            bool: 항상 True.
-        """
-        return True
-
     def _resume_polling(self) -> None:
-        """폴링 일시 중지 또는 비활성 상태 시 폴링 사이클 재개."""
-        if not getattr(self, "_polling_active", False):
-            self._polling_active = True
-            widget = getattr(self, "_polling_widget", None)
-            interval = getattr(self, "_polling_interval_ms", GUI_POLLING_INTERVAL_MS)
-            if widget is not None:
-                try:
-                    self._polling_after_id = widget.after(interval, self._poll_queue)
-                except (tk.TclError, RuntimeError):
-                    self._polling_active = False
+        """폴링 재개: 유휴 대기(Backoff) 타이머를 취소하고 활성 주기로 즉시 재예약.
+
+        작업 시작 시 호출되면 최대 IDLE_POLLING_INTERVAL_MS 만큼 지연되던
+        첫 폴링(진행률/로그 반영)을 즉시 수행하도록 앞당긴다.
+        """
+        widget = getattr(self, "_polling_widget", None)
+        if widget is None:
+            return
+        after_id = getattr(self, "_polling_after_id", None)
+        if after_id is not None:
+            try:
+                widget.after_cancel(after_id)
+            except (tk.TclError, ValueError):
+                pass
+            self._polling_after_id = None
+        self._polling_active = True
+        interval = getattr(self, "_polling_interval_ms", GUI_POLLING_INTERVAL_MS)
+        try:
+            self._polling_after_id = widget.after(interval, self._poll_queue)
+        except (tk.TclError, RuntimeError):
+            self._polling_active = False
 
     def _poll_queue(self) -> None:
         """폴링 루프 단일 사이클 실행.
 
         하위 클래스 _on_poll_cycle() 안전 호출 후,
         _polling_active 플래그 유지 시 다음 사이클 after() 예약.
+        유휴 상태(_should_poll() == False)에서는 폴링 주기를 확장(Backoff)해 CPU 사용을 억제하고,
+        반복되는 폴링 예외는 최초/50회 주기로만 트레이스백을 기록해 로그 폭주를 방지한다.
         """
         if not getattr(self, "_polling_active", False):
             return
         try:
-            self._on_poll_cycle()
+            drain_ui_callbacks()
         except Exception:
-            logger.exception("Poll cycle failed")
+            logger.exception("UI callback drain failed")
+        try:
+            self._on_poll_cycle()
+            self._poll_error_streak = 0
+        except Exception:
+            streak = getattr(self, "_poll_error_streak", 0) + 1
+            self._poll_error_streak = streak
+            if streak == 1 or streak % 50 == 0:
+                logger.exception("Poll cycle failed (%d consecutive)", streak)
         finally:
             if getattr(self, "_polling_active", False):
                 try:
                     widget = getattr(self, "_polling_widget", None)
-                    interval = getattr(self, "_polling_interval_ms", GUI_POLLING_INTERVAL_MS)
+                    interval = self._next_poll_interval()
                     if widget is not None:
                         self._polling_after_id = widget.after(interval, self._poll_queue)
                 except (tk.TclError, RuntimeError):
                     self._polling_active = False
+
+    def _next_poll_interval(self) -> int:
+        """다음 폴링 예약 간격(ms) 반환 (유휴 상태에는 확장된 대기 간격 적용).
+
+        Returns:
+            int: 활성 주기 또는 유휴 대기 주기(둘 중 큰 값).
+        """
+        try:
+            active = self._should_poll()
+        except Exception:
+            logger.exception("_should_poll() failed; assuming active")
+            active = True
+        base_interval = getattr(self, "_polling_interval_ms", GUI_POLLING_INTERVAL_MS)
+        if active:
+            return base_interval
+        return max(IDLE_POLLING_INTERVAL_MS, base_interval)
+
+    def _should_poll(self) -> bool:
+        """폴링이 활성 주기로 필요한지 여부 반환 (하위 클래스 선택 오버라이드).
+
+        False 반환 시 유휴 대기 주기(IDLE_POLLING_INTERVAL_MS)로 폴링하여 CPU 점유율을 줄인다.
+
+        Returns:
+            bool: 작업 진행 중이면 True, 유휴 상태면 False.
+        """
+        return True
 
     def _on_poll_cycle(self) -> None:
         """폴링 주기마다 호출되는 추상 훅(Hook) 메서드.
@@ -105,7 +145,7 @@ class QueuePollingMixin:
     def _stop_polling(self) -> None:
         """진행 중 폴링 루프 즉시 중지 및 예약 after 타이머 취소 수행.
 
-        Controller cleanup() 단계 호출로 위젯 파괴 후 타이머 콜백 실행 방지(Tkinter TclError 방어).
+        Controller cleanup() 단계 호출로 위젯 파괴 후 타이머 콜백 실행 방지(Tkinter TclError 예외 방지).
         """
         self._polling_active = False
         after_id = getattr(self, "_polling_after_id", None)
@@ -122,11 +162,13 @@ class QueuePollingMixin:
         """큐 누적 이벤트 논블로킹(Non-blocking) 일괄 드레인 및 리스트 반환.
 
         queue.Empty 예외 내부 처리 및 프로세스 종료 시 발생 가능한
-        BrokenPipeError, EOFError, OSError 안전 흡수.
+        BrokenPipeError, EOFError, OSError, ValueError 안전 흡수.
 
         Note:
-            multiprocessing.Queue.empty() 경쟁 상태(Race Condition) 회피를 위해
+            multiprocessing.Queue.empty() 경쟁 상태(Race Condition) 방지를 위해
             empty() 검사 대신 get_nowait() 및 예외 트랩 루프 적용.
+            또한 종료된 multiprocessing.Queue 또는 manager 프록시의 get_nowait()가
+            발생시키는 ValueError도 흡수하여 폴링 루프를 안전하게 중단.
 
         Args:
             q (queue.Queue): 이벤트를 드레인할 큐 객체 (queue.Queue 또는 multiprocessing.Queue).
@@ -138,7 +180,7 @@ class QueuePollingMixin:
         while True:
             try:
                 items.append(q.get_nowait())
-            except (queue.Empty, EOFError, OSError, BrokenPipeError):
+            except (queue.Empty, EOFError, OSError, BrokenPipeError, ValueError):
                 break
         return items
 

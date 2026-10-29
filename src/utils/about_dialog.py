@@ -2,6 +2,9 @@
 
 메인 런처 및 5개 서브 도구 공통 호출 대상
 버전, 최종 업데이트일, 개발자 정보, 라이선스 안내 팝업 렌더링.
+
+요구사항:
+    About 팝업은 선택된 UI 언어와 무관하게 항상 영어로만 표시한다.
 """
 from __future__ import annotations
 
@@ -14,23 +17,26 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# About 팝업 고정 영문 문구 (다국어 제외)
+_ABOUT_TITLE = 'About Program'
+_ABOUT_LABEL_VERSION = 'Version'
+_ABOUT_LABEL_UPDATED = 'Last Updated'
+_ABOUT_LABEL_DEVELOPER = 'Developer'
+_ABOUT_LABEL_WEBSITE = 'Website'
+
 
 def show_about_dialog(
-    lang_dict: dict[str, str],
     about_info: dict[str, str | int] | Mapping[str, Any],
     parent: tk.Misc,
 ) -> None:
-    """프로그램 정보(About) 메시지박스 표시.
+    """프로그램 정보(About) 메시지박스 표시 (언어와 무관하게 영어 고정).
+
+    Title 및 라벨은 하드코딩된 영문 상수를 사용하며 언어 딕셔너리를 참조하지 않는다.
 
     Args:
-        lang_dict (dict[str, str]): 현재 활성화된 언어의 라벨 번역 딕셔너리.
         about_info (dict[str, str | int] | Mapping[str, Any]): 프로그램명, 버전, 개발자 정보 맵.
         parent (tk.Misc): 메시지박스를 모달 종속시킬 부모 Tkinter 위젯.
     """
-    if not isinstance(lang_dict, dict):
-        lang_dict = {}
-    title = lang_dict.get('about_title', 'About Program')
-
     info_lines: list[str] = []
 
     # 1. 프로그램 이름
@@ -40,22 +46,18 @@ def show_about_dialog(
 
     # 2. 버전 및 최종 업데이트 날짜
     if 'version' in about_info:
-        label = lang_dict.get('about_label_version', 'Version')
-        info_lines.append(f"{label}: {about_info['version']}")
+        info_lines.append(f"{_ABOUT_LABEL_VERSION}: {about_info['version']}")
     if 'updated' in about_info:
-        label = lang_dict.get('about_label_updated', 'Last Updated')
-        info_lines.append(f"{label}: {about_info['updated']}")
+        info_lines.append(f"{_ABOUT_LABEL_UPDATED}: {about_info['updated']}")
 
     if 'version' in about_info or 'updated' in about_info:
         info_lines.append("")
 
     # 3. 개발자 및 공식 웹사이트 URL
     if 'developer' in about_info:
-        label = lang_dict.get('about_label_developer', 'Developer')
-        info_lines.append(f"{label}: {about_info['developer']}")
+        info_lines.append(f"{_ABOUT_LABEL_DEVELOPER}: {about_info['developer']}")
     if 'website' in about_info:
-        label = lang_dict.get('about_label_website', 'Website')
-        info_lines.append(f"{label}: {about_info['website']}")
+        info_lines.append(f"{_ABOUT_LABEL_WEBSITE}: {about_info['website']}")
 
     if 'developer' in about_info or 'website' in about_info:
         info_lines.append("")
@@ -72,11 +74,10 @@ def show_about_dialog(
 
     # 5. 다이얼로그 표시 (부모 위젯 유효하지 않을 시 최상위 폴백)
     try:
-        messagebox.showinfo(title, "\n".join(info_lines), parent=parent)
+        messagebox.showinfo(_ABOUT_TITLE, "\n".join(info_lines), parent=parent)
     except (tk.TclError, RuntimeError) as _exc:
         logger.debug("Failed to show about dialog with parent: %s", _exc)
         try:
-            messagebox.showinfo(title, "\n".join(info_lines))
+            messagebox.showinfo(_ABOUT_TITLE, "\n".join(info_lines))
         except (tk.TclError, RuntimeError) as _exc2:
             logger.debug("Failed to show about dialog: %s", _exc2)
-

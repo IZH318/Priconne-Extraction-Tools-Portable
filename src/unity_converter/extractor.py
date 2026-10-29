@@ -1,6 +1,6 @@
 """Unity3D 에셋 번들 추출 및 역직렬화 백엔드 모듈.
 
-UnityPy를 활용하여 Unity 에셋 번들(.unity3d, .bundle) 처리.
+UnityPy를 활용하여 Unity 에셋 번들(.unity3d) 처리.
 번들 내부의 텍스처, 스프라이트, 오디오 클립, 메시, 셰이더, 폰트, 비디오, 스토리 스크립트 등의
 바이너리 에셋을 감지하여 규격화된 파일 형식(.png, .wav, .obj, .json 등)으로 변환 및 추출.
 프린세스 커넥트 스토리 데이터(TextAsset) 전용 역직렬화 지원.
@@ -12,13 +12,19 @@ import json
 import logging
 import os
 import re
-from typing import Any, ClassVar
+from typing import IO, Any, ClassVar, Iterator
 
 from src.exceptions import AssetProcessingError
 from src.parsers.story_deserializer import StoryDataDeserializer
 from src.queue_events import CompletionEvent, LogEvent
 
 logger = logging.getLogger(__name__)
+
+
+# Windows 예약 디바이스명 (확장자와 무관하게 정상 파일 생성이 불가능한 이름)
+_WINDOWS_RESERVED_NAMES: frozenset[str] = frozenset(
+    {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+)
 
 
 class AssetProcessor:
@@ -58,7 +64,12 @@ class AssetProcessor:
         "MovieTexture", "VideoClip", "AnimationClip",
     ]
 
-    DEFAULT_ENABLED: ClassVar[set[str]] = set(HANDLER_TYPES)
+    DEFAULT_ENABLED: ClassVar[set[str]] = {
+        "Texture2D",
+        "Sprite",
+        "TextAsset",
+        "Font",
+    }
 
     def __init__(
         self,
@@ -105,6 +116,7 @@ class AssetProcessor:
 
         self.env: Any = None
         self.fallback_count = 0
+        self._mesh_materials_cache: dict[tuple[str, int], list[Any]] | None = None
 
     def log(self, message_key: str, level: str = 'INFO', format_args: dict[str, Any] | None = None) -> None:
         """구조화된 로그 이벤트를 로그 큐에 발행.
@@ -120,7 +132,10 @@ class AssetProcessor:
         self.log_queue.put(LogEvent(target=self.base_name, key=message_key, level=level, kwargs=safe_args if safe_args is not None else {}))
 
     def _sanitize_filename(self, name: str) -> str:
-        """에셋명에서 파일 시스템 금지 문자를 밑줄(_)로 대체하여 안전한 파일명 생성.
+        """에셋명에서 파일 시스템 금지 문자/제어문자를 제거한 안전한 파일명 생성.
+
+        Windows에서 생성이 불가능하거나 의도하지 않은 대상을 가리킬 수 있는
+        예약 디바이스명(CON, NUL, COM1 등)과 후행 점/공백도 함께 정리한다.
 
         Args:
             name: 원본 원시 에셋 이름.
@@ -128,35 +143,88 @@ class AssetProcessor:
         Returns:
             Windows 파일 시스템에서 유효한 안전한 파일명 문자열.
         """
-        return re.sub(r'[\\/:*?"<>|]', '_', name)
+        cleaned = re.sub(r'[\\/:*?"<>|]', '_', name)
+        cleaned = re.sub(r'[\x00-\x1f]', '', cleaned)
+        cleaned = cleaned.rstrip('. ')
+        if cleaned.split('.', 1)[0].upper() in _WINDOWS_RESERVED_NAMES:
+            cleaned = f"_{cleaned}"
+        return cleaned or '_'
+
+    def _iter_unique_paths(self, path: str, obj_path_id: int) -> Iterator[str]:
+        """파일명 중복 방지용 후보 경로를 순차 생성.
+
+        최초 후보 경로 다음에는 (#PathID) 접미사, 그 이후에는 (n) 번호 인덱스를
+        부여한 후보를 계속 산출.
+
+        Args:
+            path: 생성 예정 최초 후보 파일 경로.
+            obj_path_id: Unity 오브젝트 PathID 정수.
+
+        Yields:
+            충돌 시 대체 접미사가 적용된 후보 경로 문자열.
+        """
+        yield path
+        directory, filename = os.path.split(path)
+        name, ext = os.path.splitext(filename)
+        yield os.path.join(directory, f"{name} (#{obj_path_id}){ext}")
+        base_name_for_counting = f"{name} (#{obj_path_id})"
+        count = 1
+        while True:
+            yield os.path.join(directory, f"{base_name_for_counting} ({count}){ext}")
+            count += 1
+
+    def _open_unique_path(
+        self, path: str, obj_path_id: int, mode: str = "x", **kwargs: Any
+    ) -> tuple[IO[Any], str]:
+        """대상 경로를 독점 개방('x' 모드)하여 점유한 파일 객체를 반환.
+
+        TOCTOU(확인-후-사용) 경쟁 조건 제거를 위해 독점 생성 모드('x'/'xb')로
+        open을 수행. 이미 존재하는 경로는 (#PathID)/(n) 접미사를 부여하여
+        재시도하므로, 동시 실행 중인 워커 프로세스가 서로 같은 파일을 덮어쓸 수 없음.
+
+        Args:
+            path: 생성 예정 최초 후보 파일 경로.
+            obj_path_id: Unity 오브젝트 PathID 정수.
+            mode: 독점 개방 모드 (예: 'x', 'xb').
+            **kwargs: `open` 에 전달할 추가 인자(encoding, newline 등).
+
+        Returns:
+            (개방된 파일 객체, 실제 점유된 경로) 튜플.
+
+        Raises:
+            FileExistsError: 모든 후보 경로 점유에 실패한 경우.
+        """
+        for candidate in self._iter_unique_paths(path, obj_path_id):
+            try:
+                handle = open(candidate, mode, **kwargs)
+            except FileExistsError:
+                continue
+            return handle, candidate
+        raise FileExistsError(f"Unable to reserve a unique path for: {path}")
 
     def _get_unique_path(self, path: str, obj_path_id: int) -> str:
-        """동일 경로 파일 충돌 시 (#PathID) 또는 번호 인덱스를 추가하여 고유 경로 생성.
+        """동일 경로 파일 충돌 시 (#PathID) 또는 번호 인덱스를 추가한 고유 경로를 예약 후 반환.
+
+        빈 파일을 독점 생성('xb')하여 경로를 미리 선점하므로, 동시 실행 중인
+        워커 프로세스가 동일한 파일명을 선택하여 서로 덮어쓰는 것을 방지.
+        파일 객체를 자체적으로 위임하는 이미지 라이브러리(Pillow) 등에 사용.
 
         Args:
             path: 생성 예정 대상 파일 경로.
             obj_path_id: Unity 오브젝트 PathID 정수.
 
         Returns:
-            기존 파일과 충돌하지 않는 고유한 파일 경로.
+            독점 점유된 고유한 파일 경로.
         """
-        if not os.path.exists(path):
-            return path
-        directory, filename = os.path.split(path)
-        name, ext = os.path.splitext(filename)
-        new_path = os.path.join(directory, f"{name} (#{obj_path_id}){ext}")
-        if not os.path.exists(new_path):
-            return new_path
-        count = 1
-        base_name_for_counting = f"{name} (#{obj_path_id})"
-        while True:
-            final_path = os.path.join(directory, f"{base_name_for_counting} ({count}){ext}")
-            if not os.path.exists(final_path):
-                return final_path
-            count += 1
+        handle, reserved = self._open_unique_path(path, obj_path_id, "xb")
+        handle.close()
+        return reserved
 
     def _get_export_path(self, obj: Any, extension: str, data: Any = None, sub_folder: str | None = None) -> str:
         """에셋 오브젝트의 내보내기 대상 서브 디렉터리 경로 계산 및 생성.
+
+        고유성(파일명 중복 방지)은 보장하지 않으며, 실제 파일 생성은 각 Writer가
+        `_open_unique_path` / `_get_unique_path` 를 통해 독점 점유 수행.
 
         Args:
             obj: UnityPy ObjectReader 인스턴스.
@@ -165,7 +233,7 @@ class AssetProcessor:
             sub_folder: 기본값 대체용 출력 서브폴더명.
 
         Returns:
-            고유성이 보장된 최종 내보내기 파일 경로.
+            중복 방지 접미사가 적용되기 전의 최초 후보 내보내기 파일 경로.
         """
         if data is None:
             data = obj.parse_as_object()
@@ -178,8 +246,7 @@ class AssetProcessor:
         _, existing_ext = os.path.splitext(sanitized_name)
         final_ext = "" if existing_ext else extension
 
-        initial_path = os.path.join(dest_folder, f"{sanitized_name}{final_ext}")
-        return self._get_unique_path(initial_path, obj.path_id)
+        return os.path.join(dest_folder, f"{sanitized_name}{final_ext}")
 
     def process_all_assets(self) -> int:
         """로드된 Unity 번들 내부의 모든 인식 가능 에셋 일괄 추출 및 저장.
@@ -198,6 +265,7 @@ class AssetProcessor:
             config.FALLBACK_UNITY_VERSION = DEFAULT_UNITY_VERSION  # type: ignore[assignment]
         self.env = UnityPy.load(self.file_path)
         assert self.env is not None
+        self._mesh_materials_cache = None
         num_assets = len(self.env.objects)
         if num_assets == 0:
             self.log("no_assets_to_process", "WARNING")
@@ -293,16 +361,14 @@ class AssetProcessor:
         try:
             path = self._get_export_path(obj, ".bin")
             raw_data = obj.get_raw_data()
-            with open(path, "wb") as f:
-                f.write(raw_data)
+            handle, _ = self._open_unique_path(path, obj.path_id, "xb")
+            with handle:
+                handle.write(raw_data)
             return True
         except (OSError, RuntimeError, ValueError) as e:
             self.log('asset_processing_error', 'ERROR', {'path_id': obj.path_id, 'obj_type': 'raw data', 'error': str(e)})
             return False
 
-    # =====================================================================
-    # 텍스처(Texture2D) 에셋 내보내기
-    # =====================================================================
     def _export_texture2d(self, obj: Any) -> bool:
         """Texture2D 에셋을 PNG 이미지 파일로 변환 및 저장.
 
@@ -313,15 +379,15 @@ class AssetProcessor:
             이미지 데이터가 존재하여 저장 완료된 경우 True, 아니면 False.
         """
         data = obj.parse_as_object()
-        if data.m_Width and data.image:
-            path = self._get_export_path(obj, ".png", data=data)
-            data.image.save(path)
-            return True
-        return False
+        if not data.m_Width:
+            return False
+        img = data.image
+        if not img:
+            return False
+        path = self._get_export_path(obj, ".png", data=data)
+        img.save(self._get_unique_path(path, obj.path_id))
+        return True
 
-    # =====================================================================
-    # 스프라이트(Sprite) 에셋 내보내기
-    # =====================================================================
     def _export_sprite(self, obj: Any) -> bool:
         """Sprite 에셋을 투명도가 포함된 PNG 이미지 파일로 변환 및 저장.
 
@@ -332,15 +398,13 @@ class AssetProcessor:
             스프라이트 이미지가 존재하여 저장 완료된 경우 True, 아니면 False.
         """
         data = obj.parse_as_object()
-        if data.image:
-            path = self._get_export_path(obj, ".png", data=data)
-            data.image.save(path)
-            return True
-        return False
+        img = data.image
+        if not img:
+            return False
+        path = self._get_export_path(obj, ".png", data=data)
+        img.save(self._get_unique_path(path, obj.path_id))
+        return True
 
-    # =====================================================================
-    # 텍스트(TextAsset) 에셋 분기 내보내기
-    # =====================================================================
     def _export_textasset_dispatch(self, obj: Any) -> bool:
         """TextAsset 오브젝트를 스토리 데이터 파서 또는 바이너리 내보내기로 분기 처리.
 
@@ -384,8 +448,9 @@ class AssetProcessor:
             deserialized_data = StoryDataDeserializer.deserialize(script_bytes)
 
             path = self._get_export_path(obj, ".json", data=data)
-            with open(path, "w", encoding="utf-8", errors="replace") as f:
-                json.dump(deserialized_data, f, indent=4, ensure_ascii=False)
+            handle, _ = self._open_unique_path(path, obj.path_id, "x", encoding="utf-8", errors="replace")
+            with handle:
+                json.dump(deserialized_data, handle, indent=4, ensure_ascii=False)
             self.log('storydata_deserialization_success', 'SUCCESS', {'asset_name': asset_name})
 
         except (ValueError, TypeError, KeyError, AttributeError, OSError) as e:
@@ -413,14 +478,12 @@ class AssetProcessor:
             elif not isinstance(content, (bytes, bytearray)):
                 content = str(content).encode('utf-8', 'surrogateescape')
 
-            with open(path, "wb") as f:
-                f.write(content)
+            handle, _ = self._open_unique_path(path, obj.path_id, "xb")
+            with handle:
+                handle.write(content)
             return True
         return False
 
-    # =====================================================================
-    # 오디오 클립(AudioClip) 에셋 내보내기
-    # =====================================================================
     def _export_audioclip(self, obj: Any) -> bool:
         """AudioClip 오디오 샘플을 규격 형식(.wav, .ogg, .m4a)으로 변환 및 저장.
 
@@ -441,16 +504,12 @@ class AssetProcessor:
                 os.makedirs(dest_folder, exist_ok=True)
                 sanitized_name = self._sanitize_filename(sample_name)
                 initial_path = os.path.join(dest_folder, sanitized_name)
-                path = self._get_unique_path(initial_path, obj.path_id)
-
-                with open(path, "wb") as f:
-                    f.write(audio_data)
+                handle, _ = self._open_unique_path(initial_path, obj.path_id, "xb")
+                with handle:
+                    handle.write(audio_data)
             return True
         return False
 
-    # =====================================================================
-    # 폰트(Font) 에셋 내보내기
-    # =====================================================================
     def _export_font(self, obj: Any) -> bool:
         """매직 바이트를 판별하여 Font 에셋을 .otf 또는 .ttf 형식으로 저장.
 
@@ -465,16 +524,163 @@ class AssetProcessor:
             font_data_bytes = bytes(data.m_FontData)
             extension = ".otf" if font_data_bytes[:4] == b"OTTO" else ".ttf"
             path = self._get_export_path(obj, extension, data=data)
-            with open(path, "wb") as f:
-                f.write(font_data_bytes)
+            handle, _ = self._open_unique_path(path, obj.path_id, "xb")
+            with handle:
+                handle.write(font_data_bytes)
             return True
         return False
 
-    # =====================================================================
-    # 메시(Mesh) 에셋 내보내기
-    # =====================================================================
+    @staticmethod
+    def _mesh_cache_key(reader: Any) -> tuple[str, int]:
+        """메시 머티리얼 캐시 키(SerializedFile 이름, PathID) 생성.
+
+        PathID는 SerializedFile 단위로만 고유하므로, 번들에 여러 SerializedFile이
+        포함된 경우 파일 이름을 함께 키로 사용해야 서로 다른 파일의 동일 PathID가 충돌하지 않음.
+
+        Args:
+            reader: UnityPy 오브젝트 리더(ObjectReader).
+
+        Returns:
+            (SerializedFile 이름, PathID) 튜플. 파일 이름을 알 수 없으면 빈 문자열.
+        """
+        assets_file = getattr(reader, 'assets_file', None)
+        file_name = getattr(assets_file, 'name', '')
+        path_id: int = reader.path_id
+        return (file_name if isinstance(file_name, str) else "", path_id)
+
+    def _mesh_material_map(self) -> dict[tuple[str, int], list[Any]]:
+        """환경 내 렌더러를 스캔하여 (SerializedFile 이름, 메시 PathID) → 머티리얼 목록 매핑을 지연 구축.
+
+        Unity 데이터 구조상 메시에서 머티리얼로의 역참조가 없으므로,
+        MeshRenderer/SkinnedMeshRenderer를 순회하여 연결 머티리얼을 수집.
+        PathID는 SerializedFile 단위로만 고유하므로 번들 내 파일 이름을 키에 함께 사용하며,
+        동일한 메시를 참조하는 렌더러가 여러 개면 최초로 스캔된 렌더러의 머티리얼을 채택(first renderer wins).
+        번들당 최초 1회만 스캔하고 결과를 캐시.
+
+        Returns:
+            (SerializedFile 이름, 메시 PathID)를 키로 하는 머티리얼(또는 None) 목록 매핑 딕셔너리.
+        """
+        if self._mesh_materials_cache is not None:
+            return self._mesh_materials_cache
+
+        mapping: dict[tuple[str, int], list[Any]] = {}
+        env = self.env
+        get_mesh: Any = None
+        if env is not None:
+            try:
+                from UnityPy.export.MeshRendererExporter import get_mesh as _get_mesh
+                get_mesh = _get_mesh
+            except ImportError as exc:
+                logger.debug("MeshRendererExporter unavailable: %s", exc)
+
+        if get_mesh is not None:
+            for renderer_obj in env.objects:
+                try:
+                    if renderer_obj.type.name not in ("MeshRenderer", "SkinnedMeshRenderer"):
+                        continue
+                    renderer = renderer_obj.parse_as_object()
+                    mesh = get_mesh(renderer)
+                    mesh_reader = getattr(mesh, "object_reader", None)
+                    if mesh_reader is None:
+                        continue
+                    materials: list[Any] = []
+                    for mat_ptr in (getattr(renderer, "m_Materials", None) or []):
+                        try:
+                            materials.append(mat_ptr.deref_parse_as_object() if mat_ptr else None)
+                        except Exception as exc:  # noqa: BLE001
+                            logger.debug("Failed to deref material: %s", exc)
+                            materials.append(None)
+                    # 동일 메시를 참조하는 렌더러가 여러 개면 최초 렌더러의 머티리얼만 유지(first renderer wins).
+                    mapping.setdefault(self._mesh_cache_key(mesh_reader), materials)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Failed to resolve mesh material: %s", exc)
+                    continue
+
+        self._mesh_materials_cache = mapping
+        return mapping
+
+    def _default_mtl_block(self, material_name: str) -> str:
+        """머티리얼 해석 실패 시 사용할 기본 MTL 본문 생성.
+
+        Args:
+            material_name: `newmtl` 에 기록할 머티리얼 이름.
+
+        Returns:
+            최소 속성만 포함한 MTL 본문 문자열.
+        """
+        return "\n".join([
+            f"newmtl {material_name}",
+            "Ka 0.2000 0.2000 0.2000",
+            "Kd 0.8000 0.8000 0.8000",
+            "Ks 0.2000 0.2000 0.2000",
+            "Ns 20.0000",
+            "Tr 0.0000",
+        ])
+
+    def _collect_mesh_materials(self, data: Any) -> tuple[list[str], list[str]]:
+        """메시에 연결된 머티리얼 이름 목록 및 MTL 본문 블록을 수집.
+
+        렌더러 스캔으로 머티리얼을 해석할 수 있으면 그 이름과 `export_material` 결과를
+        사용하고, 해석이 불가능하면 메시 이름 기반의 기본 머티리얼로 폴백.
+        이름은 MTL `newmtl` 과의 링크 유지를 위해 원시 머티리얼 이름(`usemtl` 은 파일명이 아님)을
+        그대로 사용하며, 블록을 얻지 못한 인덱스는 기본 블록으로 채워 두 목록의 길이를 동일하게 유지.
+
+        Args:
+            data: 파싱된 Unity Mesh 오브젝트.
+
+        Returns:
+            (서브메시 순서에 대응하는 머티리얼 이름 목록, MTL 본문 블록 목록) 튜플.
+        """
+        default_name = self._sanitize_filename(getattr(data, 'm_Name', '') or '') or 'material'
+
+        export_material: Any = None
+        try:
+            from UnityPy.export.MeshRendererExporter import export_material as _export_material
+            export_material = _export_material
+        except ImportError as exc:
+            logger.debug("export_material unavailable: %s", exc)
+
+        materials: list[Any] | None = None
+        reader = getattr(data, 'object_reader', None)
+        if reader is not None:
+            try:
+                materials = self._mesh_material_map().get(self._mesh_cache_key(reader))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Mesh material lookup failed: %s", exc)
+                materials = None
+
+        names: list[str] = []
+        blocks: list[str] = []
+        if materials:
+            for index, mat in enumerate(materials):
+                if mat is None:
+                    mat_name = default_name if index == 0 else f"{default_name}_{index}"
+                else:
+                    mat_name = getattr(mat, 'm_Name', '') or f"{default_name}_{index}"
+                names.append(mat_name)
+
+                block: str | None = None
+                if mat is not None and export_material is not None:
+                    try:
+                        block = export_material(mat)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("export_material failed for %s: %s", mat_name, exc)
+                # 블록이 없는 인덱스(미해석 머티리얼/변환 실패)를 기본 블록으로 채워 이름과 1:1 정렬.
+                blocks.append(block if block else self._default_mtl_block(mat_name))
+
+        if not names:
+            names = [default_name]
+        if not blocks:
+            blocks = [self._default_mtl_block(default_name)]
+        return names, blocks
+
     def _export_mesh(self, obj: Any) -> bool:
-        """3D Mesh 에셋을 Wavefront OBJ 형식(.obj)으로 변환 및 저장.
+        """3D Mesh 에셋을 Wavefront OBJ 형식(.obj)과 동반 MTL(.mtl)로 변환 및 저장.
+
+        UnityPy `export_mesh_obj` 는 머티리얼 이름을 전달하지 않으면 `mtllib`/`usemtl`
+        라인을 생성하지 않으므로, 연결 머티리얼(또는 기본 머티리얼) 이름을 전달하여
+        OBJ가 참조할 동반 .mtl 파일을 함께 작성. 에셋명이 .mtl 로 끝나 동반 MTL 경로가
+        예약된 OBJ 경로와 동일해지면 OBJ 유실을 막기 위해 MTL 파일명에 _mat 접미사를 부여.
 
         Args:
             obj: Mesh를 포함하는 UnityPy ObjectReader.
@@ -482,18 +688,47 @@ class AssetProcessor:
         Returns:
             지오메트리 데이터 추출 성공 시 True, 아니면 False.
         """
-        data = obj.parse_as_object()
-        exported = data.export()
-        if exported:
-            path = self._get_export_path(obj, ".obj", data=data)
-            with open(path, "w", encoding="utf-8", newline="") as f:
-                f.write(exported)
-            return True
-        return False
+        from UnityPy.export.MeshExporter import export_mesh_obj
 
-    # =====================================================================
-    # 셰이더(Shader) 에셋 내보내기
-    # =====================================================================
+        data = obj.parse_as_object()
+        material_names, mtl_blocks = self._collect_mesh_materials(data)
+        exported = export_mesh_obj(data, material_names)
+        if not exported:
+            return False
+
+        path = self._get_export_path(obj, ".obj", data=data)
+        handle, obj_path = self._open_unique_path(path, obj.path_id, "x", encoding="utf-8", newline="")
+        mtl_name = os.path.splitext(os.path.basename(obj_path))[0] + ".mtl"
+        mtl_path = os.path.join(os.path.dirname(obj_path), mtl_name)
+        if os.path.normpath(mtl_path) == os.path.normpath(obj_path):
+            # 동일 경로인 경우 MTL 기록이 예약된 OBJ 를 잘라내므로 파일명을 분리.
+            mtl_name = os.path.splitext(os.path.basename(obj_path))[0] + "_mat.mtl"
+            mtl_path = os.path.join(os.path.dirname(obj_path), mtl_name)
+        # export_mesh_obj 는 mtllib 라인을 원본 메시명으로 출력하므로 실제 예약 파일명으로 정정.
+        exported = exported.replace(f"mtllib {getattr(data, 'm_Name', '')}.mtl", f"mtllib {mtl_name}", 1)
+        with handle:
+            handle.write(exported)
+
+        mtl_written = False
+        try:
+            with open(mtl_path, "w", encoding="utf-8", newline="") as mtl_handle:
+                mtl_handle.write("\n".join(mtl_blocks) + "\n")
+            mtl_written = True
+        except OSError as exc:
+            logger.warning("Failed to write companion .mtl %s: %s", mtl_name, exc)
+
+        if not mtl_written:
+            # MTL 기록 실패 시 존재하지 않는 파일을 가리키는 mtllib 참조를 OBJ 에서 제거
+            try:
+                stripped = re.sub(
+                    rf"^mtllib\s+{re.escape(mtl_name)}\s*\r?\n?", "", exported, count=1, flags=re.MULTILINE
+                )
+                with open(obj_path, "w", encoding="utf-8", newline="") as obj_handle:
+                    obj_handle.write(stripped)
+            except OSError as exc:
+                logger.warning("Failed to strip mtllib reference from %s: %s", obj_path, exc)
+        return True
+
     def _export_shader(self, obj: Any) -> bool:
         """Shader 에셋을 텍스트 파일(.shader)로 변환 및 저장.
 
@@ -507,15 +742,13 @@ class AssetProcessor:
         exported = data.export()
         if exported:
             path = self._get_export_path(obj, ".shader", data=data)
-            with open(path, "w", encoding="utf-8", newline="") as f:
-                f.write(exported)
+            handle, _ = self._open_unique_path(path, obj.path_id, "x", encoding="utf-8", newline="")
+            with handle:
+                handle.write(exported)
             self.log('shader_export_success', 'SUCCESS', {'asset_name': data.m_Name or f'(PathID:{obj.path_id})'})
             return True
         return False
 
-    # =====================================================================
-    # 모노비헤이비어(MonoBehaviour) 에셋 내보내기
-    # =====================================================================
     def _export_monobehaviour(self, obj: Any) -> bool:
         """MonoBehaviour 에셋을 JSON으로 변환하거나 파싱 실패 시 바이너리(.bin)로 저장.
 
@@ -546,15 +779,11 @@ class AssetProcessor:
         os.makedirs(dest_folder, exist_ok=True)
         sanitized_name = self._sanitize_filename(asset_name)
         initial_path = os.path.join(dest_folder, f"{sanitized_name}{extension}")
-        path = self._get_unique_path(initial_path, obj.path_id)
-
-        with open(path, "wb") as f:
-            f.write(export_bytes)
+        handle, _ = self._open_unique_path(initial_path, obj.path_id, "xb")
+        with handle:
+            handle.write(export_bytes)
         return True
 
-    # =====================================================================
-    # 텍스처2D 배열(Texture2DArray) 에셋 내보내기
-    # =====================================================================
     def _export_texture2darray(self, obj: Any) -> bool:
         """Texture2DArray의 각 슬라이스/레이어를 개별 PNG 이미지 파일로 분할 저장.
 
@@ -586,9 +815,6 @@ class AssetProcessor:
         self.log('texture2darray_export_success', 'SUCCESS', {'asset_name': data.m_Name or f'(PathID:{obj.path_id})', 'count': len(images)})
         return True
 
-    # =====================================================================
-    # 무비 텍스처(MovieTexture) 에셋 내보내기
-    # =====================================================================
     def _export_movietexture(self, obj: Any) -> bool:
         """MovieTexture Ogg Theora 비디오 스트림을 .ogv 형식으로 저장.
 
@@ -602,15 +828,13 @@ class AssetProcessor:
         if hasattr(data, 'm_MovieData') and data.m_MovieData:
             movie_data = bytes(data.m_MovieData)
             path = self._get_export_path(obj, ".ogv", data=data)
-            with open(path, "wb") as f:
-                f.write(movie_data)
+            handle, _ = self._open_unique_path(path, obj.path_id, "xb")
+            with handle:
+                handle.write(movie_data)
             self.log('movietexture_export_success', 'SUCCESS', {'asset_name': data.m_Name or f'(PathID:{obj.path_id})'})
             return True
         return False
 
-    # =====================================================================
-    # 비디오 클립(VideoClip, Unity 5.6+) 에셋 내보내기
-    # =====================================================================
     def _export_videoclip(self, obj: Any) -> bool:
         """UnityPy ResourceReader를 통해 VideoClip 미디어 스트림을 추출 및 저장.
 
@@ -647,16 +871,14 @@ class AssetProcessor:
                     ext = original_ext
 
             path = self._get_export_path(obj, ext, data=data)
-            with open(path, "wb") as f:
-                f.write(video_data)
+            handle, _ = self._open_unique_path(path, obj.path_id, "xb")
+            with handle:
+                handle.write(video_data)
             return True
         else:
             self.log('videoclip_no_data', 'WARNING', {'asset_name': data.m_Name or f'(PathID:{obj.path_id})'})
             return False
 
-    # =====================================================================
-    # 애니메이션 클립(AnimationClip) 에셋 내보내기
-    # =====================================================================
     def _export_animationclip(self, obj: Any) -> bool:
         """AnimationClip 커브 데이터를 구조화된 JSON으로 변환 및 저장.
 
@@ -668,14 +890,12 @@ class AssetProcessor:
         """
         tree = obj.parse_as_dict()
         path = self._get_export_path(obj, ".json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(tree, f, indent=4, ensure_ascii=False,
+        handle, _ = self._open_unique_path(path, obj.path_id, "x", encoding="utf-8")
+        with handle:
+            json.dump(tree, handle, indent=4, ensure_ascii=False,
                       default=lambda o: f"<Unserializable: {type(o).__name__}>")
         return True
 
-    # =====================================================================
-    # 일반 TypeTree JSON 내보내기
-    # =====================================================================
     def _export_generic_json(self, obj: Any, error_info: str | None = None) -> bool:
         """임의의 Unity 에셋 타입을 TypeTree 기반 JSON으로 변환 및 저장.
 
@@ -690,8 +910,10 @@ class AssetProcessor:
         typetree = obj.parse_as_dict()
         if error_info:
             typetree["EXPORT_ERROR"] = error_info
-        with open(path, "w", encoding="utf-8", errors="replace") as f:
-            json.dump(typetree, f, indent=4, ensure_ascii=False, default=lambda o: f"<Unserializable: {type(o).__name__}>")
+        handle, _ = self._open_unique_path(path, obj.path_id, "x", encoding="utf-8", errors="replace")
+        with handle:
+            json.dump(typetree, handle, indent=4, ensure_ascii=False,
+                      default=lambda o: f"<Unserializable: {type(o).__name__}>")
         return True
 
 
@@ -704,9 +926,9 @@ def process_single_file(
     unity_version: str | None = None,
     enabled_types: set[str] | None = None,
 ) -> None:
-    """단일 Unity3D 번들 파일로부터 에셋을 추출하는 작업자 엔트리포인트 함수.
+    """단일 Unity3D 번들 파일로부터 에셋을 추출하는 워커 엔트리포인트 함수.
 
-    동시성 스레드 또는 작업자 프로세스에서 실행되도록 설계.
+    워커 스레드 또는 워커 프로세스에서 실행되도록 설계.
     로그 이벤트 및 최종 완료 상태를 스레드 안전 큐로 전송.
 
     Args:
@@ -746,7 +968,7 @@ def process_file_batch(
     unity_version: str | None = None,
     enabled_types: set[str] | None = None,
 ) -> int:
-    """작업자 스레드 내에서 번들 파일 배치 목록을 순차적으로 처리.
+    """워커 스레드 내에서 번들 파일 배치 목록을 순차적으로 처리.
 
     Args:
         file_paths: 입력 번들 파일 경로 문자열 리스트.

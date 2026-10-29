@@ -17,7 +17,7 @@ class CancellationToken:
     내부 threading.Event 및 threading.Lock을 기반으로 다음 기능 제공:
     1. 원자적(Atomic) 취소 신호 전파 (cancel)
     2. 중복 실행 방지를 위한 진행 상태(_in_flight) 추적
-    3. 협력적 폴링(is_cancelled) 및 대기(wait)
+    3. 협력적 폴링(is_cancelled)
 
     Thread Safety:
         모든 상태 변경 및 조회 메서드는 내부 락(_lock)으로 보호되므로
@@ -34,7 +34,7 @@ class CancellationToken:
     def cancel(self) -> None:
         """작업 취소 신호 발생(Event set).
 
-        백그라운드 작업자는 is_cancelled 속성을 주기적으로 확인하여
+        백그라운드 워커 스레드는 is_cancelled 속성을 주기적으로 확인하여
         안전하게 조기 종료 루틴을 수행해야 함.
         """
         with self._lock:
@@ -61,23 +61,6 @@ class CancellationToken:
         with self._lock:
             self._in_flight = False
 
-    def release(self) -> None:
-        """finish()의 별칭(Alias)."""
-        self.finish()
-
-    def wait(self, timeout: float | None = None) -> bool:
-        """취소 신호가 발생할 때까지 현재 스레드 대기.
-
-        Args:
-            timeout (float | None): 최대 대기 시간(초). None인 경우 신호 수신까지 무기한 블로킹.
-
-        Returns:
-            bool: 취소 신호 발생 시 True, 제한 시간(timeout) 초과 해제 시 False.
-        """
-        with self._lock:
-            event = self._event
-        return event.wait(timeout)
-
     @property
     def is_cancelled(self) -> bool:
         """작업 취소 신호 설정 여부 확인.
@@ -87,14 +70,4 @@ class CancellationToken:
         """
         with self._lock:
             return self._event.is_set()
-
-    @property
-    def is_in_flight(self) -> bool:
-        """현재 작업 진행 중 여부 반환.
-
-        Returns:
-            bool: reset() 호출 후 finish() 호출 전까지 True.
-        """
-        with self._lock:
-            return self._in_flight
 

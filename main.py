@@ -18,15 +18,18 @@ from tkinterdnd2 import TkinterDnD  # type: ignore[import-untyped]
 
 from src.av_converter import AVConverterApp
 from src.container import AppContainer, SharedDependencies
-from src.languages import MAIN_MENU_LANGUAGES
+from src.languages import MAIN_MENU_LANGUAGES, pick_language
 from src.protocols import ModuleController, validate_module_controller
 
 # 서브 도구 모듈 임포트
 from src.renamer import FileRenamerGUI
 from src.resource_remover import ResourceRemoverApp
 from src.story_viewer import StoryViewerApp
+from src.subprocess_runner import SubprocessRunner
 from src.unity_converter import AssetExtractorApp
 from src.utils.about_dialog import show_about_dialog
+from src.utils.dialogs import center_window
+from src.utils.task_pool import shutdown_registered_process_pools
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +112,7 @@ class MainLauncher(TkinterDnD.Tk):
     def _configure_window(self) -> None:
         """메인 윈도우 크기 설정 및 화면 중앙 배치."""
         width, height = 800, 600
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width // 2) - (width // 2)
-        y = (screen_height // 2) - (height // 2)
-        self.geometry(f'{width}x{height}+{x}+{y}')
+        center_window(self, width, height)
         
         # 아이콘 설정
         base_path = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
@@ -182,13 +181,15 @@ class MainLauncher(TkinterDnD.Tk):
         # 서브 도구의 ModuleController 프로토콜 준수 여부 검증
         for app in self.apps:
             controller = getattr(app, 'controller', None)
-            if controller is not None and not isinstance(controller, ModuleController):
+            if controller is None:
+                continue
+            if not isinstance(controller, ModuleController):
                 logger.warning(
                     "%s.controller does not implement ModuleController protocol. "
                     "cleanup() may be skipped on exit.",
                     type(app).__name__,
                 )
-            if controller is not None and isinstance(controller, ModuleController) and not validate_module_controller(controller):
+            elif not validate_module_controller(controller):
                 logger.warning(
                     "%s.controller implements ModuleController but fails signature validation.",
                     type(app).__name__,
@@ -200,7 +201,7 @@ class MainLauncher(TkinterDnD.Tk):
 
     def _update_launcher_ui_text(self) -> None:
         """현재 언어에 맞춰 메뉴와 탭 명칭 갱신."""
-        lang_dict = MAIN_MENU_LANGUAGES.get(self.app_lang_var.get(), MAIN_MENU_LANGUAGES.get('ko', {}))
+        lang_dict = pick_language(self.app_lang_var.get(), MAIN_MENU_LANGUAGES)
         
         self.title(lang_dict.get('window_title', 'Priconne Extraction Tools (Portable)'))
         
@@ -221,11 +222,37 @@ class MainLauncher(TkinterDnD.Tk):
 
     def _show_about_info(self) -> None:
         """프로그램 정보 대화상자 표시."""
-        lang_dict = MAIN_MENU_LANGUAGES.get(self.app_lang_var.get(), MAIN_MENU_LANGUAGES.get('ko', {}))
-        show_about_dialog(lang_dict, self.about_info, self)
+        show_about_dialog(self.about_info, self)
         
     def on_closing(self) -> None:
         """앱 종료 시 서브 도구 자원 정리 및 창 닫기."""
+        if getattr(self, "_closing", False):
+            return
+        self._closing = True
+
+        # 1. 창을 먼저 숨겨 스레드 조인(join) 대기 중 UI 멈춤 현상(freeze)을 방지
+        try:
+            self.withdraw()
+        except tk.TclError:
+            pass
+
+        # 2. 진행 중인 외부 도구(ffmpeg/UsmToolkit/vgmstream) 프로세스 트리 일괄 종료
+        #    (communicate 대기 중인 워커 스레드를 해제하여 스레드 join 지연 단축)
+        try:
+            terminated = SubprocessRunner.terminate_all()
+            if terminated:
+                logger.info("Terminated %d active child process(es) on exit", terminated)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Error during subprocess termination: %s", e)
+
+        # 2-1. 등록된 프로세스 풀 워커 종료
+        #      (스키마 해석/추출 진행 중 종료 시 워커 프로세스가 남아 대기하는 것을 방지)
+        try:
+            shutdown_registered_process_pools()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Error during process pool shutdown: %s", e)
+
+        # 3. 서브 도구 컨트롤러 정리
         for app in self.apps:
             controller = getattr(app, 'controller', None)
             if isinstance(controller, ModuleController):
@@ -233,15 +260,32 @@ class MainLauncher(TkinterDnD.Tk):
                     controller.cleanup()
                 except Exception as e:  # noqa: BLE001
                     logger.warning("Error during cleanup: %s", e)
-                    
-        # 앱 공용 임시 폴더 등 공유 자원 정리
-        if hasattr(self, 'container') and hasattr(self.container, 'cleanup_shared'):
-            self.container.cleanup_shared()
-                    
-        self.destroy()
+
+        try:
+            # 앱 공용 임시 폴더 등 공유 자원 정리
+            if hasattr(self, 'container') and hasattr(self.container, 'cleanup_shared'):
+                self.container.cleanup_shared()
+
+            # 종료 직전 대기 중인 UI 콜백(after 태스크) 비우기(drain)
+            try:
+                from src.utils.tk_safe import drain_ui_callbacks
+                drain_ui_callbacks()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Error during UI callback drain: %s", e)
+        finally:
+            # 정리 단계에서 예외가 발생해도 창은 반드시 닫도록 보장
+            self.destroy()
 
 if __name__ == '__main__':
     multiprocessing.freeze_support()
+    # 이전 실행이 비정상 종료된 경우 남은 임시 파일 정리
+    try:
+        from src.utils.temp_registry import sweep_stale_temp_artifacts
+        _swept = sweep_stale_temp_artifacts()
+        if _swept:
+            logger.info("Swept %d stale temp artifact(s) from previous run", _swept)
+    except Exception as _sweep_err:  # noqa: BLE001
+        logger.warning("Error during stale temp artifact sweep: %s", _sweep_err)
     app = MainLauncher()
     app.protocol("WM_DELETE_WINDOW", app.on_closing)
     app.mainloop()

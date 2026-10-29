@@ -1,4 +1,4 @@
-"""Story Viewer 스키마 계보(Schema Lineage) 및 난독화 역해석 엔진 모듈.
+"""Story Viewer 마스터 DB 난독화 역추적 및 스키마 매핑 모듈.
 
 프린세스 커넥트! Re:Dive 최신 클라이언트에서 난독화(해시화)된 master.db의 테이블 및
 컬럼 이름을 기준(Baseline) DB와의 시그니처 샘플링, 토큰 일치도, 행 데이터 분포 유사도를
@@ -10,20 +10,18 @@ from __future__ import annotations
 import contextlib
 import logging
 import os
-import re
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Any
 
+from src.utils.task_pool import register_process_pool, unregister_process_pool
+
+from .schema_cache import SchemaCacheManager
+
 logger = logging.getLogger(__name__)
 
-# ==============================================================================
-# 스키마 계보(schema_lineage_v1.2) 매핑 정의 (extract_event_stories.py 기반)
-# ==============================================================================
-
-SUPPORTED_EXTENSIONS: tuple[str, ...] = (".db", ".sqlite", ".sqlite3")
-SQLITE_READONLY_URI_MODE: str = "?mode=ro"
+# 대상 테이블 및 컬럼 매핑
 
 DEFAULT_COLUMN_DIFF_TOLERANCE: int = 5
 DYNAMIC_FULL_CENSUS_LIMIT: int = 1500
@@ -222,11 +220,6 @@ def escape_identifier(identifier: str) -> str:
     if not isinstance(identifier, str) or not identifier or '\x00' in identifier:
         raise ValueError(f"Invalid SQLite identifier: {identifier!r}")
     return '"' + identifier.replace('"', '""') + '"'
-
-
-def natural_sort_key(s: str) -> list[Any]:
-    """버전명이나 숫자가 포함된 문자열 대상 자연 정렬 키 반환."""
-    return [int(text) if text.isdigit() else text.lower() for text in re.split(r'(\d+)', s)]
 
 
 def extract_signature_samples(conn: sqlite3.Connection, table_name: str) -> tuple[int, list[frozenset], bool]:
@@ -510,90 +503,6 @@ def resolve_column_mapping(
         return [f"  (Failed to resolve column mapping: {e!s})"], {}
 
 
-class StoryDataExtractor:
-    def __init__(self, baseline_db_path: str, latest_db_path: str):
-        self.base_db = os.path.abspath(baseline_db_path)
-        self.target_db = self._resolve_target_db(latest_db_path)
-        self._table_cache: dict[str, tuple[str, dict[str, str]]] = {}
-
-    def _resolve_target_db(self, path: str) -> str:
-        if os.path.isfile(path):
-            return os.path.abspath(path)
-
-        if os.path.isdir(path):
-            candidates = []
-            for root_dir, _, files in os.walk(path):
-                for f in files:
-                    if f.lower().endswith(SUPPORTED_EXTENSIONS):
-                        candidates.append({
-                            "path": os.path.join(root_dir, f),
-                            "folder": os.path.basename(root_dir),
-                            "filename": f
-                        })
-
-            if not candidates:
-                raise FileNotFoundError(f"No SQLite DB files found in the directory: {path}")
-
-            candidates.sort(key=lambda x: (natural_sort_key(x["folder"]), natural_sort_key(x["filename"])))
-            return os.path.abspath(candidates[-1]["path"])
-
-        raise FileNotFoundError(f"Not a valid DB file or directory: {path}")
-
-    def _get_ro_connection(self, db_path: str) -> Any:
-        return contextlib.closing(sqlite3.connect(f"file:{db_path}{SQLITE_READONLY_URI_MODE}", uri=True))
-
-    def _find_and_deobfuscate_table(self, base_table_name: str) -> tuple[str, dict[str, str]]:
-        if base_table_name in self._table_cache:
-            return self._table_cache[base_table_name]
-
-        with self._get_ro_connection(self.base_db) as base_conn, \
-             self._get_ro_connection(self.target_db) as target_conn:
-
-            base_col_count, base_sigs, is_small = extract_signature_samples(base_conn, base_table_name)
-            base_cur = base_conn.cursor()
-            base_cur.execute(f"PRAGMA table_info({escape_identifier(base_table_name)});")
-            orig_base_types = {r[1]: (r[2].upper().strip() if r[2] else "NONE") for r in base_cur.fetchall()}
-
-            target_cur = target_conn.cursor()
-            target_cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
-            cand_tables = [r[0] for r in target_cur.fetchall()]
-
-            best_table = None
-            best_score = -1.0
-
-            if base_table_name in cand_tables:
-                fast_score = calculate_match_score(
-                    target_conn, base_table_name, base_col_count, base_sigs, DEFAULT_COLUMN_DIFF_TOLERANCE, is_small
-                )
-                if fast_score >= FAST_TRACK_SCORE_THRESHOLD:
-                    best_table = base_table_name
-                    best_score = fast_score
-
-            if not best_table:
-                for cand in cand_tables:
-                    score = calculate_match_score(
-                        target_conn, cand, base_col_count, base_sigs, DEFAULT_COLUMN_DIFF_TOLERANCE, is_small
-                    )
-                    if score >= TABLE_MATCH_RATIO and score > best_score:
-                        best_score = score
-                        best_table = cand
-
-            if not best_table:
-                raise RuntimeError(f"Could not find a matching obfuscated table for '{base_table_name}' in the latest DB.")
-
-            _, cand_to_human_map = resolve_column_mapping(
-                ref_conn=base_conn,
-                ref_tbl=base_table_name,
-                cand_conn=target_conn,
-                cand_tbl=best_table,
-                original_base_types=orig_base_types
-            )
-
-            human_to_hash_map = {human: cand_hash for cand_hash, human in cand_to_human_map.items()}
-            self._table_cache[base_table_name] = (best_table, human_to_hash_map)
-            return best_table, human_to_hash_map
-
-
 def resolve_single_table_worker(args: tuple) -> tuple:
     """단일 테이블 역난독화 워커.
 
@@ -667,15 +576,56 @@ def resolve_single_table_worker(args: tuple) -> tuple:
             return server_key, table_key, base_table_name, best_table, human_to_hash_map
 
     except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-        logger.error("Worker failed for %s.%s (%s): %s", server_key, table_key, base_table_name, e)
+        logger.exception("Worker failed for %s.%s (%s): %s", server_key, table_key, base_table_name, e)
         return server_key, table_key, base_table_name, None, {}
+
+
+def _iter_resolved_tables(tasks: list[tuple]) -> Iterator[tuple]:
+    """테이블 역난독화 태스크를 프로세스 풀로 실행하고 결과를 순차 산출한다.
+
+    프로세스 풀 생성/실행이 불가능한 환경에서는 동일한 태스크를 현재 프로세스에서
+    직렬 실행하여 누락 없이 같은 결과 집합을 만든다.
+
+    Args:
+        tasks: resolve_single_table_worker 인자 튜플 목록.
+
+    Yields:
+        tuple: (server_key, table_key, best_table, column_map) 결과 튜플.
+    """
+    try:
+        max_workers = min(len(tasks), (os.process_cpu_count() if hasattr(os, "process_cpu_count") else os.cpu_count()) or os.cpu_count() or 4)
+        pool = register_process_pool(ProcessPoolExecutor(max_workers=max_workers))
+        try:
+            futures = [pool.submit(resolve_single_table_worker, task) for task in tasks]
+            for future in as_completed(futures):
+                try:
+                    res = future.result(timeout=300)
+                    yield res[0], res[1], res[3], res[4]
+                except TimeoutError as exc:
+                    logger.warning("Schema resolution future timed out: %s", exc)
+                    with contextlib.suppress(RuntimeError, OSError):
+                        future.cancel()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Schema resolution future failed: %s", exc)
+        finally:
+            unregister_process_pool(pool)
+            pool.shutdown(wait=False, cancel_futures=True)
+    except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, OSError, RuntimeError) as e:
+        logger.warning("ProcessPoolExecutor parallel resolution failed (%s); retrying sequentially", e)
+        for task in tasks:
+            try:
+                res = resolve_single_table_worker(task)
+                yield res[0], res[1], res[3], res[4]
+            except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, OSError) as exc:
+                logger.exception("Sequential schema resolution failed: %s", exc)
 
 
 def resolve_all_servers_parallel(
     server_db_info: dict,
     root_dir: str,
     src_dir: str,
-    progress_callback: Callable | None = None
+    progress_callback: Callable | None = None,
+    force_servers: set[str] | None = None,
 ) -> None:
     """모든 서버 DB 설정(server_db_info)의 멀티프로세스 병렬 역난독화 실행.
 
@@ -684,36 +634,50 @@ def resolve_all_servers_parallel(
         root_dir: 프로젝트 루트 경로.
         src_dir: src 폴더 경로.
         progress_callback: 각 테이블 분석 완료 시 (server_key, table_key)를 인자로 호출할 콜백 함수.
+        force_servers: 캐시를 무시하고 강제로 처음부터 재분석할 서버 키 집합(선택 사항).
     """
+    cache = SchemaCacheManager.load(src_dir)
+    if force_servers:
+        for s in force_servers:
+            cache.invalidate_server(s)
+
+    for server_key, info in server_db_info.items():
+        if not isinstance(info, dict) or 'db_path' not in info:
+            continue
+        db_path = os.path.join(root_dir, info['db_path'])
+        if os.path.exists(db_path) and cache.is_server_signature_changed(server_key, db_path):
+            cache.invalidate_server(server_key)
+
+    stale_servers = cache.stale_servers
+    cache_applied = 0
     all_tasks = []
+    task_meta: dict[tuple[str, str], tuple[str, str, str]] = {}
 
     for server_key, info in server_db_info.items():
         if not isinstance(info, dict) or 'db_path' not in info:
             continue
 
+        is_stale = server_key in stale_servers
         event_list_table = info.get("event_list_table", "")
-        # 이미 정규화 캐시가 존재한다면 즉시 반환
-        if event_list_table.startswith("v1_"):
+        # 이미 정규화 캐시가 존재하고 버전/DB가 변경되지 않았다면 즉시 반환
+        if event_list_table.startswith("v1_") and not is_stale:
             continue
+
+        if is_stale:
+            # 버전 변경/DB 업데이트로 재분석해야 하는 서버는 기존 메모리 v1_ 해시를 기본 설정값으로 복원
+            try:
+                from .controller import _load_db_config
+                default_all = _load_db_config()
+                if server_key in default_all:
+                    info.clear()
+                    info.update(default_all[server_key])
+            except Exception as e:
+                logger.debug("Failed to reset server_db_info to baseline for %s: %s", server_key, e)
 
         db_path = os.path.join(root_dir, info['db_path'])
         baseline_path = _get_default_baseline_path(info, src_dir)
 
         if not os.path.exists(baseline_path) or not os.path.exists(db_path):
-            continue
-
-        # 타겟 DB의 모든 테이블 및 컬럼 목록을 1회 일괄 로드 (PRAGMA 중복 호출 방지)
-        target_tables_with_col = []
-        try:
-            with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
-                all_tables = [r[0] for r in cur.fetchall()]
-                for t in all_tables:
-                    cur.execute(f"PRAGMA table_info({escape_identifier(t)});")
-                    target_tables_with_col.append((t, len(cur.fetchall())))
-        except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-            logger.error("Failed to inspect tables in %s: %s", db_path, e)
             continue
 
         # 주 테이블 역난독화 태스크 등록
@@ -748,387 +712,90 @@ def resolve_all_servers_parallel(
                 b_tbl_path = os.path.join(src_dir, b_filename)
                 table_keys.append((tbl_k, tbl_v, b_tbl_path))
 
+        # 캐시 적중 항목은 즉시 적용하고, 미적중 항목만 실제 계산 대상으로 남긴다.
+        pending_keys: list[tuple[str, str, str]] = []
         for t_key, tbl_name, b_path in table_keys:
-            if tbl_name and os.path.exists(b_path) and b_path != db_path:
-                all_tasks.append((server_key, t_key, b_path, db_path, tbl_name, target_tables_with_col))
+            if not (tbl_name and os.path.exists(b_path) and b_path != db_path):
+                continue
+            cached = None if is_stale else cache.lookup(server_key, t_key, tbl_name, b_path, db_path)
+            if cached is not None:
+                if cached.resolved:
+                    info[t_key] = cached.resolved
+                    for col_key, (orig_value, new_value) in cached.columns.items():
+                        if info.get(col_key) == orig_value:
+                            info[col_key] = new_value
+                    cache_applied += 1
+                continue
+            pending_keys.append((t_key, tbl_name, b_path))
+
+        if not pending_keys:
+            continue
+
+        # 실제 계산이 필요한 경우에만 대상 DB의 테이블/컬럼 목록을 열거한다.
+        target_tables_with_col = []
+        try:
+            with contextlib.closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
+                all_tables = [r[0] for r in cur.fetchall()]
+                for t in all_tables:
+                    cur.execute(f"PRAGMA table_info({escape_identifier(t)});")
+                    target_tables_with_col.append((t, len(cur.fetchall())))
+        except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
+            logger.exception("Failed to inspect tables in %s: %s", db_path, e)
+            continue
+
+        for t_key, tbl_name, b_path in pending_keys:
+            all_tasks.append((server_key, t_key, b_path, db_path, tbl_name, target_tables_with_col))
+            task_meta[(server_key, t_key)] = (tbl_name, b_path, db_path)
+
+    if cache_applied:
+        logger.info("Schema cache applied: %d table mapping(s)", cache_applied)
 
     if not all_tasks:
+        cache.save()
         return
 
-
+    resolved_results: list[tuple] = []
     try:
-        max_workers = min(len(all_tasks), (os.process_cpu_count() if hasattr(os, "process_cpu_count") else os.cpu_count()) or os.cpu_count() or 4)
-        resolved_results = []
-        pool = ProcessPoolExecutor(max_workers=max_workers)
-        futures = [pool.submit(resolve_single_table_worker, task) for task in all_tasks]
-        try:
-            for future in as_completed(futures):
-                try:
-                    s_key, t_key, _, best_tbl, col_map = future.result(timeout=300)
-                except TimeoutError as exc:
-                    logger.warning("Schema resolution future timed out: %s", exc)
-                    with contextlib.suppress(RuntimeError, OSError):
-                        future.cancel()
-                    continue
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Schema resolution future failed: %s", exc)
-                    continue
-                if progress_callback:
-                    progress_callback(s_key, t_key)
-                resolved_results.append((s_key, t_key, best_tbl, col_map))
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
-
-        # 모든 작업 완료 후 캐시에 일괄 반영
-        for s_key, t_key, best_tbl, col_map in resolved_results:
-            if best_tbl and s_key in server_db_info:
-                s_info = server_db_info[s_key]
-                s_info[t_key] = best_tbl
-
-                target_col_keys = COLUMN_MAPPINGS.get(t_key, [])
-                for col_k in target_col_keys:
-                    orig_col_val = s_info.get(col_k)
-                    if orig_col_val and orig_col_val in col_map:
-                        s_info[col_k] = col_map[orig_col_val]
-
-        logger.info("Successfully executed parallel schema resolution across all servers.")
-    except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-        logger.warning("ProcessPoolExecutor parallel resolution failed (%s), falling back to sequential: %s", e, e)
-        for server_key, info in server_db_info.items():
-            if isinstance(info, dict) and 'db_path' in info:
-                db_path = os.path.join(root_dir, info['db_path'])
-                baseline_path = _get_default_baseline_path(info, src_dir)
-                if os.path.exists(baseline_path) and os.path.exists(db_path):
-                    resolve_server_config(baseline_path, db_path, info, progress_callback=progress_callback)
-
-
-def resolve_server_config(baseline_path: str, latest_path: str, server_info: dict, progress_callback: Callable | None = None) -> None:
-    """서버별 DB 설정 딕셔너리(server_info) 원본 테이블/컬럼명 실시간 역난독화 해시값 변환 (in-place 직접 수정)."""
-    server_key = server_info.get("version_key", "Unknown")
-        # 대상 테이블 목록
-    all_table_keys = [
-        "event_list_table", "event_details_table", "birthday_table", "quest_table",
-        "story_detail_table", "dear_story_detail_table", "tower_story_detail_table",
-        "alchemy_story_detail_table", "sekai_top_data_table", "sekai_top_story_data_table",
-        "event_top_adv_table", "unit_table", "hatsune_boss_table", "hatsune_special_battle_table",
-        "legion_special_battle_table", "byway_battle_quest_data_table", "byway_quest_data_table"
-    ]
-    for tbl_prefix in BASELINE_TABLES_LIST:
-        all_table_keys.append(f"{tbl_prefix}_table")
-
-    unresolved_tables = [
-        k for k in all_table_keys
-        if server_info.get(k) and not server_info.get(k, "").startswith("v1_")
-    ]
-
-    if not unresolved_tables:
-        if progress_callback:
-            for k in all_table_keys:
-                if server_info.get(k):
-                    progress_callback(server_key, k)
-        return
-
-    if not os.path.exists(baseline_path):
-        logger.error("Baseline DB file does not exist, skipping schema mapping: %s", baseline_path)
-        return
-
-    if not os.path.exists(latest_path):
-        logger.error("Latest DB file does not exist, skipping schema mapping: %s", latest_path)
-        return
-
-    try:
-        extractors = {}
-        def get_extractor(b_path: str) -> StoryDataExtractor:
-            if b_path not in extractors:
-                extractors[b_path] = StoryDataExtractor(b_path, latest_path)
-            return extractors[b_path]
-
-        extractor = get_extractor(baseline_path)
-
-        # 1. 이벤트 스토리 테이블 처리
-        event_list_table = server_info.get("event_list_table", "")
-        if progress_callback:
-            progress_callback(server_key, "event_list_table")
-        if event_list_table and not event_list_table.startswith("v1_"):
-            obf_list_table, list_col_map = extractor._find_and_deobfuscate_table(event_list_table)
-            server_info["event_list_table"] = obf_list_table
-
-            event_name_col_list = server_info.get("event_name_col_list")
-            if event_name_col_list and event_name_col_list in list_col_map:
-                server_info["event_name_col_list"] = list_col_map[event_name_col_list]
-
-            event_group_id_col_list = server_info.get("event_group_id_col_list")
-            if event_group_id_col_list and event_group_id_col_list in list_col_map:
-                server_info["event_group_id_col_list"] = list_col_map[event_group_id_col_list]
-
-        # 2. 이벤트 보스 배틀 테이블 처리
-        if progress_callback:
-            progress_callback(server_key, "event_details_table")
-        event_details_table = server_info.get("event_details_table", "")
-        if event_details_table and not event_details_table.startswith("v1_"):
-            obf_details_table, details_col_map = extractor._find_and_deobfuscate_table(event_details_table)
-            server_info["event_details_table"] = obf_details_table
-
-            event_info_col_details = server_info.get("event_info_col_details")
-            if event_info_col_details and event_info_col_details in details_col_map:
-                server_info["event_info_col_details"] = details_col_map[event_info_col_details]
-
-            event_id_col_details = server_info.get("event_id_col_details")
-            if event_id_col_details and event_id_col_details in details_col_map:
-                server_info["event_id_col_details"] = details_col_map[event_id_col_details]
-
-            event_title_col_details = server_info.get("event_title_col_details")
-            if event_title_col_details and event_title_col_details in details_col_map:
-                server_info["event_title_col_details"] = details_col_map[event_title_col_details]
-
-            event_group_id_col_details = server_info.get("event_group_id_col_details")
-            if event_group_id_col_details and event_group_id_col_details in details_col_map:
-                server_info["event_group_id_col_details"] = details_col_map[event_group_id_col_details]
-
-        # 3. 로그인 보너스 테이블 처리
-        if progress_callback:
-            progress_callback(server_key, "birthday_table")
-        birthday_table = server_info.get("birthday_table", "")
-        if birthday_table and not birthday_table.startswith("v1_"):
-            obf_birthday_table, birthday_col_map = extractor._find_and_deobfuscate_table(birthday_table)
-            server_info["birthday_table"] = obf_birthday_table
-
-            birthday_name_col = server_info.get("birthday_name_col")
-            if birthday_name_col and birthday_name_col in birthday_col_map:
-                server_info["birthday_name_col"] = birthday_col_map[birthday_name_col]
-
-            birthday_adv_id_col = server_info.get("birthday_adv_id_col")
-            if birthday_adv_id_col and birthday_adv_id_col in birthday_col_map:
-                server_info["birthday_adv_id_col"] = birthday_col_map[birthday_adv_id_col]
-
-        # 4. 신뢰도 스토리 테이블 처리
-        if progress_callback:
-            progress_callback(server_key, "quest_table")
-        quest_table = server_info.get("quest_table", "")
-        if quest_table and not quest_table.startswith("v1_"):
-            obf_quest_table, quest_col_map = extractor._find_and_deobfuscate_table(quest_table)
-            server_info["quest_table"] = obf_quest_table
-
-            quest_name_col = server_info.get("quest_name_col")
-            if quest_name_col and quest_name_col in quest_col_map:
-                server_info["quest_name_col"] = quest_col_map[quest_name_col]
-
-            quest_wavestart_col = server_info.get("quest_wavestart_col")
-            if quest_wavestart_col and quest_wavestart_col in quest_col_map:
-                server_info["quest_wavestart_col"] = quest_col_map[quest_wavestart_col]
-
-            quest_waveend_col = server_info.get("quest_waveend_col")
-            if quest_waveend_col and quest_waveend_col in quest_col_map:
-                server_info["quest_waveend_col"] = quest_col_map[quest_waveend_col]
-
-        # 5. 스토리 데이터 테이블 처리
-        if progress_callback:
-            progress_callback(server_key, "story_detail_table")
-        story_detail_table = server_info.get("story_detail_table", "")
-        if story_detail_table and not story_detail_table.startswith("v1_"):
-            obf_story_detail_table, story_detail_col_map = extractor._find_and_deobfuscate_table(story_detail_table)
-            server_info["story_detail_table"] = obf_story_detail_table
-
-            story_detail_id_col = server_info.get("story_detail_id_col")
-            if story_detail_id_col and story_detail_id_col in story_detail_col_map:
-                server_info["story_detail_id_col"] = story_detail_col_map[story_detail_id_col]
-
-            story_detail_title_col = server_info.get("story_detail_title_col")
-            if story_detail_title_col and story_detail_title_col in story_detail_col_map:
-                server_info["story_detail_title_col"] = story_detail_col_map[story_detail_title_col]
-
-            story_detail_sub_title_col = server_info.get("story_detail_sub_title_col")
-            if story_detail_sub_title_col and story_detail_sub_title_col in story_detail_col_map:
-                server_info["story_detail_sub_title_col"] = story_detail_col_map[story_detail_sub_title_col]
-
-        # 6. 캐릭터 스토리 상세 테이블 처리
-        if progress_callback:
-            progress_callback(server_key, "dear_story_detail_table")
-        dear_story_detail_table = server_info.get("dear_story_detail_table", "")
-        if dear_story_detail_table and not dear_story_detail_table.startswith("v1_"):
-            obf_dear_table, dear_col_map = extractor._find_and_deobfuscate_table(dear_story_detail_table)
-            server_info["dear_story_detail_table"] = obf_dear_table
-
-            dear_id_col = server_info.get("dear_story_detail_id_col")
-            if dear_id_col and dear_id_col in dear_col_map:
-                server_info["dear_story_detail_id_col"] = dear_col_map[dear_id_col]
-
-            dear_title_col = server_info.get("dear_story_detail_title_col")
-            if dear_title_col and dear_title_col in dear_col_map:
-                server_info["dear_story_detail_title_col"] = dear_col_map[dear_title_col]
-
-            dear_sub_title_col = server_info.get("dear_story_detail_sub_title_col")
-            if dear_sub_title_col and dear_sub_title_col in dear_col_map:
-                server_info["dear_story_detail_sub_title_col"] = dear_col_map[dear_sub_title_col]
-
-        # 7. 루나의 탑 스토리 상세 테이블 처리
-        if progress_callback:
-            progress_callback(server_key, "tower_story_detail_table")
-        tower_story_detail_table = server_info.get("tower_story_detail_table", "")
-        if tower_story_detail_table and not tower_story_detail_table.startswith("v1_"):
-            obf_tower_table, tower_col_map = extractor._find_and_deobfuscate_table(tower_story_detail_table)
-            server_info["tower_story_detail_table"] = obf_tower_table
-
-            tower_id_col = server_info.get("tower_story_detail_id_col")
-            if tower_id_col and tower_id_col in tower_col_map:
-                server_info["tower_story_detail_id_col"] = tower_col_map[tower_id_col]
-
-            tower_title_col = server_info.get("tower_story_detail_title_col")
-            if tower_title_col and tower_title_col in tower_col_map:
-                server_info["tower_story_detail_title_col"] = tower_col_map[tower_title_col]
-
-            tower_sub_title_col = server_info.get("tower_story_detail_sub_title_col")
-            if tower_sub_title_col and tower_sub_title_col in tower_col_map:
-                server_info["tower_story_detail_sub_title_col"] = tower_col_map[tower_sub_title_col]
-
-        # 8. baseline_dbs 내 추가 테이블(연금술 등 신규 테이블) 정규화 등록
-        baseline_dbs = server_info.get("baseline_dbs", {})
-        for tbl_prefix in BASELINE_TABLES_LIST:
-            tbl_k = f"{tbl_prefix}_table"
-            tbl_v = server_info.get(tbl_k, "")
-            if tbl_v:
-                if progress_callback:
-                    progress_callback(server_key, tbl_k)
-                b_key = server_info.get(f"{tbl_prefix}_baseline") or "default"
-                b_info = baseline_dbs.get(b_key, {})
-                b_filename = b_info.get("db_path", f"master_{server_key.lower()}_{b_key}.db")
-                b_tbl_path = os.path.join(os.path.dirname(baseline_path), b_filename)
-                if os.path.exists(b_tbl_path) and b_tbl_path != latest_path:
-                    b_extractor = get_extractor(b_tbl_path)
-                    obf_tbl, col_map = b_extractor._find_and_deobfuscate_table(tbl_v)
-                    server_info[tbl_k] = obf_tbl
-                    for col_key in COLUMN_MAPPINGS.get(tbl_k, []):
-                        val = server_info.get(col_key)
-                        if val and val in col_map:
-                            server_info[col_key] = col_map[val]
-
-        # 9. 세카이 레이드 sekai_top_data 테이블 처리
-        sekai_table = server_info.get("sekai_top_data_table", "")
-        if sekai_table and not sekai_table.startswith("v1_"):
+        for s_key, t_key, best_tbl, col_map in _iter_resolved_tables(all_tasks):
             if progress_callback:
-                progress_callback(server_key, "sekai_top_data_table")
-            obf_sekai_table, sekai_col_map = extractor._find_and_deobfuscate_table(sekai_table)
-            server_info["sekai_top_data_table"] = obf_sekai_table
+                progress_callback(s_key, t_key)
+            resolved_results.append((s_key, t_key, best_tbl, col_map))
+            meta = task_meta.get((s_key, t_key))
+            if meta is not None:
+                # 무매칭(best_tbl 없음)도 캐시해 동일 탐색을 반복하지 않는다.
+                # 컬럼 매핑도 함께 저장해야 웜 스타트에서 동일한 쿼리가 성립한다.
+                column_diffs: dict[str, tuple[str, str]] = {}
+                s_info = server_db_info.get(s_key)
+                if best_tbl and isinstance(s_info, dict) and isinstance(col_map, dict):
+                    for col_key in COLUMN_MAPPINGS.get(t_key, []):
+                        cur_col_value = s_info.get(col_key)
+                        resolved_col = col_map.get(cur_col_value) if isinstance(cur_col_value, str) else None
+                        if isinstance(cur_col_value, str) and isinstance(resolved_col, str) and resolved_col != cur_col_value:
+                            column_diffs[col_key] = (cur_col_value, resolved_col)
+                cache.record(
+                    s_key,
+                    t_key,
+                    meta[0],
+                    meta[1],
+                    meta[2],
+                    str(best_tbl) if best_tbl else "",
+                    column_diffs,
+                )
+    finally:
+        cache.save()
 
-            for col_key in [
-                "sekai_top_data_id_col",
-                "sekai_top_data_name_col",
-                "sekai_top_data_boss_mode_col",
-                "sekai_top_data_boss_time_from_col",
-                "sekai_top_data_boss_hp_from_col",
-            ]:
-                val = server_info.get(col_key)
-                if val and val in sekai_col_map:
-                    server_info[col_key] = sekai_col_map[val]
+    # 모든 작업 완료 후 캐시에 일괄 반영
+    for s_key, t_key, best_tbl, col_map in resolved_results:
+        if best_tbl and s_key in server_db_info:
+            s_info = server_db_info[s_key]
+            s_info[t_key] = best_tbl
 
-        # 10. 세카이 레이드 sekai_top_story_data 테이블 처리
-        sekai_story_table = server_info.get("sekai_top_story_data_table", "")
-        if sekai_story_table and not sekai_story_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "sekai_top_story_data_table")
-            obf_sekai_story_table, sekai_story_col_map = extractor._find_and_deobfuscate_table(sekai_story_table)
-            server_info["sekai_top_story_data_table"] = obf_sekai_story_table
+            target_col_keys = COLUMN_MAPPINGS.get(t_key, [])
+            for col_k in target_col_keys:
+                orig_col_val = s_info.get(col_k)
+                if orig_col_val and orig_col_val in col_map:
+                    s_info[col_k] = col_map[orig_col_val]
 
-            for col_key in [
-                "sekai_top_story_data_id_col",
-                "sekai_top_story_data_boss_time_from_col",
-                "sekai_top_story_data_boss_time_to_col",
-            ]:
-                val = server_info.get(col_key)
-                if val and val in sekai_story_col_map:
-                    server_info[col_key] = sekai_story_col_map[val]
-
-        # 11. event_top_adv 테이블 처리
-        top_table = server_info.get("event_top_adv_table", "")
-        if top_table and not top_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "event_top_adv_table")
-            obf_top_table, top_col_map = extractor._find_and_deobfuscate_table(top_table)
-            server_info["event_top_adv_table"] = obf_top_table
-
-            for col_key in ["event_top_adv_id_col", "event_top_adv_character_id_col", "event_top_adv_event_id_col"]:
-                val = server_info.get(col_key)
-                if val and val in top_col_map:
-                    server_info[col_key] = top_col_map[val]
-
-        # 12. unit_data 테이블 처리
-        unit_table = server_info.get("unit_table", "")
-        if unit_table and not unit_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "unit_table")
-            obf_unit_table, unit_col_map = extractor._find_and_deobfuscate_table(unit_table)
-            server_info["unit_table"] = obf_unit_table
-
-            for col_key in ["unit_id_col", "unit_name_col"]:
-                val = server_info.get(col_key)
-                if val and val in unit_col_map:
-                    server_info[col_key] = unit_col_map[val]
-
-        # 13. hatsune_boss 테이블 처리
-        hb_table = server_info.get("hatsune_boss_table", "")
-        if hb_table and not hb_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "hatsune_boss_table")
-            obf_hb_table, hb_col_map = extractor._find_and_deobfuscate_table(hb_table)
-            server_info["hatsune_boss_table"] = obf_hb_table
-
-            for col_key in ["hatsune_boss_event_id_col", "hatsune_boss_quest_name_col", "hatsune_boss_wavestart_col", "hatsune_boss_waveend_col"]:
-                val = server_info.get(col_key)
-                if val and val in hb_col_map:
-                    server_info[col_key] = hb_col_map[val]
-
-        # 14. hatsune_special_battle 테이블 처리
-        hsb_table = server_info.get("hatsune_special_battle_table", "")
-        if hsb_table and not hsb_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "hatsune_special_battle_table")
-            obf_hsb_table, hsb_col_map = extractor._find_and_deobfuscate_table(hsb_table)
-            server_info["hatsune_special_battle_table"] = obf_hsb_table
-
-            for col_key in ["hatsune_special_battle_event_id_col", "hatsune_special_battle_mode_col", "hatsune_special_battle_mode_start_col", "hatsune_special_battle_mode_end_col"]:
-                val = server_info.get(col_key)
-                if val and val in hsb_col_map:
-                    server_info[col_key] = hsb_col_map[val]
-
-        # 15. legion_special_battle 테이블 처리
-        lsb_table = server_info.get("legion_special_battle_table", "")
-        if lsb_table and not lsb_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "legion_special_battle_table")
-            obf_lsb_table, lsb_col_map = extractor._find_and_deobfuscate_table(lsb_table)
-            server_info["legion_special_battle_table"] = obf_lsb_table
-
-            for col_key in ["legion_special_battle_mode_col", "legion_special_battle_mode_start_col", "legion_special_battle_mode_end_col"]:
-                val = server_info.get(col_key)
-                if val and val in lsb_col_map:
-                    server_info[col_key] = lsb_col_map[val]
-
-        # 16. byway_battle_quest_data 테이블 처리
-        bb_table = server_info.get("byway_battle_quest_data_table", "")
-        if bb_table and not bb_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "byway_battle_quest_data_table")
-            obf_bb_table, bb_col_map = extractor._find_and_deobfuscate_table(bb_table)
-            server_info["byway_battle_quest_data_table"] = obf_bb_table
-
-            for col_key in ["byway_battle_quest_data_quest_id_col", "byway_battle_quest_data_wavestart_col", "byway_battle_quest_data_waveend_col"]:
-                val = server_info.get(col_key)
-                if val and val in bb_col_map:
-                    server_info[col_key] = bb_col_map[val]
-
-        # 17. byway_quest_data 테이블 처리
-        bq_table = server_info.get("byway_quest_data_table", "")
-        if bq_table and not bq_table.startswith("v1_"):
-            if progress_callback:
-                progress_callback(server_key, "byway_quest_data_table")
-            obf_bq_table, bq_col_map = extractor._find_and_deobfuscate_table(bq_table)
-            server_info["byway_quest_data_table"] = obf_bq_table
-
-            for col_key in ["byway_quest_data_quest_id_col", "byway_quest_data_quest_name_col"]:
-                val = server_info.get(col_key)
-                if val and val in bq_col_map:
-                    server_info[col_key] = bq_col_map[val]
-
-        logger.info("Successfully extracted obfuscated table/column names from the latest DB.")
-    except (sqlite3.Error, ValueError, TypeError, KeyError, AttributeError, OSError) as e:
-        logger.error("Schema automatic analysis failed: %s", e)
+    logger.info("Successfully executed schema resolution across all servers.")

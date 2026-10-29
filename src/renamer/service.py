@@ -13,10 +13,9 @@ from pathlib import Path
 from queue import Queue
 from typing import Any
 
-from src.constants import APP_DEVELOPER, APP_LAST_UPDATE, APP_VERSION
 from src.renamer.logic import RenameHashedFile
 from src.utils.base_path import get_application_base_path
-from src.utils.error_log import write_log_header, write_log_items
+from src.utils.error_log import open_task_log, write_log_items
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +39,6 @@ class RenameService:
         log_queue: Queue,
         progress_queue: Queue,
         base_path_provider: Callable[[], Path | None],
-        shared_state: Any = None,
     ) -> None:
         """RenameService 초기화.
 
@@ -49,7 +47,6 @@ class RenameService:
             log_queue: 로그 이벤트 메시지를 수신하는 큐.
             progress_queue: 프로그레스바 갱신 이벤트를 수신하는 큐.
             base_path_provider: 대상 루트 디렉터리 경로(Path) 또는 None을 반환하는 콜백.
-            shared_state: 공유 의존성 매개변수 객체.
         """
         self.get_string = get_string
         self.log_queue = log_queue
@@ -99,7 +96,10 @@ class RenameService:
         return True, None
 
     def start_processing(self) -> threading.Thread:
-        """백그라운드 파일 이름 복원 작업자 스레드 생성 및 시작.
+        """백그라운드 파일 이름 복원 워커 스레드 생성 및 시작.
+
+        워커 스레드 시작 직전에 이전 실행의 취소 신호를 초기화(reset_cancel)하여,
+        스레드 시작 이후 전파되는 cancel() 신호가 유실되지 않도록 보장.
 
         Returns:
             실행 중인 데몬 threading.Thread 인스턴스.
@@ -109,9 +109,20 @@ class RenameService:
         bp = self._base_path()
         if bp is not None:
             proc.set_base_path(bp)
+        # 워커 스레드 시작 직전에 이전 실행의 취소 신호를 초기화하여 잔존 취소 상태 제거
+        proc.reset_cancel()
         thread = threading.Thread(target=proc.process_files, daemon=True)
         thread.start()
         return thread
+
+    def cancel(self) -> None:
+        """진행 중인 파일 이름 복원 프로세서에 협력적 취소 신호 전파.
+
+        프로세서가 아직 생성되지 않은 경우 아무 동작도 수행하지 않으며,
+        존재 시 process_files() 내부 루프가 조기 종료되도록 취소 이벤트를 설정.
+        """
+        if self.processor is not None:
+            self.processor.cancel()
 
     def classify_result(self, processor: RenameHashedFile) -> dict[str, Any]:
         """프로세서로부터 실행 완료 메트릭 추출 및 요약.
@@ -141,38 +152,32 @@ class RenameService:
 
         Args:
             unprocessed_files: 매칭에 실패한 미처리 파일 경로 목록.
-            error_message: 치명적 예외 발생 시의 에러 메시지.
+            error_message: 예외 발생 시의 에러 메시지.
         """
         try:
             app_base = get_application_base_path()
             target_base = self._base_path()
-            log_dir = app_base / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            from datetime import datetime as _dt
-            now = _dt.now()
-            log_filename = log_dir / f"RenamerLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
-            app_info = {
-                "APP_VERSION": APP_VERSION,
-                "APP_LAST_UPDATE": APP_LAST_UPDATE,
-                "APP_DEVELOPER": APP_DEVELOPER,
-            }
             extra_report = [
                 f"[REPORT]  Target Folder:   {target_base if target_base else 'Unknown'}",
                 f"[REPORT]  Total Failed:    {len(unprocessed_files)}",
             ]
             if error_message:
                 extra_report.append(f"[REPORT]  Fatal Error:     {error_message}")
-            with open(log_filename, "w", encoding="utf-8") as f:
-                now_ts = write_log_header(f, "Renamer Task Log", app_base, app_info, extra_report)
+            opened = open_task_log("RenamerLog", "Renamer Task Log", app_base, extra_report)
+            if opened is None:
+                return
+            _log_path, f, now_ts = opened
+            try:
                 reason = self.get_string("backend_unprocessed_error", error="Hash mismatch or unknown format")
                 write_log_items(
                     f,
                     unprocessed_files,
-                    item_label="File",
                     item_header="[ERROR ITEM #{idx}]",
                     timestamp=now_ts,
                     context="File Rename",
-                    reason_fn=lambda _: reason,
+                    message_fn=lambda _: reason,
                 )
+            finally:
+                f.close()
         except OSError as e:
-            logger.error("Failed to write RenamerLog: %s", e)
+            logger.exception("Failed to write RenamerLog: %s", e)

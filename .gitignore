@@ -1,4 +1,4 @@
-# ======================================================================
+﻿# ======================================================================
 # Game Resources and Generated Asset Directories
 # ======================================================================
 /a/
@@ -85,3 +85,4 @@ $RECYCLE.BIN/
 /master_kr.db
 /version.json
 /PyPackageWhlDownloader.ps1
+/src/schema_cache.json

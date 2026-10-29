@@ -8,9 +8,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal, NamedTuple
 
 from src.constants import SEPARATOR_MEDIUM
 
@@ -36,6 +36,45 @@ class StoryBranchStructure:
     scene_to_branch: dict[str, StoryBranchInfo]
     merge_scenes: set[str]
     tag_to_scene: dict[str, str]
+
+
+class ScriptChoice(NamedTuple):
+    """대본(script) 모드 선택지 렌더링 데이터 (순번, 본문, 태그, 이동 대상 씬)."""
+
+    idx: int
+    text: str
+    tag: str
+    target_scene: str | None
+
+
+ScriptNodeKind = Literal['header', 'merge', 'branch_start', 'place', 'print', 'choice', 'branch_end', 'no_dialogue']
+
+
+@dataclass(slots=True)
+class ScriptNode:
+    """대본(script) 모드 공용 렌더링 노드 (장면 순회 산출 단위).
+
+    헤더/합류 씬/분기 시작/장소/대사/선택지/분기 종료/대사 없음 노드가 단일 순회
+    (StoryFormatter.iter_script_nodes)에서 산출되어, txt 태그 렌더러와 마크다운 렌더러가
+    동일한 순회 결과를 소비.
+    """
+
+    kind: ScriptNodeKind
+    scene_key: str = ''
+    in_branch: bool = False
+    title: str = ''
+    situation: str = ''
+    outline: str = ''
+    outline_title: str = ''
+    scene_range: str = ''
+    branch_label: str = ''
+    tag_suffix: str = ''
+    place: str = ''
+    speaker: str = ''
+    lines: list[str] = field(default_factory=list)
+    choices: list[ScriptChoice] = field(default_factory=list)
+    leads_to: str = ''
+    message: str = ''
 
 
 class StoryDataLoader:
@@ -260,7 +299,7 @@ class StoryFormatter:
     @staticmethod
     def resolve_story_branches(data: dict[str, Any]) -> StoryBranchStructure:
         """스토리 데이터 선택지 분기, 연쇄 씬 묶음, goto 점프 및 공통 합류 지점 계산."""
-        scene_keys = sorted([k for k in data if isinstance(k, str) and k.isdigit()], key=int)
+        scene_keys = sorted([k for k in data if isinstance(k, str) and k.isascii() and k.isdigit()], key=int)
 
         tag_to_scene: dict[str, str] = {}
         for k in scene_keys:
@@ -381,20 +420,36 @@ class StoryFormatter:
         )
 
     @staticmethod
-    def _format_script_mode(data: dict[str, Any], lang_dict: dict[str, str] | None = None) -> list[tuple[str, str | None]]:
-        """스토리 데이터를 대본/소설 형식으로 가독성 높게 변환."""
-        content_list: list[tuple[str, str | None]] = []
-        scene_keys = sorted(data.keys(), key=lambda x: int(x) if isinstance(x, str) and x.isdigit() else float('inf'))
+    def iter_script_nodes(data: dict[str, Any], lang_dict: dict[str, str] | None = None) -> Iterator[ScriptNode]:
+        """대본(script) 모드 공용 장면 순회 제너레이터.
+
+        txt 태그 렌더러(_format_script_mode)와 마크다운 렌더러(_format_script_mode_markdown)가
+        동일한 순회 결과를 소비하도록, 헤더/합류 씬/분기 시작/장소/대사/선택지/분기 종료 노드를
+        장면 순서대로 산출.
+
+        Args:
+            data: 스토리 데이터 딕셔너리.
+            lang_dict: 다국어 딕셔너리 (None일 경우 기본 라벨 적용).
+
+        Yields:
+            ScriptNode: 장면 순회 순서대로 산출되는 의미 노드.
+        """
+        scene_keys = sorted(
+            data.keys(),
+            key=lambda x: int(x) if isinstance(x, str) and x.isascii() and x.isdigit() else float('inf'),
+        )
 
         # 다국어 라벨 획득
-        place_prefix = lang_dict.get('script_place_prefix', 'Place') if lang_dict else 'Place'
-        branch_point_label = lang_dict.get('script_branch_point', 'Branch Point') if lang_dict else 'Branch Point'
         branch_dialogue_label = lang_dict.get('script_branch_dialogue', 'Branch Dialogue') if lang_dict else 'Branch Dialogue'
         choice_item_label = lang_dict.get('script_choice_item', 'Choice') if lang_dict else 'Choice'
         outline_title = lang_dict.get('script_outline_title', 'Synopsis') if lang_dict else 'Synopsis'
         no_dialogue_msg = lang_dict.get('script_no_dialogue', 'This story has no dialogue data') if lang_dict else 'This story has no dialogue data'
         branch_leads_to_fmt = lang_dict.get('script_branch_leads_to', 'Leads to [Scene {scene}]') if lang_dict else 'Leads to [Scene {scene}]'
         branch_end_label = lang_dict.get('script_branch_end', '[End of Story]') if lang_dict else '[End of Story]'
+        branch_label_fmt = (
+            lang_dict.get('script_branch_label_fmt', "{dialogue_label} for {choice_label} #{idx}")
+            if lang_dict else "{dialogue_label} for {choice_label} #{idx}"
+        )
 
         structure = StoryFormatter.resolve_story_branches(data)
         scene_to_branch = structure.scene_to_branch
@@ -411,21 +466,7 @@ class StoryFormatter:
             situation = str(scene_0.get('situation', '') or '').strip()
             outline = str(scene_0.get('outline', '') or '').strip()
 
-        if title and situation and title != situation:
-            content_list.append((f"■ {title}\n", 'script_title'))
-            content_list.append((f"▶ {situation}\n", 'script_subtitle'))
-        elif title:
-            content_list.append((f"■ {title}\n", 'script_title'))
-        elif situation:
-            content_list.append((f"■ {situation}\n", 'script_title'))
-
-        if outline:
-            content_list.append(("─" * 37 + "\n", 'script_divider'))
-            content_list.append((f"【 {outline_title} 】\n", 'script_outline_header'))
-            content_list.append((f"{outline}\n", 'script_narration'))
-
-        if title or situation or outline:
-            content_list.append(("─" * 37 + "\n\n", 'script_divider'))
+        yield ScriptNode(kind='header', title=title, situation=situation, outline=outline, outline_title=outline_title)
 
         has_dialogue = False
         last_place = None
@@ -441,23 +482,28 @@ class StoryFormatter:
 
             # 합류 씬 헤더
             if key != '0' and key in merge_scenes:
-                content_list.append((f"═ [ Scene {key} ] ═\n", 'script_branch'))
+                yield ScriptNode(kind='merge', scene_key=key)
 
             b = scene_to_branch.get(key)
             is_branch_start = bool(b and b.scenes and b.scenes[0] == key)
             is_branch_end = bool(b and b.scenes and b.scenes[-1] == key)
+            in_branch = b is not None
 
             # 분기 씬 헤더
             if is_branch_start:
                 assert b is not None
                 scene_range_str = f"Scene {b.scenes[0]}~{b.scenes[-1]}" if len(b.scenes) > 1 else f"Scene {key}"
-                branch_fmt = lang_dict.get('script_branch_label_fmt', "{dialogue_label} for {choice_label} #{idx}") if lang_dict else "{dialogue_label} for {choice_label} #{idx}"
-                branch_label_str = branch_fmt.format(choice_label=choice_item_label, idx=b.choice_idx, dialogue_label=branch_dialogue_label)
+                branch_label_str = branch_label_fmt.format(
+                    choice_label=choice_item_label,
+                    idx=b.choice_idx,
+                    dialogue_label=branch_dialogue_label,
+                )
                 tag_str = f" (Tag {b.tag})" if b.tag else ""
-                content_list.append((f"┌─ [ {scene_range_str} | {branch_label_str}{tag_str} ] ─┐\n", 'script_branch'))
                 has_dialogue = True
-
-            indent = "│ " if b is not None else ""
+                yield ScriptNode(
+                    kind='branch_start', scene_key=key, in_branch=True,
+                    scene_range=scene_range_str, branch_label=branch_label_str, tag_suffix=tag_str
+                )
 
             # 장소 안내
             raw_place = scene.get('place')
@@ -468,9 +514,9 @@ class StoryFormatter:
                 place_str = raw_place.strip()
 
             if place_str and place_str != title and place_str != situation and place_str != last_place:
-                content_list.append((f"{indent}[{place_prefix}: {place_str}]\n\n", 'script_place'))
-                last_place = place_str
                 has_dialogue = True
+                last_place = place_str
+                yield ScriptNode(kind='place', scene_key=key, in_branch=in_branch, place=place_str)
 
             # 대사 (print)
             p_data = scene.get('print')
@@ -480,64 +526,22 @@ class StoryFormatter:
 
                 if dialogue:
                     has_dialogue = True
-                    if speaker:
-                        content_list.append((f"{indent}[{speaker}]\n", 'script_speaker'))
-
-                    dialogue_tag = 'script_dialogue' if speaker else 'script_narration'
-                    txt_lines = dialogue.splitlines()
-                    for line in txt_lines:
-                        content_list.append((f"{indent}{line}\n", dialogue_tag))
-
-                    if b is not None:
-                        content_list.append((f"{indent}\n", None))
-                    else:
-                        content_list.append(("\n", None))
+                    yield ScriptNode(
+                        kind='print', scene_key=key, in_branch=in_branch, speaker=speaker, lines=dialogue.splitlines()
+                    )
 
             # 선택지 (choice)
             choices = scene.get('choice')
             if choices and isinstance(choices, list) and len(choices) > 0:
                 has_dialogue = True
-                if len(choices) > 1:
-                    content_list.append((f"{indent}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", 'script_divider'))
-                    content_list.append((f"{indent}▼ [{branch_point_label} | Scene {key}]\n", 'script_branch'))
-                    for idx, c in enumerate(choices, 1):
-                        c_text = c.get('text', '') if isinstance(c, dict) else str(c)
-                        c_tag = str(c.get('tag', '') or '').strip() if isinstance(c, dict) else ""
-                        target_sc = tag_to_scene.get(c_tag)
-                        is_last = (idx == len(choices))
-                        prefix = "└─" if is_last else "├─"
-                        sub_indent = "       └─ ▶ " if is_last else "  │   └─ ▶ "
-
-                        dest = f"[Scene {target_sc}]" if target_sc else ""
-                        tag_str = f" (Tag {c_tag})" if c_tag else ""
-
-                        content_list.append((f"{indent}  {prefix} [{choice_item_label} {idx}] {c_text}", 'script_choice'))
-                        if tag_str:
-                            content_list.append((tag_str, 'script_choice_tag'))
-                        content_list.append(("\n", None))
-                        if dest:
-                            content_list.append((f"{indent}{sub_indent}{dest}\n", 'script_choice_tag'))
-
-                    content_list.append((f"{indent}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", 'script_divider'))
-                    if b is None:
-                        content_list.append(("\n", None))
-                else:
-                    c = choices[0]
+                prepared_choices: list[ScriptChoice] = []
+                for idx, c in enumerate(choices, 1):
                     c_text = c.get('text', '') if isinstance(c, dict) else str(c)
                     c_tag = str(c.get('tag', '') or '').strip() if isinstance(c, dict) else ""
-                    target_sc = tag_to_scene.get(c_tag)
-                    target_dest = f" ─ ▶ [Scene {target_sc}]" if target_sc else ""
-                    tag_str = f" (Tag {c_tag})" if c_tag else ""
-
-                    content_list.append((f"{indent}─ [ {choice_item_label} | Scene {key} ] ─\n", 'script_choice'))
-                    content_list.append((f"{indent}   1. {c_text}", 'script_choice'))
-                    if tag_str:
-                        content_list.append((tag_str, 'script_choice_tag'))
-                    if target_dest:
-                        content_list.append((target_dest, 'script_choice_tag'))
-                    content_list.append(("\n", None))
-                    if b is None:
-                        content_list.append(("\n", None))
+                    prepared_choices.append(
+                        ScriptChoice(idx=idx, text=c_text, tag=c_tag, target_scene=tag_to_scene.get(c_tag))
+                    )
+                yield ScriptNode(kind='choice', scene_key=key, in_branch=in_branch, choices=prepared_choices)
 
             # 분기 씬 박스 마감
             if is_branch_end:
@@ -547,15 +551,132 @@ class StoryFormatter:
                     label = branch_leads_to_fmt.format(scene=dest_scene)
                 else:
                     label = branch_end_label
-
-                line_prefix = "└── ▶ "
-                pad = max(4, 38 - len(line_prefix + label))
-                content_list.append((line_prefix, 'script_divider'))
-                content_list.append((label, 'script_choice_tag'))
-                content_list.append((" " + "─" * pad + "\n\n", 'script_divider'))
+                yield ScriptNode(kind='branch_end', scene_key=key, in_branch=True, leads_to=label)
 
         if not has_dialogue and not (title or outline):
-            content_list.append((f"({no_dialogue_msg})\n", 'script_narration'))
+            yield ScriptNode(kind='no_dialogue', message=no_dialogue_msg)
+
+    @staticmethod
+    def _format_script_mode(
+        data: dict[str, Any],
+        lang_dict: dict[str, str] | None = None,
+    ) -> list[tuple[str, str | None]]:
+        """스토리 데이터를 대본/소설 형식으로 가독성 높게 변환.
+
+        Args:
+            data: 포맷팅할 스토리 데이터 딕셔너리.
+            lang_dict: 다국어 딕셔너리 (None일 경우 기본 언어 적용).
+
+        Returns:
+            (포맷팅된 문자열, 태그) 튜플의 리스트.
+        """
+        content_list: list[tuple[str, str | None]] = []
+
+        # 다국어 라벨 획득
+        place_prefix = lang_dict.get('script_place_prefix', 'Place') if lang_dict else 'Place'
+        branch_point_label = lang_dict.get('script_branch_point', 'Branch Point') if lang_dict else 'Branch Point'
+        choice_item_label = lang_dict.get('script_choice_item', 'Choice') if lang_dict else 'Choice'
+
+        for node in StoryFormatter.iter_script_nodes(data, lang_dict):
+            indent = "│ " if node.in_branch else ""
+
+            # 상단 타이틀 및 줄거리 노드
+            if node.kind == 'header':
+                if node.title and node.situation and node.title != node.situation:
+                    content_list.append((f"■ {node.title}\n", 'script_title'))
+                    content_list.append((f"▶ {node.situation}\n", 'script_subtitle'))
+                elif node.title:
+                    content_list.append((f"■ {node.title}\n", 'script_title'))
+                elif node.situation:
+                    content_list.append((f"■ {node.situation}\n", 'script_title'))
+
+                if node.outline:
+                    content_list.append(("─" * 37 + "\n", 'script_divider'))
+                    content_list.append((f"【 {node.outline_title} 】\n", 'script_outline_header'))
+                    content_list.append((f"{node.outline}\n", 'script_narration'))
+
+                if node.title or node.situation or node.outline:
+                    content_list.append(("─" * 37 + "\n\n", 'script_divider'))
+
+            # 합류 씬 헤더 노드
+            elif node.kind == 'merge':
+                content_list.append((f"═ [ Scene {node.scene_key} ] ═\n", 'script_branch'))
+
+            # 분기 씬 헤더 노드
+            elif node.kind == 'branch_start':
+                content_list.append(
+                    (f"┌─ [ {node.scene_range} | {node.branch_label}{node.tag_suffix} ] ─┐\n", 'script_branch')
+                )
+
+            # 장소 노드
+            elif node.kind == 'place':
+                content_list.append((f"{indent}[{place_prefix}: {node.place}]\n\n", 'script_place'))
+
+            # 대사 노드
+            elif node.kind == 'print':
+                if node.speaker:
+                    content_list.append((f"{indent}[{node.speaker}]\n", 'script_speaker'))
+
+                dialogue_tag = 'script_dialogue' if node.speaker else 'script_narration'
+                for line in node.lines:
+                    content_list.append((f"{indent}{line}\n", dialogue_tag))
+
+                content_list.append((f"{indent}\n" if node.in_branch else "\n", None))
+
+            # 선택지 노드
+            elif node.kind == 'choice':
+                if len(node.choices) > 1:
+                    content_list.append((f"{indent}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", 'script_divider'))
+                    content_list.append(
+                        (f"{indent}▼ [{branch_point_label} | Scene {node.scene_key}]\n", 'script_branch')
+                    )
+                    for choice in node.choices:
+                        is_last = (choice.idx == len(node.choices))
+                        prefix = "└─" if is_last else "├─"
+                        sub_indent = "       └─ ▶ " if is_last else "  │   └─ ▶ "
+
+                        dest = f"[Scene {choice.target_scene}]" if choice.target_scene else ""
+                        tag_str = f" (Tag {choice.tag})" if choice.tag else ""
+
+                        content_list.append(
+                            (f"{indent}  {prefix} [{choice_item_label} {choice.idx}] {choice.text}", 'script_choice')
+                        )
+                        if tag_str:
+                            content_list.append((tag_str, 'script_choice_tag'))
+                        content_list.append(("\n", None))
+                        if dest:
+                            content_list.append((f"{indent}{sub_indent}{dest}\n", 'script_choice_tag'))
+
+                    content_list.append((f"{indent}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n", 'script_divider'))
+                    if not node.in_branch:
+                        content_list.append(("\n", None))
+                else:
+                    choice = node.choices[0]
+                    target_dest = f" ─ ▶ [Scene {choice.target_scene}]" if choice.target_scene else ""
+                    tag_str = f" (Tag {choice.tag})" if choice.tag else ""
+
+                    content_list.append(
+                        (f"{indent}─ [ {choice_item_label} | Scene {node.scene_key} ] ─\n", 'script_choice')
+                    )
+                    content_list.append((f"{indent}   1. {choice.text}", 'script_choice'))
+                    if tag_str:
+                        content_list.append((tag_str, 'script_choice_tag'))
+                    if target_dest:
+                        content_list.append((target_dest, 'script_choice_tag'))
+                    content_list.append(("\n", None))
+                    if not node.in_branch:
+                        content_list.append(("\n", None))
+
+            # 분기 씬 박스 마감 노드
+            elif node.kind == 'branch_end':
+                line_prefix = "└── ▶ "
+                content_list.append((line_prefix, 'script_divider'))
+                content_list.append((node.leads_to, 'script_choice_tag'))
+                content_list.append((" " + "─" * 37 + "\n\n", 'script_divider'))
+
+            # 대사 없음 안내 노드
+            elif node.kind == 'no_dialogue':
+                content_list.append((f"({node.message})\n", 'script_narration'))
 
         return content_list
 
@@ -578,7 +699,10 @@ class StoryFormatter:
         content_list: list[tuple[str, str | None]] = []
         if not isinstance(data, dict):
             return content_list
-        scene_keys = sorted(data.keys(), key=lambda x: int(x) if isinstance(x, str) and x.isdigit() else float('inf'))
+        scene_keys = sorted(
+            data.keys(),
+            key=lambda x: int(x) if isinstance(x, str) and x.isascii() and x.isdigit() else float('inf'),
+        )
 
         for key in scene_keys:
             scene = data[key]

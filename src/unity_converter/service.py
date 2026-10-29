@@ -8,13 +8,10 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
-from pathlib import Path
 from typing import Any
 
-from src.constants import APP_DEVELOPER, APP_LAST_UPDATE, APP_VERSION
 from src.utils.base_path import get_application_base_path
-from src.utils.error_log import write_log_header, write_log_items
+from src.utils.error_log import open_task_log, write_log_items
 
 logger = logging.getLogger(__name__)
 
@@ -60,9 +57,6 @@ class UnityExtractionService:
         except (TypeError, ValueError, AttributeError, RuntimeError):
             return {}
 
-    # ------------------------------------------------------------------
-    # 검증 메서드
-    # ------------------------------------------------------------------
     def validate_start(self, file_paths: Any = None, output_path: Any = None) -> tuple[bool, str | None]:
         """입력 대상 파일 및 출력 디렉터리 경로 설정 여부 사전 검증.
 
@@ -87,17 +81,6 @@ class UnityExtractionService:
             return False, "no_output"
         return True, None
 
-    def validate_extraction(self, file_paths: Any = None, output_path: Any = None) -> tuple[bool, str | None]:
-        """validate_start 호환성 별칭 메서드."""
-        return self.validate_start(file_paths, output_path)
-
-    def validate_files(self, file_paths: Any = None, output_path: Any = None) -> tuple[bool, str | None]:
-        """validate_start 호환성 별칭 메서드."""
-        return self.validate_start(file_paths, output_path)
-
-    # ------------------------------------------------------------------
-    # 배치 분할 메서드
-    # ------------------------------------------------------------------
     def prepare_batches(self, file_paths: Any = None) -> list[list[str]]:
         """CPU 코어 수에 맞추어 입력 파일 목록을 워커별 라운드로빈 배치로 분할.
 
@@ -125,13 +108,6 @@ class UnityExtractionService:
             batches = [list(file_paths)]
         return batches
 
-    def prepare_file_batches(self, file_paths: Any = None) -> list[list[str]]:
-        """prepare_batches 호환성 별칭 메서드."""
-        return self.prepare_batches(file_paths)
-
-    # ------------------------------------------------------------------
-    # 에러 로그 생성 메서드
-    # ------------------------------------------------------------------
     def generate_error_log(
         self,
         failed_files: Any,
@@ -164,39 +140,27 @@ class UnityExtractionService:
             if exec_path is None:
                 exec_path = str(get_application_base_path())
 
-            log_dir = Path(exec_path) / "logs"
-            log_dir.mkdir(parents=True, exist_ok=True)
-
-            now = datetime.now()
-            log_filename = log_dir / f"UnityConverterLog_{now.strftime('%Y-%m-%d_%H%M%S')}.log"
-
-            app_info = {
-                "APP_VERSION": APP_VERSION,
-                "APP_LAST_UPDATE": APP_LAST_UPDATE,
-                "APP_DEVELOPER": APP_DEVELOPER,
-            }
             extra_report = [
                 f"[REPORT]  Context:         {context}",
                 f"[REPORT]  Base Input:      {base_input_path if base_input_path else 'Files'}",
                 f"[REPORT]  Output Path:     {output_path if output_path else 'Temp/Preview'}",
                 f"[REPORT]  Total Failed:    {len(failed_files or [])}",
             ]
-
-            with open(log_filename, "w", encoding="utf-8") as f:
-                now_ts = write_log_header(f, "Unity Converter Task Log", exec_path, app_info, extra_report)
+            opened = open_task_log("UnityConverterLog", "Unity Converter Task Log", exec_path, extra_report)
+            if opened is None:
+                return
+            _log_path, f, now_ts = opened
+            try:
                 write_log_items(
                     f,
                     list(failed_files or []),
-                    item_label="File",
                     item_header="[ERROR ITEM #{idx}]",
                     timestamp=now_ts,
                     context=context,
-                    reason_fn=lambda item: (item[1] if isinstance(item, (tuple, list)) and len(item) > 1 else str(item) or "").strip()
+                    message_fn=lambda item: (item[1] if isinstance(item, (tuple, list)) and len(item) > 1 else str(item) or "").strip()
                     or "Unknown",
                 )
+            finally:
+                f.close()
         except (OSError, ValueError, TypeError) as e:
-            logger.error("Failed to write UnityConverterLog: %s", e)
-
-    def completion_message(self, total_extracted_assets: int = 0, cancelled: bool = False) -> str | None:
-        """작업 완료 메시지 훅 메서드 (항상 None 반환)."""
-        return None
+            logger.exception("Failed to write UnityConverterLog: %s", e)

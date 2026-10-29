@@ -1,6 +1,6 @@
 """AV Converter 컨트롤러 모듈.
 
-비디오(.usm) 및 오디오(.awb/.acb/.hca) 파일 변환 서브 도구의 전반적인 제어 흐름,
+비디오(.usm) 및 오디오(.awb) 파일 변환 서브 도구의 전반적인 제어 흐름,
 툴체인 감지 및 다운로드, 비동기 변환 스레드 수명주기,
 QueuePollingMixin 기반의 IPC 큐 폴링 및 안전한 리소스 정리(Cleanup) 담당.
 """
@@ -15,7 +15,7 @@ import threading
 import tkinter as tk
 from collections.abc import Callable
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 from typing import Any
 
 from src.cancellation_token import CancellationToken
@@ -25,11 +25,14 @@ from src.constants import (
     APP_VERSION,
     APP_WEBSITE,
     AV_AUDIO_SUPPORTED_EXTENSIONS,
+    AV_CLEANUP_JOIN_TIMEOUT,
     AV_VIDEO_SUPPORTED_EXTENSIONS,
-    GUI_POLLING_INTERVAL_MS,
+    FFMPEG_MIN_SUPPORTED,
+    FFMPEG_TARGET_VERSION,
     TabType,
 )
 from src.languages import AV_CONVERTER_LANGUAGES as LANGUAGES
+from src.languages import pick_language
 from src.queue_events import CompletionEvent, LogEvent, ProgressEvent
 from src.queue_polling import QueuePollingMixin
 from src.shared_state import SharedState
@@ -90,7 +93,6 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         from src.utils.base_path import get_application_base_path
         self.base_path: Path = get_application_base_path()
         self.log_queue: queue.Queue[Any] = queue.Queue()
-        self._state_lock: threading.RLock = threading.RLock()
         self._conversion_threads: dict[str, threading.Thread | None] = {
             'video': None,
 
@@ -159,20 +161,21 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         self._find_tools()
         self.ffmpeg_downloader: Any = self.tool_pipeline.ffmpeg_downloader
         self.last_log_timestamp: dict[str, str | None] = {'video': None, 'audio': None}
+        # FFmpeg 버전 점검은 세션당 1회만 수행
+        self._ffmpeg_version_checked: bool = False
+        self.view.notebook.bind('<<NotebookTabChanged>>', self._on_av_tab_changed, add='+')
 
         self.shared_state.get_tool_paths = lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path}
         self.shared_state.get_ffmpeg_downloader = lambda: self.ffmpeg_downloader
         self._log_renderer: AVLogRenderer = AVLogRenderer(
-            shared_state=self.shared_state,
             get_lang_data=self.get_lang_dict,
             add_log_entry=self._add_log_entry,
             add_spacing=self._add_spacing,
             log_queue=self.log_queue,
             logic=self.logic,
-            get_tool_paths=lambda: {'usmtoolkit': self.usmtoolkit_path, 'vgmstream': self.vgmstream_path},
-            get_ffmpeg_downloader=lambda: self.ffmpeg_downloader,
+            get_tool_paths=self.shared_state.get_tool_paths,
+            get_ffmpeg_downloader=self.shared_state.get_ffmpeg_downloader,
         )
-        self.shared_state.get_conversion_thread = lambda: next((t for t in (self._conversion_threads.get('video'), self._conversion_threads.get('audio')) if t is not None and t.is_alive()), self._conversion_threads.get('video') or self._conversion_threads.get('audio'))
         self.shared_state.get_video_total_files = lambda: self.video_total_files if hasattr(self, 'video_total_files') else 0
         self.shared_state.set_video_total_files = lambda v: setattr(self, 'video_total_files', v)
         self.shared_state.get_audio_total_files = lambda: self.audio_total_files if hasattr(self, 'audio_total_files') else 0
@@ -183,32 +186,24 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         self.shared_state.get_video_widgets = lambda: self.view.video_widgets
         self.shared_state.get_audio_widgets = lambda: self.view.audio_widgets
         self._log_service: AVLogService = AVLogService(
-            shared_state=self.shared_state,
             view=self.view,
             log_queue=self.log_queue,
             get_lang_dict=self.get_lang_dict,
             video_log_history=self.video_log_history,
             audio_log_history=self.audio_log_history,
             last_log_timestamp=self.last_log_timestamp,
-            render_cache={},
             redraw_logs_fn=self._log_renderer.redraw_logs,
             render_log_entry_fn=self._log_renderer.render_log_entry,
-            handle_completion_callback=lambda msg: None,
-            generate_error_log_fn=self._generate_error_log,
             get_base_path=lambda: self.base_path,
-            get_conversion_thread=lambda: self.shared_state.get_conversion_thread(),
             get_video_total_files=lambda: self.video_total_files if hasattr(self, 'video_total_files') else 0,
             set_video_total_files=lambda v: setattr(self, 'video_total_files', v),
             get_audio_total_files=lambda: self.audio_total_files if hasattr(self, 'audio_total_files') else 0,
             set_audio_total_files=lambda v: setattr(self, 'audio_total_files', v),
             get_video_cancel_token=lambda: self.video_cancel_token,
             get_audio_cancel_token=lambda: self.audio_cancel_token,
-            get_converting_state=self.is_converting,
-            set_ui_state=self.view.set_ui_state,
             reset_ui_state=self.view.reset_ui_state,
             get_video_widgets=lambda: self.view.video_widgets,
             get_audio_widgets=lambda: self.view.audio_widgets,
-            polling_interval_ms=GUI_POLLING_INTERVAL_MS,
         )
         self.shared_state.get_paths = lambda tab_type: self.audio_full_paths if tab_type == 'audio' else self.video_full_paths
         self.shared_state.preview_temp_dir = str(self._preview_temp_dir)
@@ -230,11 +225,12 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         self._preview_service: AVPreviewService = AVPreviewService(
             shared_state=self.shared_state,
         )
+        self._log_renderer.log_initial_status()
         self._init_queue_polling(self.view)
 
     def get_lang_dict(self) -> dict[str, str]:
         """현재 선택된 언어의 다국어 딕셔너리 반환."""
-        return LANGUAGES.get(self.lang_var.get(), LANGUAGES.get('ko', {}))  # type: ignore[no-any-return]
+        return pick_language(self.lang_var.get(), LANGUAGES)
 
     def _on_language_change(self, *args: Any) -> None:
         """언어 변경 이벤트 처리 및 UI 텍스트/로그 재렌더링 수행.
@@ -254,6 +250,66 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
     def _find_tools(self) -> None:
         """usmtoolkit 폴더 및 vgmstream 하위 폴더 대상 도구 실행 파일 경로 탐색 및 설정."""
         self._tooling.find_tools()
+
+    def _on_av_tab_changed(self, event: Any = None) -> None:
+        """비디오 탭 최초 진입 시 FFmpeg 버전을 점검한다 (세션당 1회)."""
+        try:
+            current_tab = self.view.notebook.select()
+        except tk.TclError:
+            return
+        if current_tab != str(self.view.video_tab):
+            return
+        if self._ffmpeg_version_checked:
+            return
+        self._ffmpeg_version_checked = True
+        try:
+            decision, version = self.ffmpeg_downloader.check_version()
+        except Exception:  # noqa: BLE001
+            return
+        self._handle_ffmpeg_version_notice(decision, version)
+
+    def _handle_ffmpeg_version_notice(self, decision: str, version: str) -> None:
+        """버전 정책 결과를 로그에 기록하고, 필요 시 안내/경고 팝업을 표시.
+
+        Args:
+            decision: classify_ffmpeg_version 결과.
+            version: 감지된 FFmpeg 버전 문자열.
+        """
+        if decision not in ("recommend", "newer", "ok"):
+            return
+        d = self.get_lang_dict()
+        target = FFMPEG_TARGET_VERSION
+        min_supported = f"{FFMPEG_MIN_SUPPORTED[0]}.{FFMPEG_MIN_SUPPORTED[1]}"
+
+        if decision == "ok":
+            self._add_log_entry('video', 'ffmpeg_version_ok', current=version, target=target)
+            return
+
+        if decision == "newer":
+            self._add_log_entry('video', 'ffmpeg_version_newer', current=version, target=target)
+            title = d.get('ffmpeg_newer_title', 'FFmpeg Version Warning')
+            msg = d.get(
+                'ffmpeg_newer_msg',
+                "Detected FFmpeg version: {current} (recommended: {target}).\n"
+                "A newer major version may not be fully validated for compatibility.",
+            ).format(current=version, target=target)
+            messagebox.showwarning(title, msg, parent=self.master)
+            return
+
+        # decision == 'recommend': 최소 지원 이상 ~ 권장 미만 → 사용자 선택(Yes/No)
+        title = d.get('ffmpeg_recommend_title', 'FFmpeg Version')
+        msg = d.get(
+            'ffmpeg_recommend_msg',
+            "Detected FFmpeg version: {current}\n"
+            "Recommended: {target} / Minimum supported: {min_supported}\n\n"
+            "Install and use the recommended version ({target}) now?\n"
+            "(Choose No to keep using the current version.)",
+        ).format(current=version, target=target, min_supported=min_supported)
+        use_recommended = bool(messagebox.askyesno(title, msg, parent=self.master))
+        self.ffmpeg_downloader.prefer_target = use_recommended
+        if not use_recommended:
+            self._add_log_entry('video', 'ffmpeg_version_recommended',
+                                current=version, target=target, min_supported=min_supported)
 
     def _start_tool_preparation(self, tab_type: TabType, output_dir: str, next_func: Callable[[str], None]) -> None:
         """변환 전 필수 도구 존재 여부 확인 및 필요 시 다운로드 시작.
@@ -366,13 +422,9 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         folder = filedialog.askdirectory(title=self.get_lang_dict().get('dialog_select_folder', 'Select a folder'))
         if not folder:
             return []
-        exts = [ext.strip('*.') for _, p in file_types for ext in p.split()]
-        found_files = []
-        for r, _, fs in os.walk(folder):
-            for f in fs:
-                if any(f.lower().endswith(f".{ext}") for ext in exts):
-                    found_files.append(str(Path(r) / f))
-        return found_files
+        exts = tuple(f".{ext.strip('*.')}" for _, p in file_types for ext in p.split())
+        # 공용 FileListMixin 헬퍼로 통일 (심볼릭 링크 순환(루프) 방지 + 수집 상한 적용)
+        return self._collect_files_from_paths([folder], exts)
 
     def _update_listbox(self, fp: list[str], fv: tk.Variable) -> None:
         """전체 파일 경로 리스트에서 파일명만 추출하여 리스트박스 갱신.
@@ -507,7 +559,7 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             self.log_queue.put(LogEvent(target=target_tab, key='raw', kwargs={'text': message}))
 
     def _add_spacing(self, target_tab: TabType) -> None:
-        """로그 빈 줄(간격) 추가 이벤트 큐 전송. 연속된 spacing 이벤트 방지로 이중 줄바꿈 차단.
+        """로그 빈 줄(간격) 추가 이벤트 큐 전송. 연속된 spacing 이벤트 방지로 이중 줄바꿈 방지.
 
         Args:
             target_tab: 빈 줄을 추가할 탭 ('video' 또는 'audio').
@@ -519,6 +571,10 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
             if history and history and len(history) > 0 and history[-1][1] == 'spacing':
                 return
             self.log_queue.put(LogEvent(target=target_tab, is_spacing=True))
+
+    def _should_poll(self) -> bool:
+        """변환/도구 준비 작업이 진행 중일 때만 활성 주기로 폴링 (유휴 시 폴링 대기 간격 적용)."""
+        return any(self.is_converting(t) for t in ('video', 'audio'))
 
     def _on_poll_cycle(self) -> None:
         self._log_service.on_poll_cycle()
@@ -549,11 +605,12 @@ class AVConverterController(QueuePollingMixin, FileListMixin):
         """
         self._stop_polling()
         self.tool_pipeline.cleanup()
+        self._preview.cleanup()
         for _tab in ('video', 'audio'):
             _token = self.video_cancel_token if _tab == 'video' else self.audio_cancel_token
             _token.cancel()
             _thread = self._conversion_threads.get(_tab)
             if _thread is not None and _thread.is_alive():
-                _thread.join(timeout=3.0)
+                _thread.join(timeout=AV_CLEANUP_JOIN_TIMEOUT)
         if self._owns_temp_dir and os.path.exists(self._preview_temp_dir):
             shutil.rmtree(self._preview_temp_dir, ignore_errors=True)

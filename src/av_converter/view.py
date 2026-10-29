@@ -1,6 +1,6 @@
 """AV Converter 탭의 Tkinter GUI 뷰 모듈.
 
-비디오(.usm) 탭과 오디오(.awb/.acb/.hca) 탭으로 분리된 2단 Notebook 인터페이스,
+비디오(.usm) 탭과 오디오(.awb) 탭으로 분리된 2단 Notebook 인터페이스,
 드래그 앤 드롭 지원 파일 리스트박스, 실시간 다국어 로그 ScrolledText, 진행률 바,
 다중 스트림 선택 모달 팝업(Treeview) 및 상태 제어 위젯 렌더링.
 """
@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from tkinterdnd2 import DND_FILES  # type: ignore[import-untyped]
 
 from src.constants import TabType
+from src.utils.dialogs import center_window
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +127,10 @@ class AVConverterView(ttk.Frame):
         is_audio_tab = (tab_type == 'audio')
 
         main_bottom_controls_frame = ttk.Frame(parent_tab)
-        main_bottom_controls_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=5, padx=5)
+        main_bottom_controls_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=(0, 5))
 
         tab_pane = ttk.PanedWindow(parent_tab, orient=tk.HORIZONTAL)
-        tab_pane.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        tab_pane.pack(side=tk.TOP, fill=tk.BOTH, expand=True, padx=10, pady=(10, 5))
 
         left_pane_frame = ttk.Frame(tab_pane)
         tab_pane.add(left_pane_frame, weight=1)
@@ -138,7 +139,7 @@ class AVConverterView(ttk.Frame):
         tab_pane.add(right_pane_frame, weight=3)
 
         input_frame = ttk.LabelFrame(left_pane_frame, text=d.get('input_section', 'Select Files'))
-        input_frame.pack(fill=tk.X, pady=5, padx=5)
+        input_frame.pack(fill=tk.X, pady=(0, 5))
 
         input_frame.columnconfigure(0, weight=1, uniform='btn')
         input_frame.columnconfigure(1, weight=1, uniform='btn')
@@ -150,7 +151,7 @@ class AVConverterView(ttk.Frame):
         add_folder_btn.grid(row=0, column=1, padx=(2, 5), pady=5, sticky='ew')
 
         list_container = ttk.LabelFrame(left_pane_frame, text=d.get('file_list_section', 'File List'))
-        list_container.pack(fill=tk.BOTH, expand=True, pady=5, padx=5)
+        list_container.pack(fill=tk.BOTH, expand=True)
 
         list_frame = ttk.Frame(list_container)
         list_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -172,7 +173,7 @@ class AVConverterView(ttk.Frame):
         self._create_right_click_menu(listbox, tab_type)
 
         log_frame_container = ttk.LabelFrame(right_pane_frame, text=d.get('log_section', 'Processing Log'))
-        log_frame_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        log_frame_container.pack(fill=tk.BOTH, expand=True)
 
         log_text_widget = scrolledtext.ScrolledText(log_frame_container, wrap=tk.WORD, state=tk.DISABLED, font=("TkFixedFont", 10), padx=5, pady=5)
         log_text_widget.pack(fill=tk.BOTH, expand=True, padx=5, pady=(5,0))
@@ -267,8 +268,7 @@ class AVConverterView(ttk.Frame):
         popup = tk.Toplevel(self)
         popup.withdraw()
         popup.title(d.get('preview_menu', 'Preview'))
-        sx, sy = popup.winfo_screenwidth(), popup.winfo_screenheight()
-        popup.geometry(f'{width}x{height}+{sx // 2 - width // 2}+{sy // 2 - height // 2}')
+        center_window(popup, width, height)
         popup.transient(self.winfo_toplevel())
         popup.grab_set()
         popup.resizable(False, False)
@@ -295,8 +295,7 @@ class AVConverterView(ttk.Frame):
         popup.withdraw()
         popup.title(d.get('preview_track_title', 'Select Track'))
         win_w, win_h = 450, 400
-        sx, sy = popup.winfo_screenwidth(), popup.winfo_screenheight()
-        popup.geometry(f'{win_w}x{win_h}+{sx // 2 - win_w // 2}+{sy // 2 - win_h // 2}')
+        center_window(popup, win_w, win_h)
         popup.transient(self.winfo_toplevel())
         popup.grab_set()
         popup.deiconify()
