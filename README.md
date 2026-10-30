@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white" alt="Platform Windows">
   <img src="https://img.shields.io/badge/Language-KO%20%C2%B7%20EN%20%C2%B7%20JA-8A2BE2" alt="Languages KO EN JA">
   <img src="https://img.shields.io/badge/License-GPL--3.0-blue" alt="License GPL-3.0">
-  <img src="https://img.shields.io/badge/Version-3.0.0-orange" alt="Version 3.0.0">
+  <img src="https://img.shields.io/badge/Version-3.0.1-orange" alt="Version 3.0.1">
 </p>
 
 <p align="center">
@@ -60,6 +60,17 @@
 <br><br>
 
 ## 🔄 업데이트 내역
+
+### v3.0.1 (2026-10-30)
+
+`03. Audio / Video Converter` 의 오디오 변환 안정성을 보강한 수정 업데이트입니다.
+
+- #### **🎧 오디오 변환 안정성**
+    - **타임아웃 연장**: 오디오 변환·미리보기 기본 타임아웃을 60초 → **300초**로 늘림. 다중 작업 시 디스크·백신 부하로 일부 파일이 간헐적으로 타임아웃되던 문제를 완화.
+    - **자동 재시도**: 오디오 스트림 디코딩이 타임아웃되면 **최대 5회** 자동 재시도하고, 재시도 전 불완전한 출력 파일을 정리.
+    - **환경변수**: `PRICONNE_AUDIO_TIMEOUT`, `PRICONNE_PREVIEW_TIMEOUT` 로 계속 조정 가능.
+
+<br>
 
 ### v3.0.0 (2026-10-30)
 

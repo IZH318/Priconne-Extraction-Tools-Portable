@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 TabType = Literal['video', 'audio']
 
 # 애플리케이션 메타데이터
-APP_VERSION: Final[str] = "3.0.0"
+APP_VERSION: Final[str] = "3.0.1"
 APP_LAST_UPDATE: Final[str] = "2026-10-30"
 APP_DEVELOPER: Final[str] = "(Github) IZH318"
 APP_WEBSITE: Final[str] = "https://github.com/IZH318"
