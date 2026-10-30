@@ -193,10 +193,9 @@ def _resolve_lazy_const(name: str) -> Any:
     if name == 'SUBPROCESS_VIDEO_CONVERT_TIMEOUT':
         return _env_int('PRICONNE_VIDEO_TIMEOUT', 300)
     if name == 'SUBPROCESS_AUDIO_CONVERT_TIMEOUT':
-        return _env_int('PRICONNE_AUDIO_TIMEOUT', 60)
+        return _env_int('PRICONNE_AUDIO_TIMEOUT', 300)
     if name == 'SUBPROCESS_PREVIEW_TIMEOUT':
-        # 미리보기도 본 변환과 동일한 설정으로 재인코딩하므로 30초는 정상 클립까지 실패시킨다
-        return _env_int('PRICONNE_PREVIEW_TIMEOUT', 60)
+        return _env_int('PRICONNE_PREVIEW_TIMEOUT', 300)
     # 예외 분기: _LAZY_CONSTS에 포함되나 해석 규칙이 누락된 경우
     raise AttributeError(f"module {__name__!r} has no resolvable lazy constant {name!r}")
 
