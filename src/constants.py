@@ -57,6 +57,9 @@ FFMPEG_VERSION_PROBE_TIMEOUT: Final[int] = 5
 # 서브프로세스 강제 종료 후 잔여 출력 수거 대기 (초)
 SUBPROCESS_REAP_TIMEOUT: Final[int] = 5
 
+# 오디오 스트림 디코딩 타임아웃 발생 시 재시도 횟수 (지속 부하·백신 스캔 등 간헐적 지연 대비)
+SUBPROCESS_AUDIO_CONVERT_RETRIES: Final[int] = 5
+
 # 로그 출력 구분선
 SEPARATOR_LONG: Final[str] = "-" * 100
 SEPARATOR_MEDIUM: Final[str] = "-" * 60

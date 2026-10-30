@@ -23,6 +23,7 @@ from src.constants import (
     DOTNET_RUNTIME_DIR_NAME,
     SENTINEL_AUDIO_DONE,
     SENTINEL_VIDEO_DONE,
+    SUBPROCESS_AUDIO_CONVERT_RETRIES,
     SUBPROCESS_AUDIO_CONVERT_TIMEOUT,
     SUBPROCESS_PREVIEW_TIMEOUT,
     SUBPROCESS_VIDEO_CONVERT_TIMEOUT,
@@ -714,10 +715,35 @@ class ConversionLogic:
                 continue
 
             command = [str(vgmstream_path), "-s", str(stream_idx), "-o", str(output_file), str(item_path)]
-            try:
-                result = self._run_subprocess(command, cancel_token)
-            except ProcessCancelledError:
+            result: subprocess.CompletedProcess[str] | None = None
+            stream_cancelled = False
+            max_attempts = SUBPROCESS_AUDIO_CONVERT_RETRIES + 1
+            for attempt in range(max_attempts):
+                try:
+                    result = self._run_subprocess(command, cancel_token)
+                    break
+                except ProcessCancelledError:
+                    stream_cancelled = True
+                    break
+                except subprocess.TimeoutExpired:
+                    if attempt + 1 >= max_attempts:
+                        raise
+                    logger.warning(
+                        "Audio stream decode timed out (attempt %d/%d); retrying: %s",
+                        attempt + 1, max_attempts, output_file.name,
+                    )
+                    # 재시도 전 부분 출력을 제거해 깨끗한 상태에서 다시 디코딩.
+                    try:
+                        if output_file.is_file():
+                            os.remove(output_file)
+                    except OSError as exc:
+                        logger.debug("Failed to remove partial output %s before retry: %s", output_file, exc)
+                    continue
+
+            if stream_cancelled:
                 break
+            if result is None:
+                continue
 
             if result.returncode == 0 and self._is_valid_output_file(output_file):
                 log_entries.append(('conv_audio_stream_success', {'path': self.get_relative_path(output_file)}))
