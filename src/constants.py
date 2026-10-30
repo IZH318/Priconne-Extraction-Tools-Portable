@@ -27,7 +27,7 @@ TabType = Literal['video', 'audio']
 
 # 애플리케이션 메타데이터
 APP_VERSION: Final[str] = "3.0.0"
-APP_LAST_UPDATE: Final[str] = "2026-10-10"
+APP_LAST_UPDATE: Final[str] = "2026-10-30"
 APP_DEVELOPER: Final[str] = "(Github) IZH318"
 APP_WEBSITE: Final[str] = "https://github.com/IZH318"
 APP_COPYRIGHT_YEAR: Final[str] = "2026"
@@ -184,7 +184,7 @@ def _resolve_lazy_const(name: str) -> Any:
         _env = (os.environ.get('PRICONNE_FFMPEG_URL') or '').strip()
         return _env or cfg.get("FFmpeg", FFMPEG_DEFAULT_URL)
     if name == 'VGMSTREAM_URL':
-        return cfg.get("Vgmstream", "https://github.com/vgmstream/vgmstream/releases/download/r2117/vgmstream-win.zip")
+        return cfg.get("Vgmstream", "https://github.com/vgmstream/vgmstream/releases/download/r2168/vgmstream-win.zip")
     if name == 'DOTNET_RUNTIME_URL':
         _env = (os.environ.get('PRICONNE_DOTNET_URL') or '').strip()
         return _env or cfg.get("DotnetRuntime", DOTNET_RUNTIME_DEFAULT_URL)

@@ -16,6 +16,7 @@ import os
 import queue
 import threading
 import tkinter as tk
+import unicodedata
 from collections.abc import Callable
 from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
@@ -106,6 +107,22 @@ class ResourceRemoverController(QueuePollingMixin):
         """
         return self.use_trash_var.get()
 
+    @property
+    def _dialog_parent(self) -> tk.Misc:
+        """다이얼로그를 앱 창 기준 중앙에 배치하기 위한 부모 위젯 반환.
+
+        노트북 탭 프레임(self.view)은 다른 탭으로 전환되면 unmapped 상태가 되어
+        simpledialog가 화면 중앙으로 폴백되므로, 항상 mapped 상태인 최상위 창을
+        부모로 사용해 모든 확인 대화상자가 앱 창 가운데에 뜨도록 보장한다.
+
+        Returns:
+            tk.Misc: 대화상자 부모로 사용할 최상위 창(또는 폴백 위젯).
+        """
+        try:
+            return self.master.winfo_toplevel()
+        except (tk.TclError, AttributeError):
+            return self.view
+
     def _on_poll_cycle(self) -> None:
         """백그라운드 스레드에서 발행된 완료 이벤트(검색/삭제)를 큐에서 꺼내 메인 스레드에서 처리."""
         for event in self._drain_queue(self.task_queue):
@@ -174,7 +191,7 @@ class ResourceRemoverController(QueuePollingMixin):
         selected = filedialog.askdirectory(
             title=lang_dict.get('dialog_select_folder', 'Select Target Folder'),
             initialdir=self.target_path_var.get() or str(get_application_base_path()),
-            parent=self.master,
+            parent=self._dialog_parent,
         )
         if not selected:
             return
@@ -198,7 +215,7 @@ class ResourceRemoverController(QueuePollingMixin):
             messagebox.showwarning(
                 lang_dict.get('warn_title', 'Warning'),
                 lang_dict.get('warn_no_target_path', 'Please select a target folder first.'),
-                parent=self.view,
+                parent=self._dialog_parent,
             )
             return
 
@@ -209,7 +226,7 @@ class ResourceRemoverController(QueuePollingMixin):
             messagebox.showwarning(
                 lang_dict.get('warn_title', 'Warning'),
                 lang_dict.get('warn_no_selection', 'Please select at least one file type to delete.'),
-                parent=self.view,
+                parent=self._dialog_parent,
             )
             return
 
@@ -296,7 +313,7 @@ class ResourceRemoverController(QueuePollingMixin):
             messagebox.showinfo(
                 lang_dict.get('info_title', 'Info'),
                 lang_dict.get('no_files_found', 'No files found to delete.'),
-                parent=self.view,
+                parent=self._dialog_parent,
             )
             return
 
@@ -316,7 +333,7 @@ class ResourceRemoverController(QueuePollingMixin):
         question_msg = lang_dict.get('confirm_question', 'Proceed?')
         summary_msg = f"{body_msg}\n\n{question_msg}"
 
-        if not messagebox.askyesno(lang_dict.get('confirm_title', 'Confirm Deletion'), summary_msg, parent=self.view):
+        if not messagebox.askyesno(lang_dict.get('confirm_title', 'Confirm Deletion'), summary_msg, parent=self._dialog_parent):
             self.is_complete = True
             self.view.set_control_state('normal')
             self.status_var.set(lang_dict.get('status_ready', 'Ready...'))
@@ -333,13 +350,25 @@ class ResourceRemoverController(QueuePollingMixin):
                     'You are about to delete {count} files.\nType DELETE to continue.',
                     count=file_count,
                 ),
-                parent=self.view,
+                parent=self._dialog_parent,
             )
-            if (typed or '').strip().upper() != 'DELETE':
+            # 전각 문자(일본어 IME 등)와 대소문자 차이를 흡수하도록 NFKC 정규화 후 비교.
+            # 취소(typed is None)는 조용히 중단하고, 잘못 입력한 경우에만 안내한다.
+            if unicodedata.normalize('NFKC', typed or '').strip().upper() != 'DELETE':
                 self.is_complete = True
                 self.view.set_control_state('normal')
                 self.status_var.set(lang_dict.get('status_ready', 'Ready...'))
                 self.view.set_status_color("black")
+                if typed is not None:
+                    messagebox.showwarning(
+                        lang_dict.get('warn_title', 'Warning'),
+                        format_text(
+                            lang_dict,
+                            'bulk_confirm_invalid_msg',
+                            'The input was incorrect, so the bulk deletion was cancelled.\nPlease type DELETE exactly to continue.',
+                        ),
+                        parent=self._dialog_parent,
+                    )
                 return
 
         use_trash = self.use_trash_var.get()
@@ -347,7 +376,7 @@ class ResourceRemoverController(QueuePollingMixin):
         warning_msg = format_text(lang_dict, msg_key, 'Proceed?', count=file_count)
 
         # 2차 확인: 휴지통 이동 vs 영구 삭제 최종 경고
-        if messagebox.askyesno(lang_dict.get('warn_title', 'Warning'), warning_msg, parent=self.view):
+        if messagebox.askyesno(lang_dict.get('warn_title', 'Warning'), warning_msg, parent=self._dialog_parent):
             self.view.set_cancel_button_state(tk.NORMAL)
             self.status_var.set(lang_dict.get('status_processing', "Processing..."))
             self.view.set_status_color("blue")
@@ -443,7 +472,7 @@ class ResourceRemoverController(QueuePollingMixin):
             cancelled_txt = _build_cancelled()
             self.status_var.set(cancelled_txt)
             self.view.set_status_color("orange")
-            messagebox.showinfo(lang_dict.get('info_title', 'Info'), cancelled_txt, parent=self.view)
+            messagebox.showinfo(lang_dict.get('info_title', 'Info'), cancelled_txt, parent=self._dialog_parent)
             return
 
         if not errors:
@@ -458,7 +487,7 @@ class ResourceRemoverController(QueuePollingMixin):
             success_txt = _build_success()
             self.status_var.set(success_txt)
             self.view.set_status_color("green")
-            messagebox.showinfo(lang_dict.get('info_title', 'Info'), success_txt, parent=self.view)
+            messagebox.showinfo(lang_dict.get('info_title', 'Info'), success_txt, parent=self._dialog_parent)
         else:
             error_count = len(errors)
 
@@ -485,7 +514,7 @@ class ResourceRemoverController(QueuePollingMixin):
                     '{count} files failed to delete. See log for details.',
                     count=error_count,
                 ),
-                parent=self.view,
+                parent=self._dialog_parent,
             )
 
     def cleanup(self) -> None:
