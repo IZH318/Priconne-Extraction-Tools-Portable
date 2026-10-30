@@ -1,0 +1,48 @@
+[project]
+name = "priconne-extraction-tools"
+version = "3.0.0"
+description = "Princess Connect Re:Dive asset and resource extraction toolkit (Portable)"
+readme = "README.md"
+requires-python = ">=3.14.9"
+dependencies = []
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E4",
+    "E7",
+    "E9",
+    "F",
+]
+ignore = [
+    "E402", # module level import not at top of file
+    "E501", # line too long
+    "E701", # multiple statements on one line
+]
+
+[tool.mypy]
+python_version = "3.14"
+platform = "win32"
+warn_return_any = true
+warn_unused_configs = true
+warn_unused_ignores = true
+warn_unreachable = true
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+no_implicit_optional = true
+no_implicit_reexport = true
+disallow_any_generics = true
+disallow_untyped_decorators = true
+disallow_subclassing_any = true
+warn_redundant_casts = true
+strict_equality = true
+local_partial_types = true
+# `disallow_untyped_calls`는 의도적으로 미사용:
+# 표준 tkinter 메서드(ttk.Notebook.tab, tk.Listbox.curselection 등)가 typeshed에서
+# untyped로 정의되어 GUI 코드에서만 오탐이 대량 발생하고, 우리 코드는 위
+# `disallow_untyped_defs`로 모든 함수 정의가 주석되어 있어 실효 이득이 없다.

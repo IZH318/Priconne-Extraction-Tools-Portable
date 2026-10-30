@@ -1,0 +1,88 @@
+﻿# ======================================================================
+# Game Resources and Generated Asset Directories
+# ======================================================================
+/a/
+/b/
+/m/
+/manifest/
+/s/
+/v/
+
+# ======================================================================
+# Logs, Local Databases, and Temporary Files
+# ======================================================================
+/ClientLog*
+/manifest.db
+/tempest.log
+*.log
+*.sqlite
+*.sqlite3
+
+# ======================================================================
+# Python Virtual Environments
+# ======================================================================
+/.commandcode/
+/.mypy_cache/
+/.ruff_cache/
+/.venv/
+venv/
+env/
+ENV/
+
+# ======================================================================
+# Python Bytecode and Cache
+# ======================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# ======================================================================
+# Python Build and Packaging Artifacts
+# ======================================================================
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ======================================================================
+# Editor and IDE Configurations
+# ======================================================================
+/.vscode/
+.idea/
+*.swp
+*.swo
+
+# ======================================================================
+# Operating System Temporary Files
+# ======================================================================
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# ======================================================================
+# Environment Variables and Secrets
+# ======================================================================
+.env
+.env.local
+
+# ======================================================================
+# Miscellaneous Work Files and Reference Materials
+# ======================================================================
+/_Backup/
+/_ORG/
+/_Source/
+/_UnityPy_Reference/
+/_임시추출/
+/docs/
+/logs/
+/scratch/
+/usmtoolkit/
+/AGENTS.md
+/Essential Software Pack (x64).zip
+/master_jp.db
+/master_kr.db
+/version.json
+/PyPackageWhlDownloader.ps1
+/src/schema_cache.json

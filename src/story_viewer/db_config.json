@@ -1,0 +1,379 @@
+{
+    "common": {
+        "version_api_url": "https://api.github.com/repos/Expugn/priconne-database/contents/version.json",
+        "version_raw_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/version.json"
+    },
+    "servers": {
+        "JP": {
+            "version_key": "JP",
+            "db_path": "master_jp.db",
+            "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_jp.db",
+            "baseline_dbs": {
+                "default": {
+                    "db_path": "master_jp_10052900.db",
+                    "db_url": "https://github.com/Expugn/priconne-database/raw/cbe012cf3e6a88ba20ce92099762eb3ea2b971e7/master_jp.db"
+                },
+                "10067600": {
+                    "db_path": "master_jp_10067600.db",
+                    "db_url": "https://github.com/Expugn/priconne-database/raw/b323c9749494ff28977fd7766355b96e3f1a1fce/master_jp.db"
+                }
+            }
+        },
+        "KR": {
+            "version_key": "KR",
+            "db_path": "master_kr.db",
+            "db_url": "https://raw.githubusercontent.com/Expugn/priconne-database/master/master_kr.db",
+            "baseline_dbs": {
+                "default": {
+                    "db_path": "master_kr_10049000.db",
+                    "db_url": "https://github.com/Expugn/priconne-database/raw/3f64e986b647847fb3c833f03905b7e5adcfb0db/master_kr.db"
+                }
+            }
+        }
+    },
+    "tables": {
+        "stories": {
+            "alchemy_story_detail": {
+                "_desc": "Alces alchemy story episodes (Special baseline 10067600 table: v1_1c7fca22...)",
+                "baseline": "10067600",
+                "table": "v1_1c7fca22d1f9894817b16ca15432c8096f5d2d77043235ca4a3a9296cf1fd4ca",
+                "id_col": "8b5592e232d5f0b02956f5628369d045553ffed601918b40cd7ac9acda80d8b7",
+                "title_col": "6df8e5a67020c174b9a275773c8b792ca530676fd96d5254e27510d86f8b14a6"
+            },
+            "dear_story_detail": {
+                "_desc": "Character bond and trust stories (individual character affection episodes)",
+                "table": "dear_story_detail",
+                "id_col": "story_id",
+                "title_col": "title",
+                "sub_title_col": "sub_title"
+            },
+            "story_detail": {
+                "_desc": "Main story arcs (Part 1, Part 2, and Part 3) episode titles and chapter metadata",
+                "table": "story_detail",
+                "id_col": "story_id",
+                "title_col": "title",
+                "sub_title_col": "sub_title"
+            },
+            "tower_story_detail": {
+                "_desc": "Tower of Luna quest stories and floor boss milestone episodes",
+                "table": "tower_story_detail",
+                "id_col": "story_id",
+                "title_col": "title",
+                "sub_title_col": "sub_title"
+            }
+        },
+        "events": {
+            "event_boss_battle_v3": {
+                "_desc": "Modern story event boss battle cutscenes and titles (Special baseline 10067600 table: v1_ff0c555f...)",
+                "baseline": "10067600",
+                "table": "v1_ff0c555fed19fa5d9f027453e2108282f640903b52daf4fa2f8aae282b164a61",
+                "id_col": "49efb860aea4e94a5e4c19eebebdfacf49e670a6ba92a2b901251b9237d74006",
+                "title_col": "90baf9169949551826643bdbee43effd325dd9dd50e5b1f80a8beb58f8913a5e"
+            },
+            "event_remember_story": {
+                "_desc": "Remembrance / memory story cutscenes played during special event milestones (ysn_story_data)",
+                "table": "ysn_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title"
+            },
+            "event_story": {
+                "_desc": "Story event master list and episode details (standard story event main episodes and previews)",
+                "list_table": "event_story_data",
+                "name_col": "title",
+                "group_id_col_list": "story_group_id",
+                "details_table": "event_story_detail",
+                "group_id_col_details": "story_group_id",
+                "info_col": "sub_title",
+                "title_col": "title",
+                "id_col": "story_id"
+            },
+            "event_story_v2": {
+                "_desc": "Later-era story event episode details (Special baseline 10067600 table: v1_5dc6443a...)",
+                "baseline": "10067600",
+                "table": "v1_5dc6443a480cd7e8a680f6904c9125ceba8a8b571beaf0f7c6c8b2788f4dc2eb",
+                "id_col": "5b802c21ec8ff3e0285a4aae847211dc5d0c1251fb2a070436b7bc86e1699985",
+                "title_col": "d0dedbca2813f9d5743870c2d29ed064f0acfddbb004a7d967292a999844e2a6",
+                "sub_title_col": "c6064be3e0ab536646b7ce09315a0bda7958e82c6da3194472c2431345a34c35"
+            },
+            "hatsune_boss": {
+                "_desc": "Early-era story event boss battle introductory and defeat ADV cutscenes (wave start/end dialogues)",
+                "table": "hatsune_boss",
+                "event_id_col": "event_id",
+                "quest_name_col": "quest_name",
+                "wavestart_col": "story_id_wavestart_1",
+                "waveend_col": "story_id_waveend_1"
+            },
+            "hatsune_boss_v2": {
+                "_desc": "Later-era story event boss battle cutscenes across battle modes (Special baseline 10067600 table: v1_c0e7ffb9...)",
+                "baseline": "10067600",
+                "table": "v1_c0e7ffb9985fc25db8bc41ca3b5f11ba83e5139fdb5d3adaa3a6bb415aabc2b7",
+                "quest_name_col": "c613ea17f54b281b4b679e57e702d8345ad1f7cfa6e50400c8bdb03e73bfa6bc",
+                "wavestart_col": "c9befde0d0128623ea734fa55843b54f9bef761d8046f7653d1e3df5a75fbd72",
+                "waveend_col": "2ecf58c4ee95aebe0535a9195246c3191945b569122c5327713839e6f06f2ada",
+                "boss_id_col": "735df67b64a6b91af84e4c462c4cf888ac7284e42fcc7fb79c99c82512952188",
+                "event_id_col": "9cc8e49952f929eb16196c12808464e9e7f316eb38f6eff4ceefd8fdbc5ef923",
+                "mode_col": "e26bf8495ec87a0f82b2efd2ee650339d140e7e02d44fda15769a16c816edc70"
+            },
+            "hatsune_ex_battle": {
+                "_desc": "Story event Exhibition (EX) battle challenge ADV cutscenes (Special baseline 10067600 table: v1_18c80742...)",
+                "baseline": "10067600",
+                "table": "v1_18c80742d1a20fa687f42856b3b9b996ab1da64d6d1bab2a6a0a58e559250bce",
+                "id_col": "e44d240ba77290530bdf4dd3dda05feafff0c875d2983454e5316a7aebfc60e8"
+            },
+            "hatsune_scenario_boss": {
+                "_desc": "Story event scenario boss battle introductory cutscenes (Special baseline 10067600 table: v1_c0e7ffb9...)",
+                "baseline": "10067600",
+                "table": "v1_c0e7ffb9985fc25db8bc41ca3b5f11ba83e5139fdb5d3adaa3a6bb415aabc2b7",
+                "quest_name_col": "c613ea17f54b281b4b679e57e702d8345ad1f7cfa6e50400c8bdb03e73bfa6bc",
+                "wavestart_col": "c9befde0d0128623ea734fa55843b54f9bef761d8046f7653d1e3df5a75fbd72",
+                "waveend_col": "2ecf58c4ee95aebe0535a9195246c3191945b569122c5327713839e6f06f2ada"
+            },
+            "hatsune_sp_battle_v2": {
+                "_desc": "Later-era story event Special (SP) battle mode cutscenes (Special baseline 10067600 table: v1_9d5401b1...)",
+                "baseline": "10067600",
+                "table": "v1_9d5401b10e65bb549b93e0056d018659cbc5fdce23804e6267b15a67fd24cd06",
+                "mode_col": "fa9b6e8dafd8b3fdede203c4addc22d6708f3b9459bc27e480d67bdb2899cd3d",
+                "mode_start_col": "c1aee788ef889953e608a1c4065ab3b569fa23561be05de53293562df920cb99",
+                "mode_end_col": "58132ac8be1a5b9993506ab1806303fabc13c945d97c8dd2b684e133a2ace0e7"
+            },
+            "hatsune_special_battle": {
+                "_desc": "Story event Special (SP) battle mode transitions and cutscenes (modes 1, 2, 3)",
+                "table": "hatsune_special_battle",
+                "event_id_col": "event_id",
+                "mode_col": "mode",
+                "mode_start_col": "story_id_mode_start",
+                "mode_end_col": "story_id_mode_end"
+            }
+        },
+        "minigames": {
+            "arcade_list": {
+                "_desc": "Arcade mini-game master metadata list and clan chat titles",
+                "table": "v1_e2b98798c37f9d64c3c34735b2d5b59f42bf9b83e36b557e5371b6dd06604db2",
+                "id_col": "30b7c832586e939b17c32ca6eb793f81baa7f9db87f4f4e6e170394c870659e8",
+                "title_col": "02b45c0afd4a9f0ffab0967e4319ff4ac315ef805141c3624c4ed27cdcafd548"
+            },
+            "arcade_story": {
+                "_desc": "Landosol arcade center mini-game story episodes and subtitles",
+                "table": "v1_4016b4e5a8ea0b09117d7cde0013ee7a520ebaab46c2242fcd7f3359b9b4c1fe",
+                "id_col": "0cab92445dcf47261ff2d7712a6a8a05634f9165ff6b206681461b9a282f955c",
+                "title_col": "7aea7d303ffca46ae4d21e4e33a8c71e06d9bc9d3c05f01f0c9d3bc5d4884fcf"
+            },
+            "event_alces_minigame": {
+                "_desc": "Alces exploration and puzzle mini-game story episodes (Special baseline 10067600 table: v1_88a6bb3b...)",
+                "baseline": "10067600",
+                "table": "v1_88a6bb3bf7aa1f2ad3f62375785679d5d25d548c8d7718152032c8ae49931127",
+                "id_col": "4ba80eceb7815132039c363d1a9fd869cbcfb90600b067148bdf677452e2314d",
+                "title_col": "c9b5e2df7357ad993d2e2172701f0b47cde254365dc786b461a4ff272c332d80",
+                "sub_title_col": "0c06e37c01e88e78fe23ca8cb413c74312d532fb497379ff14cf1fa6adf6215b"
+            },
+            "event_christmas_minigame": {
+                "_desc": "Christmas gift delivery mini-game sub-story episodes (xeh_story_data)",
+                "table": "xeh_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title"
+            },
+            "event_coaster_minigame": {
+                "_desc": "Amusement park roller coaster mini-game story episodes (Special baseline 10067600 table: v1_2ba16384...)",
+                "baseline": "10067600",
+                "table": "v1_2ba16384df54efc94735a21c23b3241513a7def427421ec4d5b05c57a2e409ef",
+                "id_col": "18fd0c4f27f31155d10c88b232a6eaab409f1e17861b633decf85a76317cc8b6",
+                "title_col": "7ca27d86d4a28130eacf6fa0e051845093584793c21155374b230b8b508a8ee6",
+                "sub_title_col": "e988141211210c3a52913d58ef9dff458423ac3df2479009aa0e8da2f560e793"
+            },
+            "event_collab_minigame": {
+                "_desc": "Collaboration event mini-game story episodes and subtitles (dvs_story_data)",
+                "table": "dvs_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title",
+                "sub_title_col": "sub_title"
+            },
+            "event_cooking_minigame": {
+                "_desc": "Cooking mini-game recipes and story episodes (Special baseline 10067600 table: v1_cd03b541...)",
+                "baseline": "10067600",
+                "table": "v1_cd03b541e40f0450938d64bf2cfac9b6709aae779a3e01d97b3af5833db680f9",
+                "id_col": "661a68955e3ac2fd50c2a3567230c9435f9c499dc8a83545df27f0aabd170006",
+                "title_col": "78757bfb0f33e17891007679a4e409cdedb3094f2bd8327a4acbe3f4ecd92e6e"
+            },
+            "event_cooking_reaction": {
+                "_desc": "Cooking mini-game character reaction dialogue cutscenes (Special baseline 10067600 table: v1_9f485b9b...)",
+                "baseline": "10067600",
+                "table": "v1_9f485b9b32e33f9d26dc0b0d907ef5dc93bb41f5f0dcd20fd8fa0ed703cac974",
+                "id_col": "dc74953d7740483e43b6386653875c77e21540cc26cd8a3f0e802b57e7268baa"
+            },
+            "event_crybaby_minigame": {
+                "_desc": "Crybaby ghost training mini-game sub-story episodes and subtitles (xac_story_data)",
+                "table": "xac_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title",
+                "sub_title_col": "sub_title"
+            },
+            "event_diary_minigame": {
+                "_desc": "Observation diary and research log mini-game episodes (Special baseline 10067600 table: v1_aa2a0318...)",
+                "baseline": "10067600",
+                "table": "v1_aa2a0318030d3c48b80c042120a2ecdf02ba073f3c07958488c0d5aae910040b",
+                "id_col": "5ad92e5b4cb794da4721b1b7e00cb3695a069a980067d334829e464e6d9084f0",
+                "title_col": "3e35a764aff062e1c75616b0e9a2f384ce3ec4a7dd125ca0256e7afe2c208d94"
+            },
+            "event_hatsune_dream_minigame": {
+                "_desc": "New Year Hatsune dream world mini-game sub-story episodes (nyd_story_data)",
+                "table": "nyd_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title"
+            },
+            "event_house_minigame": {
+                "_desc": "Dollhouse interior decoration mini-game sub-story episodes (wtm_story_data)",
+                "table": "wtm_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title"
+            },
+            "event_liberate_minigame": {
+                "_desc": "Liberator training / escape mini-game sub-story episodes and subtitles (mme_story_data)",
+                "table": "mme_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title",
+                "sub_title_col": "sub_title"
+            },
+            "event_museum_minigame": {
+                "_desc": "Museum exhibit gallery mini-game story episodes and exhibit titles (Special baseline 10067600 table: v1_d2d26e4a...)",
+                "baseline": "10067600",
+                "table": "v1_d2d26e4aec6acdbb8b2e5158a38835dc9624480ea665681341fba75ddac31725",
+                "id_col": "7170f400e1c423ae4f09080337016216ea932a8aacf2c43ab77af39b33b7a165",
+                "title_col": "21c9af69dd3da79135de381bbd146ca4d90a078046484b691a781a9fed8f6dc7",
+                "sub_title_col": "35d3b9199250ab8dc3cf83f8dbe7faadd29e34942770bc75bf733796d04e7aa5"
+            },
+            "event_nebia_minigame": {
+                "_desc": "Nebia forest potion crafting mini-game story episodes (Special baseline 10067600 table: v1_7a0982cb...)",
+                "baseline": "10067600",
+                "table": "v1_7a0982cbb042e5beec038707e25d7958a2811bfddfa05a14c213216fb929e9fb",
+                "id_col": "a9155c3da6d764e9d7ed97fa0c07ff5b3a3e0e0826137e1b6717aa30beff9aaf",
+                "title_col": "ee504cf46bad79e204602bf0a2656c4ea18ad878cf7156b9c97045466077d5d1"
+            },
+            "event_opening_adv": {
+                "_desc": "Event opening prologue and special animated ADV cutscene sequences (Special baseline 10067600 table: v1_78f2d387...)",
+                "baseline": "10067600",
+                "table": "v1_78f2d38752f2dd374b61d6e087d727ea74a1610b6c9043e90ef53a1ca8fcd483",
+                "id_col": "8d3c6db54bdaca622133f5b7dc8b0e73a09231d5eec5285c0030c8897fed87c3",
+                "title_col": "3d52c7b73257ffc27e1dcc750f3e769d826038ad9f0e56ced67e2c9af48f9788",
+                "sub_title_col": "70c63930470ffc9c2506182639e8a3358813c4044b14de8f24d029239defe083"
+            },
+            "event_secret_minigame": {
+                "_desc": "Secret / spy investigation mini-game sub-story episodes (wts_story_data)",
+                "table": "wts_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title"
+            },
+            "event_summer_minigame": {
+                "_desc": "Summer beach island mini-game story episodes (Special baseline 10067600 table: v1_fb6ff60b...)",
+                "baseline": "10067600",
+                "table": "v1_fb6ff60b989ba65bef3440d5c5569be693ea942d48ad24c96890a1e20d86fa4c",
+                "id_col": "76ee08eec6a7c4267f26d66fdb57a936be279392cde1b0b95d86dda4340ac9a5",
+                "title_col": "051d9a9441c23038ea10e491b00b07864ac1cbc04f37de8c124877239c303b13"
+            },
+            "event_taiso_minigame": {
+                "_desc": "Radio calisthenics (Taiso) morning exercise mini-game episodes (Special baseline 10067600 table: v1_7bfbcdfe...)",
+                "baseline": "10067600",
+                "table": "v1_7bfbcdfe4501b304399f68c7d85fcac82ee2921142f8fc5aeaf399d06213510f",
+                "id_col": "b981ae906d24b58fd6ca696ef36ce389fcd5f054ff931c6bf94ce8245fd7d1b6",
+                "title_col": "3835c8478f5b3312830bc7829d10453a939af7c41b14cf0a77f9273a102e546d",
+                "sub_title_col": "c129a773d56c8c1653e4dc71c40d183d5c91a034d3019e8d7ce43a67be10bc92"
+            },
+            "event_trip_minigame": {
+                "_desc": "Hot spring resort sightseeing trip mini-game episodes (Special baseline 10067600 table: v1_90f6266d...)",
+                "baseline": "10067600",
+                "table": "v1_90f6266d84e2a5b5b06add382aaad5dfa914726a1345afec3b64bb7b984640b5",
+                "id_col": "cac248dca33325ef34dfdc2f776a1abdd7a0be76182680f671713bb50a7bc7be",
+                "title_col": "174fced6b94f901607933f3de71c2bfccff2df9dd463c6706578ed442f48d732"
+            },
+            "event_vampire_minigame": {
+                "_desc": "Vampire hunter mini-game sub-story episodes (bmy_story_data)",
+                "table": "bmy_story_data",
+                "id_col": "sub_story_id",
+                "title_col": "title"
+            },
+            "hatsune_present": {
+                "_desc": "Event present box item exchange and character dialogue cutscenes (hatsune_present)",
+                "table": "hatsune_present",
+                "id_col": "adv_id",
+                "title_col": "dialog_title"
+            },
+            "hatsune_quiz": {
+                "_desc": "Hatsune story event quiz mini-game questions and dialogue cutscenes",
+                "table": "hatsune_quiz",
+                "point_name_col": "quiz_point_name",
+                "title_col": "question_title",
+                "start_id_col": "adv_id_quiz_start",
+                "end_id_col": "adv_id_quiz_end"
+            }
+        },
+        "system": {
+            "birthday": {
+                "_desc": "Character birthday login bonus celebration ADV cutscenes (birthday_login_bonus_data)",
+                "table": "birthday_login_bonus_data",
+                "id_col": "adv_id",
+                "name_col": "name"
+            },
+            "byway_battle_quest_data": {
+                "_desc": "Side path (Byway) battle quest wave dialogue cutscenes (byway_battle_quest_data)",
+                "table": "byway_battle_quest_data",
+                "quest_id_col": "quest_id",
+                "wavestart_col": "story_id_wavestart_1",
+                "waveend_col": "story_id_waveend_1"
+            },
+            "byway_quest_data": {
+                "_desc": "Side path (Byway) exploration quest master list and quest titles (byway_quest_data)",
+                "table": "byway_quest_data",
+                "quest_id_col": "quest_id",
+                "quest_name_col": "quest_name"
+            },
+            "event_top_adv": {
+                "_desc": "Story event top lobby banner greeting and ambient character dialogue cutscenes",
+                "table": "event_top_adv",
+                "id_col": "story_id",
+                "character_id_col": "character_id",
+                "event_id_col": "event_id"
+            },
+            "hatsune_quest": {
+                "_desc": "Story event quest line wave pre-battle and victory dialogue cutscenes (hatsune_quest)",
+                "table": "hatsune_quest",
+                "id_col": "story_id_waveend_3",
+                "title_col": "quest_name"
+            },
+            "legion_special_battle": {
+                "_desc": "Legion War special cooperative battle mode cutscenes (legion_special_battle)",
+                "table": "legion_special_battle",
+                "mode_col": "mode",
+                "mode_start_col": "story_id_mode_start",
+                "mode_end_col": "story_id_mode_end"
+            },
+            "quest": {
+                "_desc": "Main quest line wave pre-battle and victory dialogue cutscenes (quest_data)",
+                "table": "quest_data",
+                "name_col": "quest_name",
+                "wavestart_col": "story_id_wavestart_3",
+                "waveend_col": "story_id_waveend_3"
+            },
+            "sekai_top_data": {
+                "_desc": "Elysium world raid boss metadata and battle phase timestamps (sekai_top_data)",
+                "table": "sekai_top_data",
+                "id_col": "story_id",
+                "name_col": "name",
+                "boss_mode_col": "boss_mode",
+                "boss_time_from_col": "boss_time_from",
+                "boss_hp_from_col": "boss_hp_from"
+            },
+            "sekai_top_story_data": {
+                "_desc": "Elysium world raid global story cutscenes and milestone cinematic episodes (sekai_top_story_data)",
+                "table": "sekai_top_story_data",
+                "id_col": "story_id",
+                "boss_time_from_col": "boss_time_from",
+                "boss_time_to_col": "boss_time_to"
+            },
+            "unit": {
+                "_desc": "Playable character and unit master dictionary (maps unit_id to unit_name)",
+                "table": "unit_data",
+                "id_col": "unit_id",
+                "name_col": "unit_name"
+            }
+        }
+    }
+}

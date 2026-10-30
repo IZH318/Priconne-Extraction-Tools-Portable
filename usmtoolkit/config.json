@@ -1,5 +1,5 @@
 {
-    "VideoParameter" : "-c:v copy",
-    "AudioParameter" : "-c:a ac3 -b:a 640k -af pan='stereo|FL=FL+FC+0.5*BL+BR|FR=FR+LFE+0.5*BL+BR'",
-    "OutputFormat" : "mp4"
+    "VideoParameter": "-c:v libx264 -crf 14 -bf 2 -preset medium -pix_fmt yuv420p -tune animation -deblock 1:1",
+    "AudioParameter": "-c:a aac -b:a 320k -ac 2",
+    "OutputFormat": "mp4"
 }
