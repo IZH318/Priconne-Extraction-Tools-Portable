@@ -34,7 +34,7 @@ _TASKKILL_RESOLVED: bool = False
 
 
 def _resolve_taskkill() -> str | None:
-    """Windows taskkill 실행 파일의 절대 경로를 반환.
+    """Windows taskkill 실행 파일의 절대 경로 반환.
 
     PATH 조회(shutil.which)를 우선 시도하고, 실패 시 %SystemRoot%\\System32\\taskkill.exe로
     폴백한다. 어느 쪽도 찾지 못하면 None을 반환하여 호출부가 proc.kill()로 대체하도록 한다.

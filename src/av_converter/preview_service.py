@@ -80,7 +80,7 @@ class AVPreviewService:
     def prepare_tools_for_preview(self, tab_type: Any, on_success: Callable[[], None]) -> None:
         """미리보기에 필요한 툴체인을 비동기로 다운로드/준비하고 완료 시 콜백 실행.
 
-        탭별로 동시 중복 호출 시 무시되며(진행 중 플래그), 준비 작업은 백그라운드 파이프라인에 위임된다.
+        탭별로 동시 중복 호출 시 무시되며(진행 중 플래그), 툴체인 준비는 파이프라인에 위임.
 
         Args:
             tab_type (Any): 검사할 탭 식별자 ('video' 또는 'audio').

@@ -66,7 +66,7 @@ def _is_executable_usable(exe_path: Path, probe_args: list[str], timeout: int) -
 
 
 def local_dotnet_exe_path(base_path: Path) -> Path:
-    """로컬(usmtoolkit/dotnet) .NET Runtime 실행 파일 경로를 반환."""
+    """로컬(usmtoolkit/dotnet) .NET Runtime 실행 파일 경로 반환."""
     return Path(base_path) / "usmtoolkit" / DOTNET_RUNTIME_DIR_NAME / DOTNET_EXE_NAME
 
 
@@ -97,7 +97,7 @@ def query_dotnet_runtimes(dotnet_exe: Path, timeout: int = DOTNET_RUNTIME_PROBE_
 
 
 def _dedupe_ordered(items: list[str]) -> list[str]:
-    """순서를 유지하며 중복을 제거."""
+    """순서를 유지하며 중복을 제거한 목록 반환."""
     seen: set[str] = set()
     result: list[str] = []
     for item in items:
@@ -108,7 +108,7 @@ def _dedupe_ordered(items: list[str]) -> list[str]:
 
 
 def collect_system_dotnet_runtimes(timeout: int = DOTNET_RUNTIME_PROBE_TIMEOUT) -> list[str]:
-    """시스템 PATH의 dotnet 실행 파일에서 .NET Runtime (Microsoft.NETCore.App) 목록을 반환.
+    """시스템 PATH의 dotnet 실행 파일에서 .NET Runtime (Microsoft.NETCore.App) 목록 반환.
 
     Args:
         timeout (int): 조회 서브프로세스 최대 대기 시간(초).
@@ -123,7 +123,7 @@ def collect_system_dotnet_runtimes(timeout: int = DOTNET_RUNTIME_PROBE_TIMEOUT) 
 
 
 def collect_local_dotnet_runtimes(base_path: Path | None, timeout: int = DOTNET_RUNTIME_PROBE_TIMEOUT) -> list[str]:
-    """로컬(usmtoolkit/dotnet) .NET Runtime (Microsoft.NETCore.App) 목록을 반환.
+    """로컬(usmtoolkit/dotnet) .NET Runtime (Microsoft.NETCore.App) 목록 반환.
 
     Args:
         base_path (Path | None): 프로그램 기준 경로. None 이거나 로컬 런타임이 없으면 빈 목록.
@@ -144,7 +144,7 @@ def collect_local_dotnet_runtimes(base_path: Path | None, timeout: int = DOTNET_
 
 
 def find_satisfying_dotnet_runtime(versions: list[str], minimum: tuple[int, int] = DOTNET_RUNTIME_MIN_VERSION) -> str | None:
-    """버전 문자열 목록에서 major.minor가 minimum 이상인 첫 항목을 반환 (없으면 None).
+    """버전 문자열 목록에서 major.minor가 minimum 이상인 첫 항목 반환 (없으면 None).
 
     Args:
         versions (list[str]): "Microsoft.NETCore.App <version>" 형식 문자열 목록.
@@ -167,10 +167,9 @@ def find_satisfying_dotnet_runtime(versions: list[str], minimum: tuple[int, int]
 
 
 def is_dotnet_force_local_runtime() -> bool:
-    """환경변수 PRICONNE_DOTNET_FORCE_LOCAL_RUNTIME 설정 여부 확인.
+    """환경변수 PRICONNE_DOTNET_FORCE_LOCAL_RUNTIME 설정 여부 반환.
 
-    시스템에 설치된 .NET을 무시하고 로컬(usmtoolkit/dotnet) 런타임만 사용하도록
-    강제하는 테스트/디버그 스위치. 설정하지 않으면 기본 False(기존 동작 유지).
+    시스템 .NET을 무시하고 로컬 런타임만 사용하도록 강제하는 테스트/디버그 스위치.
 
     Returns:
         bool: 강제 로컬 모드가 활성화되면 True.

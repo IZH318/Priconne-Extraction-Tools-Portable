@@ -171,7 +171,7 @@ class AssetProcessor:
     def _open_unique_path(
         self, path: str, obj_path_id: int, mode: str = "x", **kwargs: Any
     ) -> tuple[IO[Any], str]:
-        """대상 경로를 독점 개방('x' 모드)하여 점유한 파일 객체를 반환.
+        """대상 경로를 독점 개방('x' 모드)하여 점유한 파일 객체 반환.
 
         TOCTOU(확인-후-사용) 경쟁 조건 제거를 위해 독점 생성 모드('x'/'xb')로
         open을 수행. 이미 존재하는 경로는 (#PathID)/(n) 접미사를 부여하여

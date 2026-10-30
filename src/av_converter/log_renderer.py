@@ -185,7 +185,7 @@ class AVLogRenderer:
 
     @staticmethod
     def _format_runtime_versions(entries: list[str]) -> str:
-        """'Microsoft.NETCore.App <version>' 목록에서 버전 문자열만 콤마로 이어붙여 반환."""
+        """'Microsoft.NETCore.App <version>' 목록에서 버전 문자열만 콤마로 이어붙인 문자열 반환."""
         return ", ".join(entry.split()[-1] for entry in entries)
 
     def log_initial_status(self) -> None:

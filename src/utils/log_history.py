@@ -17,7 +17,7 @@ LOG_INDENT: str = " " * 13
 
 
 def new_log_timestamp() -> str:
-    """현재 시각의 로그 타임스탬프 문자열('HH:MM:SS.mmm')을 반환."""
+    """현재 시각의 로그 타임스탬프 문자열('HH:MM:SS.mmm') 반환."""
     return datetime.now().strftime(LOG_TIME_FORMAT)[:-3]
 
 

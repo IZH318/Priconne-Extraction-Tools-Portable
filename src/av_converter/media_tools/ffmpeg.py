@@ -128,7 +128,7 @@ class FFmpegDownloader:
             pass
 
     def check_version(self) -> tuple[str, str]:
-        """설치된 ffmpeg.exe 버전을 실행 확인하고 정책 분류 결과를 반환.
+        """설치된 ffmpeg.exe 버전을 실행 확인하고 정책 분류 결과 반환.
 
         마커 파일만 신뢰하지 않고 실제 바이너리에 `-version`을 실행한다.
 

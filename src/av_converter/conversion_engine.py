@@ -209,37 +209,35 @@ class ConversionLogic:
         return SubprocessRunner.run(command, timeout=SUBPROCESS_AUDIO_CONVERT_TIMEOUT, cancel_token=cancel_token)
 
     def get_dotnet_runtimes_by_source(self) -> dict[str, list[str]]:
-        """.NET Runtime (Microsoft.NETCore.App) 목록을 출처별(system/local)로 반환."""
+        """.NET Runtime (Microsoft.NETCore.App) 목록을 시스템/로컬로 구분해 반환."""
         return {
             "system": collect_system_dotnet_runtimes(),
             "local": collect_local_dotnet_runtimes(self.base_path),
         }
 
     def _system_dotnet_satisfies(self) -> bool:
-        """시스템 .NET Runtime이 UsmToolkit 요구 버전(3.1 이상)을 만족하는지 여부 (1회 캐시)."""
+        """시스템 .NET Runtime이 UsmToolkit 요구 버전(3.1 이상)을 만족하는지 여부 반환 (1회 캐시)."""
         if self._system_dotnet_ok is None:
             self._system_dotnet_ok = find_satisfying_dotnet_runtime(collect_system_dotnet_runtimes()) is not None
         return self._system_dotnet_ok
 
-    def dotnet_runtime_env(self, usmtoolkit_dir: Path) -> dict[str, str] | None:
-        """UsmToolkit 실행 시 주입할 자식 프로세스 환경을 반환.
-
-        시스템 런타임이 요구 버전을 만족하면 None을 반환하여 시스템 런타임을 그대로 사용하고,
-        그렇지 않으면 로컬(usmtoolkit/dotnet) 런타임을 가리키도록 DOTNET_ROOT를 주입한다.
-        시스템 환경변수는 변경하지 않으며, 자식 프로세스에만 적용된다.
+    def dotnet_runtime_env(self, usmtoolkit_dir: Path) -> dict[str, str]:
+        """UsmToolkit 실행 시 주입할 자식 프로세스 환경 반환.
 
         Args:
             usmtoolkit_dir (Path): UsmToolkit.exe가 위치한 폴더 경로.
 
         Returns:
-            dict[str, str] | None: DOTNET_ROOT가 추가된 환경 맵 또는 (시스템 런타임 사용 시) None.
+            dict[str, str]: 주입할 환경 맵.
         """
+        env = dict(os.environ)
+        # UsmToolkit(netcoreapp3.1)이 시스템의 상위 메이저 런타임으로 롤포워드되도록 강제
+        env["DOTNET_ROLL_FORWARD"] = "Major"
         if not is_dotnet_force_local_runtime() and self._system_dotnet_satisfies():
-            return None
+            return env
         dotnet_dir = usmtoolkit_dir / DOTNET_RUNTIME_DIR_NAME
         if not (dotnet_dir / DOTNET_EXE_NAME).is_file():
-            return None
-        env = dict(os.environ)
+            return env
         env["DOTNET_ROOT"] = str(dotnet_dir)
         # 머신 전역 .NET 조회를 비활성화하여 지정한 로컬 런타임만 사용하도록 강제
         env["DOTNET_MULTILEVEL_LOOKUP"] = "0"

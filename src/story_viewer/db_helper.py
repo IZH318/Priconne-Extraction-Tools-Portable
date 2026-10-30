@@ -53,7 +53,7 @@ def _thread_connection_cache() -> _ConnectionCache:
 
 
 def get_readonly_connection(db_path: str | os.PathLike[str]) -> sqlite3.Connection:
-    """스레드별로 재사용되는 읽기 전용 SQLite 연결을 반환.
+    """스레드별로 재사용되는 읽기 전용 SQLite 연결 반환.
 
     Args:
         db_path (str | os.PathLike[str]): 열려는 SQLite 파일 경로.
@@ -173,7 +173,7 @@ def _select_in_chunks(
     value_cols: list[str],
     ids: Sequence[str | int],
 ) -> list[tuple[Any, ...]]:
-    """id_col IN (ids) 조회를 DB_QUERY_CHUNK 단위로 분할 실행하여 (id, *values) 행들을 반환.
+    """id_col IN (ids) 조회를 DB_QUERY_CHUNK 단위로 분할 실행하여 (id, *values) 행들 반환.
 
     식별자 검증(_validate_identifier)과 파라미터 바인딩을 적용한다. 호출자는 발생 가능한
     예외(sqlite3.Error, KeyError, UnsafeIdentifierError 등)를 처리해야 한다.

@@ -89,8 +89,6 @@ class AVConversionService:
     def start_video_conversion(self, output_dir: str) -> None:
         """비디오 변환 전 파일 목록, 출력 경로 검증 및 변환 준비 시작.
 
-        .NET Runtime 및 외부 툴체인 준비는 백그라운드 파이프라인에서 자동 수행된다.
-
         Args:
             output_dir (str): 변환된 비디오 파일들을 저장할 대상 폴더 경로.
         """

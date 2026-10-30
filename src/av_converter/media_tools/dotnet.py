@@ -52,15 +52,13 @@ def _validate_dotnet_runtime_zip(temp_path: Path) -> None:
 
 
 class DotnetRuntimeDownloader:
-    """UsmToolkit 실행용 .NET Runtime 선택 및 로컬 런타임 자동 다운로드/압축 해제 관리 클래스."""
+    """.NET Runtime 자동 다운로드 및 압축 해제 관리 클래스."""
 
-    def __init__(self, log_queue: Queue[Any], usmtoolkit_dir: Path) -> None:
-        """DotnetRuntimeDownloader 초기화.
-
-        Args:
-            log_queue (queue.Queue): GUI 통신용 로그 큐.
-            usmtoolkit_dir (Path): UsmToolkit 설치 폴더 (하위 dotnet 디렉터리에 런타임 압축 해제).
-        """
+    def __init__(
+        self,
+        log_queue: Queue[Any],
+        usmtoolkit_dir: Path,
+    ) -> None:
         self.log_queue = log_queue
         self.download_dir = usmtoolkit_dir / DOTNET_RUNTIME_DIR_NAME
         self.dotnet_exe_path = self.download_dir / DOTNET_EXE_NAME

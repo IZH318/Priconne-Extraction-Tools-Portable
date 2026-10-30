@@ -62,7 +62,7 @@ def sanitize_filename(name: str) -> str:
 
 
 def make_unique_export_path(output_path: str) -> str:
-    """이미 존재하는 경로면 덮어쓰지 않고 ' (n)' 접미사를 붙인 고유 경로를 반환.
+    """이미 존재하는 경로면 덮어쓰지 않고 ' (n)' 접미사를 붙인 고유 경로 반환.
 
     Args:
         output_path: 후보 출력 파일 경로.
