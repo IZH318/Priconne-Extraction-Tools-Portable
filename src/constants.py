@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 TabType = Literal['video', 'audio']
 
 # 애플리케이션 메타데이터
-APP_VERSION: Final[str] = "3.0.0"
+APP_VERSION: Final[str] = "3.0.1"
 APP_LAST_UPDATE: Final[str] = "2026-10-30"
 APP_DEVELOPER: Final[str] = "(Github) IZH318"
 APP_WEBSITE: Final[str] = "https://github.com/IZH318"
@@ -56,6 +56,9 @@ FFMPEG_VERSION_PROBE_TIMEOUT: Final[int] = 5
 
 # 서브프로세스 강제 종료 후 잔여 출력 수거 대기 (초)
 SUBPROCESS_REAP_TIMEOUT: Final[int] = 5
+
+# 오디오 스트림 디코딩 타임아웃 발생 시 재시도 횟수 (지속 부하·백신 스캔 등 간헐적 지연 대비)
+SUBPROCESS_AUDIO_CONVERT_RETRIES: Final[int] = 5
 
 # 로그 출력 구분선
 SEPARATOR_LONG: Final[str] = "-" * 100
@@ -193,10 +196,9 @@ def _resolve_lazy_const(name: str) -> Any:
     if name == 'SUBPROCESS_VIDEO_CONVERT_TIMEOUT':
         return _env_int('PRICONNE_VIDEO_TIMEOUT', 300)
     if name == 'SUBPROCESS_AUDIO_CONVERT_TIMEOUT':
-        return _env_int('PRICONNE_AUDIO_TIMEOUT', 60)
+        return _env_int('PRICONNE_AUDIO_TIMEOUT', 300)
     if name == 'SUBPROCESS_PREVIEW_TIMEOUT':
-        # 미리보기도 본 변환과 동일한 설정으로 재인코딩하므로 30초는 정상 클립까지 실패시킨다
-        return _env_int('PRICONNE_PREVIEW_TIMEOUT', 60)
+        return _env_int('PRICONNE_PREVIEW_TIMEOUT', 300)
     # 예외 분기: _LAZY_CONSTS에 포함되나 해석 규칙이 누락된 경우
     raise AttributeError(f"module {__name__!r} has no resolvable lazy constant {name!r}")
 
